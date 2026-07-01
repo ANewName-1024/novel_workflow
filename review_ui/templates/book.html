@@ -29,6 +29,30 @@ header {
   border-radius: 6px;
 }
 .back:active { background: var(--panel2); }
+.nav-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 14px;
+  background: var(--panel2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.nav-btn:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+.nav-btn:active { background: var(--accent); color: var(--bg); }
 h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
 .subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .subtitle span { margin-right: 10px; }
@@ -184,6 +208,9 @@ footer {
     <span>🎭 {{ cfg.genre }}</span>
     <span>👤 {{ cfg.protagonist }}</span>
     <span>📄 {{ chapters|length }} 章</span>
+  </div>
+  <div class="nav-actions">
+    <a href="/dashboard/{{ book }}" class="nav-btn">⚙️ 流水线面板</a>
   </div>
 </header>
 

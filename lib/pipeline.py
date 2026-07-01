@@ -296,10 +296,21 @@ class PipelineRunner:
         """SSE 用: 持续 yield log 新行. 客户端断开时抛 GeneratorExit 停止.
 
         用文件 inode + size 跟踪位置, 避免重复读.
+        退出条件: state 状态是 done/failed/cancelled OR state 文件不存在.
         """
         path = pipeline_log_path(book)
-        if not path.exists():
+
+        # 没 state = 没流水线在跑, 立即退出
+        state0 = self.status(book)
+        if state0 is None:
             return
+
+        # 没 log 文件 = 还没写一行, 等 1 次
+        if not path.exists():
+            time.sleep(poll_interval)
+            state0 = self.status(book)
+            if state0 is None or state0.get("status") in ("done", "failed", "cancelled"):
+                return
 
         # 初始位置: 文件末尾 (SSE 客户端不应该看历史)
         try:
@@ -322,17 +333,22 @@ class PipelineRunner:
                     last_pos += len(chunk)
                 # 检查进程状态, 跑完就退出
                 state = self.status(book)
-                if state and state.get("status") in ("done", "failed", "cancelled"):
+                if state is None:
+                    return  # state 被删了, 退出
+                if state.get("status") in ("done", "failed", "cancelled"):
                     # 再 yield 一次残留 log
                     time.sleep(0.3)
-                    with open(path, "rb") as f:
-                        f.seek(last_pos)
-                        tail = f.read()
-                    if tail:
-                        text = tail.decode("utf-8", errors="replace")
-                        for line in text.splitlines():
-                            if line:
-                                yield line + "\n"
+                    try:
+                        with open(path, "rb") as f:
+                            f.seek(last_pos)
+                            tail = f.read()
+                        if tail:
+                            text = tail.decode("utf-8", errors="replace")
+                            for line in text.splitlines():
+                                if line:
+                                    yield line + "\n"
+                    except OSError:
+                        pass
                     return
                 time.sleep(poll_interval)
             except GeneratorExit:
