@@ -123,7 +123,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .status.needs_rewrite { background: rgba(255,107,107,0.2); color: var(--crit); }
 .status.approved { background: rgba(109,217,155,0.2); color: var(--ok); }
 .chapter-list {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 8px;
 }
 @media (max-width: 600px) {
@@ -132,8 +132,8 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .chapter-pill {
   background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
   padding: 10px 12px; font-size: 13px; text-decoration: none; color: inherit;
-  display: flex; justify-content: space-between; align-items: center;
-  min-height: 44px;
+  display: flex; flex-direction: column; gap: 4px;
+  min-height: 88px;
 }
 .chapter-pill:hover { border-color: var(--accent); }
 .chapter-pill:active { background: var(--panel2); }
@@ -142,6 +142,26 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .chapter-pill .status-dot.pending_review { background: var(--pending); }
 .chapter-pill .status-dot.needs_rewrite { background: var(--crit); }
 .chapter-pill .status-dot.approved { background: var(--accent); }
+.chapter-pill-main { display: flex; align-items: baseline; gap: 8px; justify-content: space-between; }
+.chapter-pill-main strong { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+.chapter-title { color: var(--muted); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chapter-preview {
+  color: var(--fg); opacity: 0.75; font-size: 12px;
+  line-height: 1.4; max-height: 34px; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.chapter-meta { color: var(--muted); font-size: 11px; display: flex; gap: 8px; }
+/* 跳号提示 */
+.chapter-gap {
+  grid-column: 1 / -1;
+  padding: 6px 12px;
+  background: rgba(255,180,84,0.08);
+  border: 1px dashed rgba(255,180,84,0.3);
+  border-radius: 4px;
+  color: var(--pending);
+  font-size: 12px;
+  text-align: center;
+}
 .chapter-pill .status-dot.human_edited { background: #b48cff; }
 .chapter-pill .status-dot.false_positive { background: var(--muted); }
 .empty-row {
@@ -233,11 +253,32 @@ footer {
 
   <div class="section-title">📚 全部章节 <span class="count">({{ chapters|length }})</span></div>
   <div class="chapter-list">
+    {% set ch_ids = chapters|map(attribute='id')|list %}
     {% for ch in chapters %}
-    <a class="chapter-pill" href="{{ url_for('chapter_page', book=book, ch=ch.id) }}">
-      <span>{{ ch.id }} · {{ ch.word_count }}字</span>
-      <span class="status-dot auto_passed"></span>
-    </a>
+      {# 跳号检测: 上一章 ID 数字+1 不等于本章 → 中间有跳号 #}
+      {% set prev_idx = loop.index0 - 1 %}
+      {% if prev_idx >= 0 %}
+        {% set prev_id = ch_ids[prev_idx] %}
+        {% set prev_num = prev_id|replace('ch_','')|int %}
+        {% set cur_num = ch.id|replace('ch_','')|int %}
+        {% if cur_num - prev_num > 1 %}
+          <div class="chapter-gap" title="中间 {{ cur_num - prev_num - 1 }} 章缺失">
+            ⚠️ 跳过 ch_{{'%03d'|format(prev_num + 1)}} ~ ch_{{'%03d'|format(cur_num - 1)}} ( {{ cur_num - prev_num - 1 }} 章 )
+          </div>
+        {% endif %}
+      {% endif %}
+      <a class="chapter-pill" href="{{ url_for('chapter_page', book=book, ch=ch.id) }}">
+        <div class="chapter-pill-main">
+          <strong>{{ ch.id }}</strong>
+          <span class="chapter-title">{{ ch.title|truncate(20) }}</span>
+        </div>
+        {% if ch.preview %}
+        <div class="chapter-preview">{{ ch.preview }}</div>
+        {% endif %}
+        <div class="chapter-meta">
+          <span>{{ ch.word_count }} 字</span>
+        </div>
+      </a>
     {% endfor %}
   </div>
 </div>

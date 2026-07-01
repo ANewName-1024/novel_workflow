@@ -4,6 +4,16 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ## [Unreleased]
 
+### Added (新增)
+
+**v1.1: 章节预览 + diff 增强统计**
+- `lib/storage.py`: `list_chapters()` 返回 `preview` 字段 (标题后第一段前 50 字符, 超过加 … 后缀)
+- `review_ui/app.py`: `_diff_stats()` 增加行级 + 字符级变动统计 (`lines_added/removed`, `chars_added/removed`, `net_change`)
+- `review_ui/templates/book.html`: 章节卡片重设计 — 竖排布局, 显示标题 + preview 摘要, 240px 宽, 章节间 缺号提示 (`.chapter-gap`)
+- `review_ui/templates/chapter.html`: diff 标题栏从 `v1_chars → v2_chars` 改为 `+N -N (净±N) | +N -N 行` 详细统计
+- 9 新 tests: `test_storage.py` 加 4 个 preview cases, `test_review_ui_diff.py` 加 5 个 `_diff_stats` cases
+- 总测试: 94 passed (~3s)
+
 ### Fixed (修复)
 
 **M6.1: review_ui auth 锁死** (commit ffd0816)
@@ -13,6 +23,10 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 - 修复 L65: enabled=True + password='' 视为配置错误, 全部放行
 - 3 新 tests (`TestAuthEnabledButEmptyPassword`): /api/projects 200, /login 跳首页, / 放行
 - 实战验证: review_ui 默认 config 启动后 /api/projects 200 ✓
+
+**doctor 端口检查 flaky 修复** (随 v1.1 一起)
+- `tests/test_doctor.py`: `test_check_port_free_random_high_port` 改为先扫 20 个端口选一个确定空闲的, 不再随机撞
+- 验证: 5 轮 5/5 全过, 修复前偶发失败 (random 撞到被占端口)
 
 ## [1.0.0] - 2026-07-01
 

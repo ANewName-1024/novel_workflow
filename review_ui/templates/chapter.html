@@ -52,7 +52,8 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 }
 .diff-add { color: #6dd99b; display: inline; }
 .diff-del { color: #ff6b6b; display: inline; text-decoration: line-through; opacity: 0.85; }
-.diff-meta { color: #ffb454; display: inline; }
+.diff-meta { color: var(--muted); display: inline; font-weight: normal; font-size: 12px; }
+.diff-meta-net { color: var(--accent); font-weight: 600; }
 .diff-ctx { color: var(--muted); display: inline; }
 .diff-meta-line { display: inline; color: var(--accent); font-weight: 600; }
 .diff-meta { font-size: 12px; font-weight: normal; margin-left: 8px; }
@@ -88,6 +89,11 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   border: 1px solid var(--border);
   -webkit-overflow-scrolling: touch;
 }
+/* Markdown 标题 加粗 + 变大: "## 第N章..." 透过 pre-wrap 仍以单行起头, 用首字符 # 计数 */
+.chapter-text { color: var(--fg); }
+.chapter-text { counter-reset: chap-h; }
+/* 不依赖 JS: # 字开头颜色加重. 简单点 — 给首行额外间距 */
+.chapter-text::first-line { font-weight: 600; }
 @media (max-width: 600px) {
   .chapter-text { font-size: 15px; padding: 14px; max-height: 70vh; }
 }
@@ -151,6 +157,9 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .action-btn.warn:hover { background: #ff5252; }
 .action-btn.edit { background: var(--edit); color: white; border-color: var(--edit); font-weight: 600; }
 .action-btn.edit:hover { background: #a679ff; }
+/* 误报 = 正向 (告诉 AI 别误判) — 绿色区分于 拒退的红色 */
+.action-btn.fp { background: var(--ok); color: #0e1217; border-color: var(--ok); font-weight: 600; }
+.action-btn.fp:hover { background: #5fc98a; }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .action-form { margin-bottom: 8px; }
 .action-form label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 4px; }
@@ -220,8 +229,12 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
       <h2>🔀 Diff (v1 → v2)
         {% if diff_stats %}
         <span class="diff-meta">
-          <span class="diff-del">{{ diff_stats.v1_chars }} → {{ diff_stats.v2_chars }} 字</span>
-          ({{ diff_stats.v1_lines }} → {{ diff_stats.v2_lines }} 行)
+          <span class="diff-add">+{{ diff_stats.chars_added }}字</span>
+          <span class="diff-del">-{{ diff_stats.chars_removed }}字</span>
+          <span class="diff-meta-net">(净 {{ '%+d'|format(diff_stats.net_change) }})</span>
+          · <span class="diff-add">+{{ diff_stats.lines_added }}行</span>
+          <span class="diff-del">-{{ diff_stats.lines_removed }}行</span>
+          · {{ diff_stats.v1_lines }}→{{ diff_stats.v2_lines }} 行
         </span>
         {% endif %}
       </h2>
@@ -301,7 +314,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
       <div class="action-form">
         <label>误报说明：</label>
         <textarea id="fp-notes" placeholder="如：自检误判，角色其实没漂移..."></textarea>
-        <button class="action-btn" onclick="doAction('false-positive', '{{ chapter_id }}')">
+        <button class="action-btn fp" onclick="doAction('false-positive', '{{ chapter_id }}')">
           🚫 标记为误报
         </button>
       </div>

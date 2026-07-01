@@ -73,7 +73,7 @@ def write_chapter(book: str, chapter_id: str, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 def list_chapters(book: str) -> list[dict]:
-    """Return sorted list of {id, title, word_count} from chapters dir."""
+    """Return sorted list of {id, title, word_count, preview} from chapters dir."""
     chapters = []
     for p in sorted(chapters_dir(book).glob("*.md")):
         text = p.read_text(encoding="utf-8")
@@ -84,7 +84,11 @@ def list_chapters(book: str) -> list[dict]:
         words = len(re.findall(r"[\u4e00-\u9fff]+", text))
         eng   = len(re.findall(r"[a-zA-Z]{3,}", text))
         wc    = words + eng
-        chapters.append({"id": p.stem, "title": title, "word_count": wc})
+        # Preview: first non-empty paragraph after the title (max 50 chars)
+        body = text[m.end():] if m else text
+        body_lines = [l.strip() for l in body.splitlines() if l.strip()]
+        preview = body_lines[0][:50] + ("…" if len(body_lines[0]) > 50 else "") if body_lines else ""
+        chapters.append({"id": p.stem, "title": title, "word_count": wc, "preview": preview})
     return chapters
 
 # ── config defaults ─────────────────────────────────────────────────────────

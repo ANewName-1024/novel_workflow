@@ -94,3 +94,65 @@ class TestDiffInChapterPage:
         body = r.data.decode("utf-8")
         # diff <pre> 元素不该出现 (CSS class 定义在 <style> 里, 不算)
         assert body.count('<pre class="diff-view"') == 0
+
+
+# ── v1.1: _diff_stats 增强字段 (行/字符级变动 + 净变动) ─────────────────
+
+class TestDiffStatsEnhanced:
+    """v1.1: _diff_stats 增加 lines_added/removed + chars_added/removed + net_change."""
+
+    def test_identical_text_all_zeros(self):
+        """原文 vs v2 完全一致: 所有增强字段都是 0."""
+        s = review_app._diff_stats("hello world", "hello world")
+        assert s["lines_added"] == 0
+        assert s["lines_removed"] == 0
+        assert s["chars_added"] == 0
+        assert s["chars_removed"] == 0
+        assert s["net_change"] == 0
+
+    def test_pure_insert(self):
+        """只在末尾插入: added > 0, removed = 0, net_change = 增量的字符数."""
+        s = review_app._diff_stats("a\nb\n", "a\nb\nc\nd\n")
+        assert s["lines_added"] == 2
+        assert s["lines_removed"] == 0
+        assert s["net_change"] > 0
+        assert s["net_change"] == s["v2_chars"] - s["v1_chars"]
+
+    def test_pure_delete(self):
+        """只删除: removed > 0, added = 0, net_change = 负的字符数."""
+        s = review_app._diff_stats("a\nb\nc\nd\n", "a\nb\n")
+        assert s["lines_removed"] == 2
+        assert s["lines_added"] == 0
+        assert s["net_change"] < 0
+        assert s["net_change"] == s["v2_chars"] - s["v1_chars"]
+
+    def test_mixed_replace_char_and_line_stats(self):
+        """混合改: added/removed 都 > 0."""
+        # v1 三行, v2 改成 2 行 (中段替换)
+        s = review_app._diff_stats("a\nb\nc\n", "a\nx\ny\n")
+        assert s["lines_added"] >= 1
+        assert s["lines_removed"] >= 1
+        # net_change = v2_chars - v1_chars
+        assert s["net_change"] == s["v2_chars"] - s["v1_chars"]
+        # 字符级 add/del 应该反映实际改动的字符数
+        assert s["chars_added"] > 0
+        assert s["chars_removed"] > 0
+
+    def test_stats_exposed_in_api_response(self, client, auth_disabled, book_with_v2):
+        """/api/diff 返回的 stats 包含 v1.1 新增字段."""
+        r = client.get("/api/diff/test_book/ch_001")
+        data = r.get_json()
+        stats = data["stats"]
+        # 旧字段还在
+        assert "v1_chars" in stats and "v2_chars" in stats
+        assert "v1_lines" in stats and "v2_lines" in stats
+        # 新字段
+        assert "lines_added" in stats
+        assert "lines_removed" in stats
+        assert "chars_added" in stats
+        assert "chars_removed" in stats
+        assert "net_change" in stats
+        # fixture 是混合改, 所以两边都 > 0
+        assert stats["lines_added"] > 0
+        assert stats["lines_removed"] > 0
+        assert stats["net_change"] == stats["v2_chars"] - stats["v1_chars"]

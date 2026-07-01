@@ -37,9 +37,21 @@ def test_check_llm():
 
 
 def test_check_port_free_random_high_port():
-    """随机大端口应该 free."""
+    """随机大端口应该 free (从 50000-60000 区间扫一个真的空闲的)."""
     import random
-    port = random.randint(50000, 60000)
+    import socket
+    # 在 50000-60000 区间扫一个肯定空闲的端口 (避免随机到被占用的)
+    port = None
+    for _ in range(20):
+        candidate = random.randint(50000, 60000)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            if s.connect_ex(("127.0.0.1", candidate)) != 0:
+                port = candidate
+                break
+        finally:
+            s.close()
+    assert port is not None, "找不到空闲端口, 测试环境异常"
     r = doctor.check_port_free({"review_ui": {"port": port}})
     assert r.name.startswith("端口")
     assert r.status == "ok"

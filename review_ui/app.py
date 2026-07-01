@@ -282,11 +282,36 @@ def chapter_page(book, ch):
 
 
 def _diff_stats(text1: str, text2: str) -> dict:
-    """原始行数和 v2 行数的快速统计."""
+    """原始行数和 v2 行数的快速统计 + 字符级变动统计."""
     a = text1.splitlines()
     b = text2.splitlines()
+    # 行级: 加/减/同
+    added = removed = 0
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "insert":
+            added += j2 - j1
+        elif tag == "delete":
+            removed += i2 - i1
+        elif tag == "replace":
+            added += j2 - j1
+            removed += i2 - i1
+    # 字符级净变动
+    char_matcher = difflib.SequenceMatcher(None, text1, text2, autojunk=False)
+    char_add = char_del = 0
+    for tag, i1, i2, j1, j2 in char_matcher.get_opcodes():
+        if tag == "insert":
+            char_add += j2 - j1
+        elif tag == "delete":
+            char_del += i2 - i1
+        elif tag == "replace":
+            char_add += j2 - j1
+            char_del += i2 - i1
     return {"v1_lines": len(a), "v2_lines": len(b),
-            "v1_chars": len(text1), "v2_chars": len(text2)}
+            "v1_chars": len(text1), "v2_chars": len(text2),
+            "lines_added": added, "lines_removed": removed,
+            "chars_added": char_add, "chars_removed": char_del,
+            "net_change": len(text2) - len(text1)}
 
 # ── JSON API ────────────────────────────────────────────────────────────────
 
