@@ -24,6 +24,14 @@ def auth_disabled(monkeypatch):
 
 
 @pytest.fixture
+def auth_enabled_but_empty_password(monkeypatch):
+    """L64/L65 坑: enabled=True 但 password 空 → 视为配置错误, 全部放行."""
+    monkeypatch.setattr(review_app, "_get_auth", lambda: {
+        "enabled": True, "user": "tester", "password": ""
+    })
+
+
+@pytest.fixture
 def client(tmp_projects_root):
     """Flask test_client + TESTING 模式 + 稳定 secret_key (session 用)."""
     review_app.app.config["TESTING"] = True
@@ -129,3 +137,25 @@ class TestBasicAuthHeader:
         r = client.get("/api/projects",
                        headers={"Authorization": "Basic not-base64-!!!"})
         assert r.status_code == 401
+
+
+# ──────────────── L64/L65 补救: enabled 但 password 空 → 放行 ────────────────
+
+class TestAuthEnabledButEmptyPassword:
+    """L64/L65 第一次启动默认 config 把 review_ui 锁死的补救测试."""
+
+    def test_api_passes_through(self, client, auth_enabled_but_empty_password, tmp_projects_root):
+        """enabled=True + password='' → 全部放行, 不应该 401."""
+        r = client.get("/api/projects")
+        assert r.status_code == 200
+
+    def test_index_passes_through(self, client, auth_enabled_but_empty_password):
+        r = client.get("/", follow_redirects=False)
+        # 放行 → 200 (不走 auth gate)
+        assert r.status_code in (200, 302)
+
+    def test_login_skipped(self, client, auth_enabled_but_empty_password):
+        """password 空 → /login 跳到首页, 不让看到登录表单."""
+        r = client.get("/login", follow_redirects=False)
+        assert r.status_code == 302
+        assert "/" in r.headers["Location"]

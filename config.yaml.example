@@ -17,8 +17,11 @@ review_ui:
   host: 127.0.0.1
   port: 21199
   # Basic Auth (公网入口)
+  # 默认关闭 (本地开发免密). 公网部署时改 enabled: true 并设密码:
+  #   1. 设环境变量 REVIEW_UI_PASSWORD=你的强密码
+  #   2. 或者直接改 password: 你的密码 (不建议写进 git)
   auth:
-    enabled: true
+    enabled: false
     user: ${REVIEW_UI_USER:-weichao}
     password: ${REVIEW_UI_PASSWORD:-}
   # 反向代理前缀 (nginx 配置, 用于 url_for 自动生成 /novel/...)

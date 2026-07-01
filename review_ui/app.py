@@ -91,6 +91,9 @@ def _auth_gate():
     auth = _get_auth()
     if not auth["enabled"]:
         return None  # 配置不上, 全部放行
+    # Safeguard: enabled 但 password 为空 → 视为配置错误, 放行 (跟 _check_basic_auth_header 对称)
+    if not auth["password"]:
+        return None
     # 白名单
     if request.path.startswith("/static/"):
         return None
@@ -112,8 +115,8 @@ def _auth_gate():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     auth = _get_auth()
-    if not auth["enabled"]:
-        return redirect(url_for("index"))
+    if not auth["enabled"] or not auth["password"]:
+        return redirect(url_for("index"))  # 配置不上或密码空 → 跳过登录
     error = None
     if request.method == "POST":
         u = (request.form.get("user") or "").strip()
