@@ -198,6 +198,16 @@ def merge_extraction(book: str, extraction: dict) -> None:
 
     # World (新格式)
     world = get_world(book)
+    # v1.2 M1.2: 处理 new_world_rules (结构化)
+    for wr_data in extraction.get("new_world_rules", []):
+        if isinstance(wr_data, dict) and wr_data.get("name"):
+            try:
+                wr = WorldRule.from_dict(wr_data)
+                if wr.id not in world.get("rules", {}):
+                    world.setdefault("rules", {})[wr.id] = wr.to_dict()
+            except (ValueError, KeyError):
+                pass
+    # 兼容旧 world_updates (字符串数组)
     for wu in extraction.get("world_updates", []):
         if isinstance(wu, str):
             # 升级为 WorldRule
@@ -207,13 +217,15 @@ def merge_extraction(book: str, extraction: dict) -> None:
                     category="其他",
                     description=wu,
                 )
-                world["rules"][wr.id] = wr.to_dict()
+                if wr.id not in world.get("rules", {}):
+                    world.setdefault("rules", {})[wr.id] = wr.to_dict()
             except ValueError:
                 pass
         elif isinstance(wu, dict) and wu.get("name"):
             try:
                 wr = WorldRule.from_dict(wu)
-                world["rules"][wr.id] = wr.to_dict()
+                if wr.id not in world.get("rules", {}):
+                    world.setdefault("rules", {})[wr.id] = wr.to_dict()
             except (ValueError, KeyError):
                 pass
     update_world(book, world)

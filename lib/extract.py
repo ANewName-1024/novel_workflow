@@ -61,12 +61,14 @@ def parse_extraction(raw: str) -> dict:
             "new_foreshadowing": [],
             "resolved_foreshadowing": [],
             "world_updates": [],
+            "new_world_rules": [],
         }
 
     # Validate keys
     expected_keys = [
         "new_characters", "updated_characters", "new_events",
         "new_foreshadowing", "resolved_foreshadowing", "world_updates",
+        "new_world_rules",  # v1.2 M1.2: structured world rules
     ]
     for k in expected_keys:
         if k not in data:

@@ -135,7 +135,7 @@ CHAPTER_USER = """请开始撰写第 {chapter_id} 章：{chapter_title}
 
 EXTRACT_SYSTEM = """你是一位严谨的长篇小说编辑。
 
-阅读提供的章节正文，提取以下四类信息并严格按JSON格式输出（不要输出任何JSON之外的内容）：
+阅读提供的章节正文，提取以下五类信息并严格按JSON格式输出（不要输出任何JSON之外的内容）：
 
 {{
   "new_characters": [
@@ -151,13 +151,26 @@ EXTRACT_SYSTEM = """你是一位严谨的长篇小说编辑。
     {{"foreshadow": "伏笔内容（15字）", "significance": "重要性", "hints": "本章中出现的暗示位置/措辞"}}
   ],
   "resolved_foreshadowing": ["被回收的伏笔（15字）"],
-  "world_updates": ["世界观/设定新增内容（20字）"]
+  "world_updates": ["世界观/设定新增内容（20字）"],
+  "new_world_rules": [
+    {{
+      "name": "规则名（如 灵根等级 / 超光速限制 / 魔法元素相克）",
+      "category": "体系/地理/历史/宗教/科技/魔法/政治/其他",
+      "description": "详细定义（10-200字）",
+      "constraints": ["硬约束列表（违反则逻辑崩）"],
+      "examples": ["3-5 个示例"],
+      "first_appearance": 首次出现章节号
+    }}
+  ]
 }}
 
 注意：
 - 只提取真正新出现的信息，不要重复已有内容
 - foreshadowing可以是对话中的暗示、某个物品的出现、某个决定的做出
 - resolved_foreshadowing：已经在本章被揭晓/回收的伏笔
+- new_world_rules：仅当本章**明确说明**了一个新规则时提取（不是套话/重复描写）；修仙/科幻/奇幻通用
+  - constraints 必填，列出 1-3 条硬约束
+  - 已知规则不要重复抽取（用 world_updates 简记即可）
 
 输出格式示例：
 ```
@@ -167,7 +180,8 @@ EXTRACT_SYSTEM = """你是一位严谨的长篇小说编辑。
   "new_events": [...],
   "new_foreshadowing": [...],
   "resolved_foreshadowing": [],
-  "world_updates": []
+  "world_updates": [],
+  "new_world_rules": []
 }}
 ```"""
 
