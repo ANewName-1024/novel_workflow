@@ -214,3 +214,49 @@ def test_get_metrics_filters_by_range(tmp_projects_root, book):
     # now 一定在 1d 范围内
     assert m_1d["calls"] == 1
     assert m_all["calls"] == 1
+
+
+# ── 9. _parse_current_stage_from_log ──────────────────────────────────────
+
+def test_parse_current_stage_from_log(tmp_projects_root, book):
+    """读 log 最后一行 PIPELINE marker, 返回 stage."""
+    log = pipeline.pipeline_log_path(book)
+    log.parent.mkdir(exist_ok=True)
+    log.write_text(
+        "[2026-07-01T22:50:00] [PIPELINE] book=测试书籍 ch=8 stage=context status=start\n"
+        "[2026-07-01T22:50:01] [PIPELINE] book=测试书籍 ch=8 stage=context status=done\n"
+        "[2026-07-01T22:50:01] [PIPELINE] book=测试书籍 ch=8 stage=writing status=start\n"
+        "[2026-07-01T22:51:30] some other line\n"
+        "[2026-07-01T22:52:00] [PIPELINE] book=测试书籍 ch=8 stage=extract status=start\n",
+        encoding="utf-8",
+    )
+    cur = pipeline._parse_current_stage_from_log(book)
+    assert cur == "extract"
+
+
+def test_parse_current_stage_no_log(tmp_projects_root, book):
+    """log 不存在返回 None."""
+    assert pipeline._parse_current_stage_from_log(book) is None
+
+
+def test_parse_current_stage_no_marker(tmp_projects_root, book):
+    """log 里没 PIPELINE marker 返回 None."""
+    log = pipeline.pipeline_log_path(book)
+    log.parent.mkdir(exist_ok=True)
+    log.write_text("just some lines\nno markers here\n", encoding="utf-8")
+    assert pipeline._parse_current_stage_from_log(book) is None
+
+
+def test_status_reflects_log_current_stage(tmp_projects_root, book):
+    """running 状态下, status() 从 log 读 latest marker 更新 current_stage."""
+    runner = pipeline.PipelineRunner()
+    state = runner.start(book, chapter_num=1, auto_rewrite=False)
+    try:
+        # 模拟 chapter.py 写了 1 个 marker
+        log = pipeline.pipeline_log_path(book)
+        with open(log, "ab") as f:
+            f.write(b"[PIPELINE] book=test_book ch=1 stage=writing status=start\n")
+        s = runner.status(book)
+        assert s["current_stage"] == "writing"
+    finally:
+        runner.cancel(book)

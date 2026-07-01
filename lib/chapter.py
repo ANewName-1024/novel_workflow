@@ -33,8 +33,10 @@ def write_chapter(
         raise ValueError(f"Chapter {chapter_num} not found in outline")
 
     # ── Build sliding-window context ──
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=context status=start")
     from .context import build_writing_context, estimate_context_tokens
     ctx = build_writing_context(book, chapter_num)
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=context status=done")
 
     system_prompt = CHAPTER_SYSTEM.format(
         chapter_id        = ctx["chapter_id"],
@@ -70,6 +72,7 @@ def write_chapter(
     print(f"  [Chapter {chapter_num}] 上下文策略: {win} | 估算输入: ~{est_in} tok")
     print(f"  [Chapter {chapter_num}] 关键事件: {ctx['key_events'][:60]}...")
 
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=writing status=start")
     text = llm.complete(
         prompt=user_prompt,
         system=system_prompt,
@@ -79,6 +82,7 @@ def write_chapter(
         # would stop generation right after the title.
         stop=["<stop>", "<END>", "### ", "---END---"],
     )
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=writing status=done")
 
     # Clean & save
     text = clean_chapter_text(text, ctx["chapter_title"], chapter_num)
@@ -87,6 +91,7 @@ def write_chapter(
     # ── Post-write pipeline ──
     run_post_write_pipeline(book, chapter_num, ctx["chapter_id"], llm, cfg)
 
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=done status=start")
     return text
 
 
@@ -106,6 +111,7 @@ def run_post_write_pipeline(
       5. If self_check enabled in config → run anti-drift check
     """
     # 1) Extract & merge
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=start")
     try:
         from . import extract as extmod
         text = storage.read_chapter(book, chapter_id) or ""
@@ -115,22 +121,30 @@ def run_post_write_pipeline(
               f"{len(extraction.get('new_events',[]))} 事件, "
               f"{len(extraction.get('new_foreshadowing',[]))} 伏笔, "
               f"{len(extraction.get('new_characters',[]))} 角色")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=done")
     except Exception as e:
         print(f"  ⚠ extract 失败 (非致命): {e}")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=failed")
 
     # 2) Generate rolling summary
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=start")
     try:
         summod.generate_chapter_summary(book, chapter_id, llm)
         print(f"  ✓ 章节摘要生成")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=done")
     except Exception as e:
         print(f"  ⚠ 摘要生成失败 (非致命): {e}")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=failed")
 
     # 3) Update state snapshot
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=start")
     try:
         statemod.update_state_after_chapter(book, chapter_num, llm)
         print(f"  ✓ 状态快照更新")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=done")
     except Exception as e:
         print(f"  ⚠ 状态更新失败 (非致命): {e}")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=failed")
 
     # 4) Style anchor (only after ch_001 first write)
     if chapter_num == 1 and not stylemod.get_style_anchor(book):
@@ -142,9 +156,11 @@ def run_post_write_pipeline(
 
     # 5) Self-check (optional, doubles per-chapter LLM calls)
     if cfg.get("self_check", False):
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=self_check status=start")
         try:
             result = scmod.self_check_chapter(book, chapter_id, llm)
             sev = result.get("severity", "unknown")
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=self_check status=done severity={sev}")
 
             # ── Auto-flag in review service (regardless of rewrite path) ──
             try:

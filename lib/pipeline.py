@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -144,6 +145,39 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+_PIPELINE_RE = re.compile(r"\[PIPELINE\]\s+book=(\S+)\s+ch=(\d+)\s+stage=(\S+)\s+status=(\S+)")
+
+
+def _parse_current_stage_from_log(book: str) -> Optional[str]:
+    """读 log 最后一行 PIPELINE marker, 返回 stage. 没有返回 None.
+
+    用于 status() 实时刷新 current_stage (而不是只能看初始 context).
+    """
+    path = pipeline_log_path(book)
+    if not path.exists():
+        return None
+    try:
+        # 从末尾读 2KB, 够覆盖最后几行
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 2048))
+            tail = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    # 倒序找最近的 PIPELINE marker
+    for line in reversed(tail.splitlines()):
+        m = _PIPELINE_RE.search(line)
+        if m:
+            stage = m.group(3)
+            status = m.group(4)
+            # 阶段完成 → 返回下一阶段上下文 (state 是 running)
+            # 简单起见: status=done/failed 表示这个 stage 结束, 返当前 stage
+            # dashboard 根据 status 决定是否进 next
+            return stage
+    return None
+
+
 # ── PipelineRunner 主体 ───────────────────────────────────────────────────
 
 class PipelineRunner:
@@ -232,6 +266,7 @@ class PipelineRunner:
         校准逻辑:
         - status=running 但 PID 已死 → 标 failed (exit_code=-1)
         - status=done/failed/cancelled → 直接返回
+        - running 时读 log 最后一行 PIPELINE marker 刷新 current_stage
         """
         state = _read_state(book)
         if state is None:
@@ -247,6 +282,11 @@ class PipelineRunner:
                 state["error"] = "进程异常退出 (无更新)"
                 _write_state(book, state)
                 _active.pop(book, None)
+            else:
+                # PID 还活着 → 从 log 读最新 PIPELINE marker 更新 current_stage
+                cur = _parse_current_stage_from_log(book)
+                if cur:
+                    state["current_stage"] = cur
         elif book in _active:
             # 不在 running 但 _active 还有, 清理
             _active.pop(book, None)
