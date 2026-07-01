@@ -6,6 +6,32 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ### Added (新增)
 
+**v1.1.1: Web 流水线管理面板 (M1-M5, 6 commits)**
+- `lib/pipeline.py` (350 行): PipelineRunner - 跨平台 1 本 1 进程调度
+  - start(book, ch) → subprocess 启动 novel.py write + 写 .pipeline_state.json
+  - status() → PID 死了自动标 failed (校准)
+  - cancel() → 跨平台杀进程树 (psutil + 5s grace)
+  - tail_log/stream_log → SSE 用 generator
+  - append_metric/get_metrics → metrics.jsonl 聚合
+- `review_ui/dashboard.py` (200 行): 6 个新 API + 1 页面
+  - POST /api/pipeline/start  POST /cancel  GET /status
+  - GET /api/pipeline/logs  GET /metrics  GET /logs/stream (SSE)
+  - GET /dashboard/<book>  → 渲染 dashboard.html
+- `review_ui/templates/dashboard.html` (530 行):
+  - 控制面板 + 状态详情 + 7 阶段进度条
+  - Chart.js Token 折线图 (7d)
+  - EventSource 实时日志 (500 行 buffer, auto-scroll)
+  - toast 通知 + 5s 状态轮询
+- `lib/chapter.py` 加 [PIPELINE] marker (8 阶段 start/done/failed)
+- `lib/llm.py` set_metrics_callback + set_stage_context (隐式 context)
+- `lib/pipeline.py` _parse_current_stage_from_log (实时刷 current_stage)
+- `lib/config_loader.py` + `config.yaml.example` 加 dashboard 节 (5 字段)
+- `requirements.txt` 加 psutil>=5.9
+
+总计: 6 commits (1cf07a4/bc19c16/7dd2ab8/709ad55/9302ccf)
+测试: 94 → 135 passed (+41 cases)
+设计文档: docs/DESIGN-v1.1-web-pipeline.md (481 行)
+
 **v1.1: 章节预览 + diff 增强统计**
 - `lib/storage.py`: `list_chapters()` 返回 `preview` 字段 (标题后第一段前 50 字符, 超过加 … 后缀)
 - `review_ui/app.py`: `_diff_stats()` 增加行级 + 字符级变动统计 (`lines_added/removed`, `chars_added/removed`, `net_change`)

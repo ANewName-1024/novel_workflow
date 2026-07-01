@@ -79,6 +79,23 @@ python novel.py serve my_book    # → http://127.0.0.1:21199/novel/
 | `/api/diff/<书>/<ch>` | JSON: unified diff |
 | `/api/batch-approve/<书>` | POST: 批量批准 `{chapters, reviewer, notes}` |
 
+**v1.1 流水线面板** (`/dashboard/<book>`):
+- 浏览器触发写章节 (替代 `python novel.py write`)
+- 实时日志流 (SSE / EventSource)
+- 7 阶段进度条 (context → writing → extract → summary → state → self_check → done)
+- Token 用量折线图 (Chart.js, 近 7 天 input/output)
+- 启动 / 取消 / 状态轮询 (5s 间隔)
+- 设计文档: `docs/DESIGN-v1.1-web-pipeline.md`
+
+| API | 用途 |
+|---|---|
+| `POST /api/pipeline/start/<book>` | 触发写 1 章节 (form: chapters, auto_rewrite) |
+| `POST /api/pipeline/cancel/<book>` | 杀子进程 + 标 cancelled (5s grace) |
+| `GET /api/pipeline/status/<book>` | 读 `.pipeline_state.json` + PID 校准 |
+| `GET /api/pipeline/logs/<book>?tail=100` | 返回 log 最后 N 行 (默认 100) |
+| `GET /api/pipeline/logs/<book>/stream` | SSE 流 (text/event-stream) |
+| `GET /api/pipeline/metrics/<book>?range=7d` | token 用量聚合 (calls / in / out / ms) |
+
 **Auth** (`config.yaml` 的 `review_ui.auth` 块):
 - `enabled: false` (默认) — 全部放行
 - `enabled: true` + `password: "..."` — 走 `/login` 表单登录, 兼容 `Authorization: Basic ...` header
