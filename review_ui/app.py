@@ -45,7 +45,7 @@ app = Flask(
 )
 
 # v1.1: 注册 dashboard 蓝图 (流水线面板 API)
-from .dashboard import dashboard_bp  # noqa: E402
+from dashboard import dashboard_bp  # noqa: E402
 app.register_blueprint(dashboard_bp)
 # session secret for login cookies. Use env, fallback to stable dev key.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-in-prod")
