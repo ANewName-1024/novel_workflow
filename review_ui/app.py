@@ -44,8 +44,10 @@ app = Flask(
     static_folder=str(Path(__file__).resolve().parent / "static"),
 )
 
-# v1.1: 注册 dashboard 蓝图 (流水线面板 API)
-from dashboard import dashboard_bp  # noqa: E402
+# v1.1: 注册 dashboard 蓝图 (流水线面板 API).
+# 用相对导入 (review_ui.dashboard) — review_ui/ 现在有 __init__.py 是真 package,
+# pytest 跟 importlib 加载方式都能解析 (修复 v1.1.2 引入的 namespace package regression).
+from .dashboard import dashboard_bp  # noqa: E402
 app.register_blueprint(dashboard_bp)
 # session secret for login cookies. Use env, fallback to stable dev key.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-in-prod")

@@ -637,14 +637,16 @@ def cmd_serve(args: argparse.Namespace) -> None:
     app_path = review_ui_dir / "app.py"
     if not app_path.exists():
         raise NovelError(ErrorCode.NOT_FOUND, f"找不到 {app_path}")
-    sys.argv = ["app.py", "--host", host, "--port", str(port)]
+    sys.argv = ["review_ui.app", "--host", host, "--port", str(port)]
     if args.debug:
         sys.argv.append("--debug")
-    sys.path.insert(0, str(review_ui_dir))
+    # 把 novel_workflow/ ROOT 加 sys.path, 让 review_ui 当真 package 加载
+    # (review_ui/ 有 __init__.py, 不是 namespace package)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     import importlib
-    if "app" in sys.modules:
-        del sys.modules["app"]
-    app_mod = importlib.import_module("app")
+    if "review_ui.app" in sys.modules:
+        del sys.modules["review_ui.app"]
+    app_mod = importlib.import_module("review_ui.app")
     if hasattr(app_mod, "main"):
         app_mod.main()
     else:
