@@ -32,6 +32,17 @@ def write_chapter(
     if not ch_info:
         raise ValueError(f"Chapter {chapter_num} not found in outline")
 
+    # v1.1: 注入 metrics callback (LLM 调用后写 metrics.jsonl)
+    from .pipeline import get_runner
+    _runner = get_runner()
+    _book_for_cb = book
+    llm.set_metrics_callback(
+        lambda stage, ch, model, input_tokens, output_tokens, latency_ms:
+            _runner.append_metric(_book_for_cb, stage=stage, ch=ch, model=model,
+                                  input_tokens=input_tokens, output_tokens=output_tokens,
+                                  latency_ms=latency_ms)
+    )
+
     # ── Build sliding-window context ──
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=context status=start")
     from .context import build_writing_context, estimate_context_tokens
@@ -73,6 +84,7 @@ def write_chapter(
     print(f"  [Chapter {chapter_num}] 关键事件: {ctx['key_events'][:60]}...")
 
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=writing status=start")
+    llm.set_stage_context("writing", chapter_num)
     text = llm.complete(
         prompt=user_prompt,
         system=system_prompt,
@@ -112,6 +124,7 @@ def run_post_write_pipeline(
     """
     # 1) Extract & merge
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=start")
+    llm.set_stage_context("extract", chapter_num)
     try:
         from . import extract as extmod
         text = storage.read_chapter(book, chapter_id) or ""
@@ -128,6 +141,7 @@ def run_post_write_pipeline(
 
     # 2) Generate rolling summary
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=start")
+    llm.set_stage_context("summary", chapter_num)
     try:
         summod.generate_chapter_summary(book, chapter_id, llm)
         print(f"  ✓ 章节摘要生成")
@@ -138,6 +152,7 @@ def run_post_write_pipeline(
 
     # 3) Update state snapshot
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=start")
+    llm.set_stage_context("state", chapter_num)
     try:
         statemod.update_state_after_chapter(book, chapter_num, llm)
         print(f"  ✓ 状态快照更新")
@@ -148,6 +163,7 @@ def run_post_write_pipeline(
 
     # 4) Style anchor (only after ch_001 first write)
     if chapter_num == 1 and not stylemod.get_style_anchor(book):
+        llm.set_stage_context("style_anchor", chapter_num)
         try:
             stylemod.extract_style_anchor(book, llm)
             print(f"  ✓ 风格锚点已建立 (基于第 1 章)")
@@ -157,6 +173,7 @@ def run_post_write_pipeline(
     # 5) Self-check (optional, doubles per-chapter LLM calls)
     if cfg.get("self_check", False):
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=self_check status=start")
+        llm.set_stage_context("self_check", chapter_num)
         try:
             result = scmod.self_check_chapter(book, chapter_id, llm)
             sev = result.get("severity", "unknown")
