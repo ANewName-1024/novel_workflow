@@ -8,7 +8,8 @@ import json, re, uuid
 from pathlib import Path
 from typing import Any, Optional
 
-ROOT = Path(__file__).parent.parent / "projects"
+PROJECTS_ROOT = Path(__file__).parent.parent / "projects"
+ROOT = PROJECTS_ROOT  # alias; code uses ROOT throughout
 
 # ── path helpers ────────────────────────────────────────────────────────────
 
