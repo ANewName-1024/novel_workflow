@@ -24,7 +24,7 @@ Options for init:
   --language TEXT     语言（默认：zh）
 """
 from __future__ import annotations
-import sys, os, json, argparse, datetime
+import sys, os, json, argparse, datetime, logging
 from pathlib import Path
 
 # Add lib to path
@@ -35,6 +35,8 @@ from lib import review as revmod, extract as extmod
 from lib import context as ctxmod, summary as summod, state as statemod
 from lib import style as stylemod, self_check as scmod
 from lib.llm import LLM, get_llm
+from lib.errors import ErrorCode, NovelError
+from lib.logging_setup import setup_logging
 
 VERSION = "0.1.0"
 
@@ -166,13 +168,11 @@ def parse_args() -> argparse.Namespace:
 def cmd_init(args: argparse.Namespace) -> None:
     book = args.book
     if not args.main_plot:
-        print("错误：--main-plot 是必填参数")
-        sys.exit(1)
+        raise NovelError(ErrorCode.INVALID_ARGS, "--main-plot 是必填参数")
     if storage.project_exists(book):
         print(f"项目 [{book}] 已存在，覆盖中…")
     if not args.main_plot.strip():
-        print("错误：--main-plot 不能为空")
-        sys.exit(1)
+        raise NovelError(ErrorCode.INVALID_ARGS, "--main-plot 不能为空")
 
     api_base = args.api_base or "http://127.0.0.1:60443/v1"
     llm_model = args.llm_model or "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
@@ -202,13 +202,12 @@ def cmd_outline(args: argparse.Namespace) -> None:
     book = args.book
     cfg  = storage.read_json(book, "config.json")
     if not cfg:
-        print(f"项目 [{book}] 不存在，请先运行 init")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在", detail="请先运行 init")
     ol = storage.read_json(book, "outline.json")
     if ol and not args.regenerate:
         print(f"大纲已存在（{len(ol.get('chapters',[]))} 章），跳过。\n"
               f"如需重新生成加 --regenerate")
-        sys.exit(0)
+        return  # 正常跳过, 不算错误
 
     llm = LLM(model=cfg.get("llm_model",""), api_base=cfg.get("api_base",""))
     print(f"LLM: {cfg.get('llm_model')} | {cfg.get('api_base')}")
@@ -250,8 +249,7 @@ def cmd_write(args: argparse.Namespace) -> None:
     ol   = storage.read_json(book, "outline.json")
     prog = storage.read_json(book, "progress.json") or {}
     if not cfg or not ol:
-        print(f"项目 [{book}] 未初始化大纲，请先运行 outline")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 未初始化大纲", detail="请先运行 outline")
 
     llm = LLM(model=cfg.get("llm_model",""), api_base=cfg.get("api_base",""))
     print(f"LLM: {cfg.get('llm_model')}")
@@ -312,7 +310,7 @@ def cmd_write(args: argparse.Namespace) -> None:
             print(f"  ✗ 失败: {e}")
             if not args.auto_continue:
                 print("中断。修复后可运行 continue 从断点继续。")
-                sys.exit(1)
+                raise NovelError(ErrorCode.LLM_FAILURE, f"第 {i} 章撰写失败", detail=str(e))
 
     # Final progress
     prog["phase"] = "done" if len(prog.get("chapters_completed",[])) >= prog.get("total_chapters",0) else "writing"
@@ -332,8 +330,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     book = args.book
     cfg  = storage.read_json(book, "config.json")
     if not cfg:
-        print(f"项目 [{book}] 不存在")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在")
     llm = LLM(model=cfg.get("llm_model",""), api_base=cfg.get("api_base",""))
 
     if args.chapter:
@@ -350,8 +347,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     prog = storage.read_json(book, "progress.json")
     ol   = storage.read_json(book, "outline.json")
     if not cfg:
-        print(f"项目 [{book}] 不存在")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在")
 
     print(f"\n{'═'*50}")
     print(f"  《{cfg.get('book_name', book)}》")
@@ -416,14 +412,12 @@ def cmd_config(args: argparse.Namespace) -> None:
     book = args.book
     cfg  = storage.read_json(book, "config.json")
     if not cfg:
-        print(f"项目 [{book}] 不存在")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在")
     if args.kv:
         key, _, val = args.kv.partition("=")
         key = key.strip()
         if not key:
-            print("用法: novel.py config <书名> key=value")
-            sys.exit(1)
+            raise NovelError(ErrorCode.INVALID_ARGS, "用法: novel.py config <书名> key=value")
         # Type inference
         if val.isdigit():
             val = int(val)
@@ -439,8 +433,7 @@ def cmd_export(args: argparse.Namespace) -> None:
     book = args.book
     chapters = storage.list_chapters(book)
     if not chapters:
-        print("没有章节可导出")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 没有章节可导出")
     cfg = storage.read_json(book, "config.json") or {}
 
     out_path = storage.project_root(book) / f"{book}_全书.md"
@@ -494,8 +487,7 @@ def cmd_review_queue(args: argparse.Namespace) -> None:
     from lib import review_service as revserv
     book = args.book
     if not storage.project_exists(book):
-        print(f"项目 [{book}] 不存在")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在")
     _ensure_review_for_existing(book)
     queue = revserv.get_review_queue(book)
     print(revserv.render_queue(book, queue))
@@ -507,8 +499,7 @@ def cmd_review_show(args: argparse.Namespace) -> None:
     _ensure_review_for_existing(book)
     record = revserv.get_review(book, chapter_id)
     if not record:
-        print(f"未找到 {chapter_id} 的评审记录")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"未找到 {chapter_id} 的评审记录")
     print(revserv.format_review_record(
         book, record, include_chapter=True,
         chapter_text_chars=100000 if args.full else 800,
@@ -535,12 +526,10 @@ def cmd_review_edit(args: argparse.Namespace) -> None:
     chapter_id = args.chapter
     src = Path(args.file)
     if not src.exists():
-        print(f"文件不存在: {src}")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"文件不存在: {src}")
     new_text = src.read_text(encoding="utf-8").strip()
     if not new_text:
-        print("文件为空")
-        sys.exit(1)
+        raise NovelError(ErrorCode.INVALID_ARGS, f"文件为空: {src}")
     record = revserv.edit(book, chapter_id, args.reviewer, new_text, args.notes)
     print(f"✓ {chapter_id} 已保存人工版本 ({len(new_text)} 字)")
     print(f"  位置: reviews/{chapter_id}.v2.md")
@@ -572,8 +561,7 @@ def cmd_review_history(args: argparse.Namespace) -> None:
     if args.chapter:
         record = revserv.get_review(book, args.chapter)
         if not record:
-            print(f"未找到 {args.chapter} 的评审记录")
-            sys.exit(1)
+            raise NovelError(ErrorCode.NOT_FOUND, f"未找到 {args.chapter} 的评审记录")
         print(revserv.format_review_record(book, record, include_chapter=False))
     else:
         stats = revserv.get_review_stats(book)
@@ -648,8 +636,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     review_ui_dir = Path(__file__).resolve().parent / "review_ui"
     app_path = review_ui_dir / "app.py"
     if not app_path.exists():
-        print(f"\u274c 找不到 {app_path}")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"找不到 {app_path}")
     sys.argv = ["app.py", "--host", host, "--port", str(port)]
     if args.debug:
         sys.argv.append("--debug")
@@ -674,8 +661,7 @@ def cmd_backup(args: argparse.Namespace) -> None:
     book = args.book
     proj_root = storage.project_root(book)
     if not proj_root.exists():
-        print(f"\u274c 项目 [{book}] 不存在")
-        sys.exit(1)
+        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在")
     backup_dir = proj_root / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -709,6 +695,37 @@ def main() -> None:
     if args.version:
         print(f"novel.py v{VERSION}")
         return
+
+    # Windows 默认 stdout 是 GBK, 中文字符 / emoji 会炸.
+    # chcp 65001 不影响已启动进程, 只能这里 reconfigure.
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    # 初始化日志 (单例, 配置来自 config.yaml)
+    setup_logging()
+    log = logging.getLogger("novel.cli")
+
+    try:
+        _dispatch(args, log)
+    except NovelError as e:
+        log.error(str(e))
+        if e.detail:
+            log.debug("detail: %s", e.detail)
+        sys.exit(e.code)
+    except KeyboardInterrupt:
+        print("\n用户中断", file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:
+        log.exception("未处理异常: %s", e)
+        sys.exit(ErrorCode.GENERIC)
+
+
+def _dispatch(args: argparse.Namespace, log: logging.Logger) -> None:
+    """分发到子命令. raise NovelError → main() 顶层捕获."""
     cmd = args.cmd
     if cmd == "init":
         cmd_init(args)
@@ -730,8 +747,7 @@ def main() -> None:
         book = args.book
         chapters = storage.list_chapters(book)
         if not chapters:
-            print("无章节")
-            sys.exit(1)
+            raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 无章节, 无可提取")
         last = chapters[-1]["id"]
         text = storage.read_chapter(book, last) or ""
         cfg  = storage.read_json(book, "config.json") or {}
@@ -763,8 +779,7 @@ def main() -> None:
     elif cmd == "backup":
         cmd_backup(args)
     else:
-        print(f"未知命令: {cmd}")
-        sys.exit(1)
+        raise NovelError(ErrorCode.INVALID_ARGS, f"未知命令: {cmd}")
 
 if __name__ == "__main__":
     main()
