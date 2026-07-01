@@ -210,3 +210,40 @@ def test_start_401_when_auth_enabled_empty_password(client, monkeypatch, tmp_pro
     r = client.post("/api/pipeline/start/test_book", data={"chapters": "1"})
     # 没 Authorization header, 也没 session, 应 401
     assert r.status_code == 401
+
+
+# ── 11. dashboard.html 页面 ─────────────────────────────────────────────
+
+def test_dashboard_page_renders(client, auth_disabled, tmp_projects_root):
+    """GET /dashboard/<book> 渲染 dashboard.html (含 Chart.js / EventSource)."""
+    r = client.get("/dashboard/test_book")
+    assert r.status_code == 200
+    body = r.data.decode("utf-8")
+    # 包含关键 DOM 元素
+    assert "流水线面板" in body
+    assert 'id="stagesBar"' in body
+    assert 'id="logView"' in body
+    assert 'id="metricsChart"' in body
+    # 包含 JS
+    assert "EventSource" in body
+    assert "Chart.js" in body or "chart.js" in body.lower() or "chart.umd" in body
+    # 包含 next_chapter 变量
+    assert "next_chapter" in body or "chapterInput" in body
+
+
+def test_dashboard_page_nonexistent_book_404(client, auth_disabled, tmp_projects_root):
+    """不存在的项目返回 404."""
+    r = client.get("/dashboard/no_such_book")
+    assert r.status_code == 404
+
+
+def test_dashboard_page_next_chapter_from_progress(client, auth_disabled, tmp_projects_root):
+    """进度 current_chapter=7 → next_chapter=8."""
+    storage.write_json("test_book", "progress.json", {
+        "phase": "writing", "current_chapter": 7, "total_chapters": 20,
+        "chapters_completed": ["ch_001", "ch_002"], "last_updated": "2026-07-01"
+    })
+    r = client.get("/dashboard/test_book")
+    body = r.data.decode("utf-8")
+    # next_chapter=8 应该是默认值
+    assert 'value="8"' in body

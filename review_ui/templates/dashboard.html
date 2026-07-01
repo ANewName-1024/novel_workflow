@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0e1217">
+<title>{{ book }} - 流水线面板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+  --text: #d6de6; --muted: #7d8a9a; --accent: #4ea3ff;
+  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px);
+}
+.back { color: var(--accent); text-decoration: none; font-size: 14px;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 6px; }
+.back:active { background: var(--panel2); }
+h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
+.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
+@media (max-width: 600px) {
+  .container { padding: 12px 14px; }
+  header { padding: 12px 14px; }
+  h1 { font-size: 17px; }
+}
+
+/* ── 通用卡片 ────────────────────────────────────────────── */
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;
+}
+.card h2 {
+  font-size: 14px; font-weight: 600; margin: 0 0 10px;
+  color: var(--muted); display: flex; align-items: center; gap: 6px;
+}
+.card h2 .badge {
+  background: var(--panel2); color: var(--text); padding: 2px 8px;
+  border-radius: 4px; font-size: 11px; font-weight: 500;
+}
+.badge.running { color: var(--accent); }
+.badge.done { color: var(--ok); }
+.badge.failed { color: var(--crit); }
+.badge.cancelled { color: var(--warn); }
+.badge.idle { color: var(--muted); }
+
+/* ── 控制面板 ────────────────────────────────────────────── */
+.control-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.control-row .status-text { flex: 1; color: var(--muted); font-size: 13px; min-width: 200px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 36px; padding: 8px 16px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 13px; font-weight: 500;
+  cursor: pointer; background: var(--panel2); color: var(--text);
+  transition: all 0.15s;
+}
+.btn:hover { background: var(--border); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--accent); color: #0e1217; border-color: var(--accent); }
+.btn.primary:hover { background: #6cb4ff; }
+.btn.danger { background: var(--crit); color: white; border-color: var(--crit); }
+.btn.danger:hover { background: #ff8585; }
+input[type="number"] {
+  width: 70px; padding: 6px 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-size: 13px;
+}
+label { font-size: 12px; color: var(--muted); }
+
+/* ── 进度条 ────────────────────────────────────────────── */
+.stages { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.stage {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--panel2); font-size: 12px; color: var(--muted);
+  display: flex; align-items: center; gap: 4px;
+}
+.stage.done { color: var(--ok); border-color: var(--ok); }
+.stage.active { color: var(--accent); border-color: var(--accent); animation: pulse 1.5s infinite; }
+.stage.failed { color: var(--crit); border-color: var(--crit); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.stage-arrow { color: var(--muted); }
+
+/* ── Token 图表 ────────────────────────────────────────────── */
+.chart-wrap { position: relative; height: 200px; }
+.metrics-summary { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+/* ── 实时日志 ────────────────────────────────────────────── */
+.log-controls { display: flex; gap: 8px; margin-bottom: 8px; }
+.log {
+  background: #0a0d12; border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px 12px; font-family: "JetBrains Mono", "Consolas", "Microsoft YaHei Mono", monospace;
+  font-size: 12px; line-height: 1.5; max-height: 400px; overflow-y: auto;
+  color: var(--text); white-space: pre-wrap; word-break: break-all;
+}
+.log .line { display: block; }
+.log .line.pipeline { color: var(--accent); }
+.log .line.error { color: var(--crit); }
+.log .line.warn { color: var(--warn); }
+
+/* ── 状态详情 ────────────────────────────────────────────── */
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.detail-cell { background: var(--panel2); padding: 8px 10px; border-radius: 4px; }
+.detail-cell .label { color: var(--muted); font-size: 11px; }
+.detail-cell .value { font-size: 14px; font-weight: 600; margin-top: 2px; word-break: break-all; }
+
+/* ── 错误/提示 ────────────────────────────────────────────── */
+.toast {
+  position: fixed; top: 20px; right: 20px; padding: 10px 16px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; z-index: 100; min-width: 200px; max-width: 360px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.toast.success { border-color: var(--ok); color: var(--ok); }
+.toast.error { border-color: var(--crit); color: var(--crit); }
+</style>
+</head>
+<body>
+<header>
+  <a href="/book/{{ book }}" class="back">← 返回评审</a>
+  <h1>⚙️ {{ book }} — 流水线面板</h1>
+  <div class="subtitle">
+    <span>实时进度 / 日志 / Token 用量</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ── 1. 控制面板 ── -->
+  <div class="card">
+    <h2>📋 控制面板 <span id="statusBadge" class="badge idle">idle</span></h2>
+    <div class="control-row">
+      <label>写章节号: <input type="number" id="chapterInput" min="1" value="{{ next_chapter or 1 }}"></label>
+      <label><input type="checkbox" id="autoRewriteChk" checked> auto_rewrite</label>
+      <button id="startBtn" class="btn primary">▶ 写这一章</button>
+      <button id="cancelBtn" class="btn danger" disabled>⏹ 取消</button>
+      <button id="refreshBtn" class="btn">🔄 刷新状态</button>
+      <span id="statusText" class="status-text">加载中…</span>
+    </div>
+  </div>
+
+  <!-- ── 2. 流水线状态详情 ── -->
+  <div class="card">
+    <h2>📊 状态详情</h2>
+    <div id="detailGrid" class="detail-grid">
+      <div class="detail-cell"><div class="label">PID</div><div class="value" id="dPid">—</div></div>
+      <div class="detail-cell"><div class="label">当前章</div><div class="value" id="dCh">—</div></div>
+      <div class="detail-cell"><div class="label">当前阶段</div><div class="value" id="dStage">—</div></div>
+      <div class="detail-cell"><div class="label">开始时间</div><div class="value" id="dStart">—</div></div>
+      <div class="detail-cell"><div class="label">结束时间</div><div class="value" id="dEnd">—</div></div>
+      <div class="detail-cell"><div class="label">退出码</div><div class="value" id="dExit">—</div></div>
+    </div>
+  </div>
+
+  <!-- ── 3. 进度条 (6 阶段) ── -->
+  <div class="card">
+    <h2>🎯 流水线进度</h2>
+    <div class="stages" id="stagesBar">
+      <div class="stage" data-stage="context">context</div>
+      <div class="stage-arrow">→</div>
+      <div class="stage" data-stage="writing">writing</div>
+      <div class="stage-arrow">→</div>
+      <div class="stage" data-stage="extract">extract</div>
+      <div class="stage-arrow">→</div>
+      <div class="stage" data-stage="summary">summary</div>
+      <div class="stage-arrow">→</div>
+      <div class="stage" data-stage="state">state</div>
+      <div class="stage-arrow">→</div>
+      <div class="stage" data-stage="self_check">self_check</div>
+      <div class="stage-arrow">→</div>
+      <div class="stage" data-stage="done">done</div>
+    </div>
+    <div id="stageHint" style="margin-top:8px;color:var(--muted);font-size:12px;">未运行</div>
+  </div>
+
+  <!-- ── 4. Token 用量图 ── -->
+  <div class="card">
+    <h2>📈 Token 用量 (近 7 天)</h2>
+    <div class="chart-wrap"><canvas id="metricsChart"></canvas></div>
+    <div id="metricsSummary" class="metrics-summary">加载中…</div>
+  </div>
+
+  <!-- ── 5. 实时日志 ── -->
+  <div class="card">
+    <h2>📜 实时日志 <span id="logCount" class="badge">0 行</span></h2>
+    <div class="log-controls">
+      <button id="logClearBtn" class="btn">清空视图</button>
+      <label style="display:flex;align-items:center;gap:4px;">
+        <input type="checkbox" id="logAutoscroll" checked> 自动滚动到底
+      </label>
+    </div>
+    <pre class="log" id="logView"></pre>
+  </div>
+
+</div>
+
+<script>
+const BOOK = {{ book|tojson }};
+const API = {
+  start: (ch, autoRw) => fetch(`/api/pipeline/start/${encodeURIComponent(BOOK)}`, {
+    method: 'POST', body: new URLSearchParams({chapters: ch, auto_rewrite: autoRw})
+  }),
+  cancel: () => fetch(`/api/pipeline/cancel/${encodeURIComponent(BOOK)}`, {method: 'POST'}),
+  status: () => fetch(`/api/pipeline/status/${encodeURIComponent(BOOK)}`).then(r => r.json()),
+  logs: (tail) => fetch(`/api/pipeline/logs/${encodeURIComponent(BOOK)}?tail=${tail}`).then(r => r.json()),
+  metrics: (range) => fetch(`/api/pipeline/metrics/${encodeURIComponent(BOOK)}?range=${range}`).then(r => r.json()),
+};
+
+const STAGE_ORDER = ['context', 'writing', 'extract', 'summary', 'state', 'self_check', 'done'];
+
+// ── toast ──────────────────────────────────────────────────────────────
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── 状态 / 进度条渲染 ──────────────────────────────────────────────────
+function renderStatus(state) {
+  const badge = document.getElementById('statusBadge');
+  const text = document.getElementById('statusText');
+  const startBtn = document.getElementById('startBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const dPid = document.getElementById('dPid');
+  const dCh = document.getElementById('dCh');
+  const dStage = document.getElementById('dStage');
+  const dStart = document.getElementById('dStart');
+  const dEnd = document.getElementById('dEnd');
+  const dExit = document.getElementById('dExit');
+
+  if (!state) {
+    badge.className = 'badge idle'; badge.textContent = 'idle';
+    text.textContent = '没有流水线记录 (从未启动)';
+    startBtn.disabled = false; cancelBtn.disabled = true;
+    dPid.textContent = dCh.textContent = dStage.textContent = dStart.textContent = dEnd.textContent = dExit.textContent = '—';
+    setStagesProgress(null);
+    return;
+  }
+
+  badge.className = `badge ${state.status}`; badge.textContent = state.status;
+  if (state.status === 'running') {
+    text.textContent = `运行中 (PID ${state.pid}) — 阶段: ${state.current_stage || '?'}`;
+    startBtn.disabled = true; cancelBtn.disabled = false;
+  } else {
+    text.textContent = `上次: ${state.status} (${state.ended_at || '?'})`;
+    startBtn.disabled = false; cancelBtn.disabled = true;
+  }
+  dPid.textContent = state.pid || '—';
+  dCh.textContent = state.current_chapter || '—';
+  dStage.textContent = state.current_stage || '—';
+  dStart.textContent = state.started_at || '—';
+  dEnd.textContent = state.ended_at || '—';
+  dExit.textContent = state.exit_code ?? '—';
+
+  setStagesProgress(state);
+}
+
+function setStagesProgress(state) {
+  const stages = document.querySelectorAll('#stagesBar .stage');
+  stages.forEach(el => el.className = 'stage');
+  if (!state) { document.getElementById('stageHint').textContent = '未运行'; return; }
+  if (state.status === 'done') {
+    stages.forEach(el => el.classList.add('done'));
+    document.getElementById('stageHint').textContent = '✓ 全部完成';
+  } else if (state.status === 'failed') {
+    stages.forEach(el => { if (el.dataset.stage !== 'done') el.classList.add('failed'); });
+    document.getElementById('stageHint').textContent = '✗ 失败: ' + (state.error || 'unknown');
+  } else if (state.status === 'cancelled') {
+    stages.forEach(el => { if (el.dataset.stage !== 'done') el.classList.add('failed'); });
+    document.getElementById('stageHint').textContent = '⏹ 已取消';
+  } else if (state.status === 'running') {
+    const cur = state.current_stage || 'context';
+    let past = true;
+    for (const el of stages) {
+      if (el.dataset.stage === cur) {
+        el.classList.add('active'); past = false; break;
+      } else if (past) {
+        el.classList.add('done');
+      }
+    }
+    document.getElementById('stageHint').textContent = `▶ 跑在 ${cur}`;
+  }
+}
+
+// ── 日志视图 ────────────────────────────────────────────────────────────
+const LOG_MAX = 500;
+let logLines = [];
+
+function appendLog(text) {
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    logLines.push(line);
+    if (logLines.length > LOG_MAX) logLines = logLines.slice(-LOG_MAX);
+  }
+  const el = document.getElementById('logView');
+  el.innerHTML = logLines.map(formatLogLine).join('\n');
+  document.getElementById('logCount').textContent = `${logLines.length} 行`;
+  if (document.getElementById('logAutoscroll').checked) el.scrollTop = el.scrollHeight;
+}
+
+function formatLogLine(line) {
+  // escape HTML
+  const esc = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  if (line.includes('[PIPELINE]')) return `<span class="line pipeline">${esc}</span>`;
+  if (line.includes('⚠') || line.includes('Error') || line.includes('Traceback')) return `<span class="line warn">${esc}</span>`;
+  return `<span class="line">${esc}</span>`;
+}
+
+async function loadInitialLogs() {
+  const data = await API.logs(100);
+  logLines = data.lines || [];
+  const el = document.getElementById('logView');
+  el.innerHTML = logLines.map(formatLogLine).join('\n');
+  document.getElementById('logCount').textContent = `${logLines.length} 行`;
+  if (data.lines.length) el.scrollTop = el.scrollHeight;
+}
+
+// ── SSE ─────────────────────────────────────────────────────────────────
+let evtSource = null;
+function startSSE() {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource(`/api/pipeline/logs/${encodeURIComponent(BOOK)}/stream`);
+  evtSource.onmessage = (e) => appendLog(e.data);
+  evtSource.addEventListener('end', () => {
+    evtSource.close();
+    evtSource = null;
+    refreshStatus();
+  });
+  evtSource.addEventListener('error', (e) => {
+    // 1.1 简单处理: 错误时关闭, 5s 后重连
+    if (evtSource) evtSource.close();
+    evtSource = null;
+    setTimeout(() => { if (document.getElementById('statusBadge').textContent === 'running') startSSE(); }, 5000);
+  });
+}
+
+// ── Chart.js ────────────────────────────────────────────────────────────
+let metricsChart = null;
+async function loadMetrics() {
+  const data = await API.metrics('7d');
+  const labels = data.chapters.map(c => `ch${c.ch}`);
+  const inData = data.chapters.map(c => c.input_tokens);
+  const outData = data.chapters.map(c => c.output_tokens);
+  if (!metricsChart) {
+    const ctx = document.getElementById('metricsChart').getContext('2d');
+    metricsChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {label: 'input', data: inData, borderColor: '#4ea3ff', backgroundColor: 'rgba(78,163,255,0.1)', tension: 0.3, fill: true},
+          {label: 'output', data: outData, borderColor: '#6dd99b', backgroundColor: 'rgba(109,217,155,0.1)', tension: 0.3, fill: true},
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {legend: {labels: {color: '#d6de6'}}},
+        scales: {
+          x: {ticks: {color: '#7d8a9a'}, grid: {color: '#2a3440'}},
+          y: {ticks: {color: '#7d8a9a'}, grid: {color: '#2a3440'}, beginAtZero: true},
+        },
+      },
+    });
+  } else {
+    metricsChart.data.labels = labels;
+    metricsChart.data.datasets[0].data = inData;
+    metricsChart.data.datasets[1].data = outData;
+    metricsChart.update();
+  }
+  document.getElementById('metricsSummary').textContent =
+    `总: input ${data.total_in.toLocaleString()} / output ${data.total_out.toLocaleString()} / ${data.calls} 次调用`;
+}
+
+// ── 控制 ────────────────────────────────────────────────────────────────
+async function refreshStatus() {
+  const data = await API.status();
+  renderStatus(data.state);
+  // 如果刚转 running, 启动 SSE
+  if (data.state && data.state.status === 'running' && !evtSource) {
+    appendLog('\n[SSE] 流水线开始, 接管日志流…\n');
+    startSSE();
+  } else if (data.state && data.state.status !== 'running' && evtSource) {
+    evtSource.close(); evtSource = null;
+  }
+  // 刷新 token 图表
+  loadMetrics();
+}
+
+document.getElementById('startBtn').onclick = async () => {
+  const ch = document.getElementById('chapterInput').value;
+  const autoRw = document.getElementById('autoRewriteChk').checked;
+  const r = await API.start(ch, autoRw);
+  const data = await r.json();
+  if (data.ok) {
+    toast('已触发 ch' + ch);
+    await refreshStatus();
+  } else {
+    toast('启动失败: ' + (data.error || JSON.stringify(data)), 'error');
+  }
+};
+
+document.getElementById('cancelBtn').onclick = async () => {
+  if (!confirm('确认取消当前流水线?')) return;
+  const r = await API.cancel();
+  const data = await r.json();
+  if (data.ok) {
+    toast('已取消');
+    if (evtSource) { evtSource.close(); evtSource = null; }
+    await refreshStatus();
+  } else {
+    toast('取消失败: ' + (data.error || JSON.stringify(data)), 'error');
+  }
+};
+
+document.getElementById('refreshBtn').onclick = refreshStatus;
+document.getElementById('logClearBtn').onclick = () => {
+  logLines = [];
+  document.getElementById('logView').innerHTML = '';
+  document.getElementById('logCount').textContent = '0 行';
+};
+
+// ── 启动 ────────────────────────────────────────────────────────────────
+(async function init() {
+  await loadInitialLogs();
+  await refreshStatus();
+  // 5s 轮询 status (SSE 接管 log 后, status 仍要更新)
+  setInterval(refreshStatus, 5000);
+})();
+</script>
+</body>
+</html>

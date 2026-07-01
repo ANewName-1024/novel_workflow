@@ -18,14 +18,25 @@ import json
 import time
 from pathlib import Path
 
-from flask import Blueprint, Response, jsonify, request, stream_with_context
+from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
-from lib import pipeline
+from lib import pipeline, storage
 from lib.config_loader import get_config
 from lib.errors import ErrorCode, NovelError
 
 # url_prefix 留空, 路由里手写 /api/pipeline/...
 dashboard_bp = Blueprint("dashboard", __name__)
+
+
+@dashboard_bp.route("/dashboard/<book>")
+def dashboard_page(book):
+    """流水线面板页面."""
+    if not storage.project_exists(book):
+        return f"<h1>项目 [{book}] 不存在</h1>", 404
+    # 下一章节: progress.current_chapter + 1 (从 storage 读)
+    prog = storage.read_json(book, "progress.json") or {}
+    next_ch = (prog.get("current_chapter") or 0) + 1
+    return render_template("dashboard.html", book=book, next_chapter=next_ch)
 
 
 def _dashboard_cfg() -> dict:
