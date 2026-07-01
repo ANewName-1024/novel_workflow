@@ -58,7 +58,7 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
   - Chart.js Token 折线图 (7d)
   - EventSource 实时日志 (500 行 buffer, auto-scroll)
   - toast 通知 + 5s 状态轮询
-- `lib/chapter.py` 加 [PIPELINE] marker (8 阶段 start/done/failed)
+- `lib/chapter.py` 加 [PIPELINE] marker (8 阶段 start/done/failed) (commit 709ad55)
 - `lib/llm.py` set_metrics_callback + set_stage_context (隐式 context)
 - `lib/pipeline.py` _parse_current_stage_from_log (实时刷 current_stage)
 - `lib/config_loader.py` + `config.yaml.example` 加 dashboard 节 (5 字段)
