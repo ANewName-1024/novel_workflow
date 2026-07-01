@@ -6,6 +6,42 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ### Added (新增)
 
+**v1.2: 精细化管理 (实体/版本/状态机)** — 设计阶段, 见 `docs/IMPLEMENTATION-v1.1-to-v2.0.md`
+
+## [1.1.2] - 2026-07-02
+
+锁稳定版本 — 让 v1.1 dashboard 真正 release-ready
+
+### Added (新增)
+
+**实施计划 v1.1.2 → v2.0** (commit bf8a2c3)
+- `docs/IMPLEMENTATION-v1.1-to-v2.0.md` (239 行): 三阶段路线图
+- 4 决策点确认: Vue 3 SPA / RQ 队列 / SQLite + 文件 / 单人→多人只读渐进
+- v1.1.2 (3天锁稳定) → v1.2 (2周精细化管理) → v2.0 (4周 Vue3 全量)
+- scripts/_start_review_ui.py (25 行): 后台启动 review_ui 标准脚本
+
+**v1.1.x Lessons 沉淀** (落到 `D:\self-improving\domains\novel-workflow.md`)
+- L70: subprocess DETACHED_PROCESS + log 没开 `ab` mode → 黑洞化
+- L72: Dashboard E2E 观察窗口 ≥ 5min (不能凭短时间无输出判死)
+- L73: 触发写章节前先看 stale pid (任何 long-running 任务必做)
+- L74: 看到 "xxx 是 Python package 目录", 必加 `__init__.py` (PEP 420 namespace package 是坑)
+- L75: 改 import 路径必跑 "novel.py serve + pytest collect" 双场景测试
+
+### Fixed (修复)
+
+**review_ui importlib/pytest 双兼容** (commit a8991cc)
+- `review_ui/__init__.py` 创建: 把 review_ui 从 namespace package 升为 regular package
+- `review_ui/app.py`: `from dashboard` → `from .dashboard` (相对导入)
+- `novel.py cmd_serve`: `sys.path.insert(ROOT)` + `importlib.import_module('review_ui.app')` (完整 package 路径)
+- 修复: pytest collect 报 `ModuleNotFoundError: No module named 'dashboard'`, 14 个 dashboard API 测试悬了 4 天没发现
+- 验证: 135/135 tests pass in 17.56s
+
+**dashboard 触发 ch_008 子进程静默死亡 (Deferred)**
+- 症状: ~1min 挂, pipeline.log 0 字节, status=failed exit_code=-1
+- 根因 (候选, 未复现): subprocess DETACHED_PROCESS + log buffering + 无 watchdog
+- 决策: 用户关闭窗口不排查, 修复 deferred. Lessons L70/L72/L73 已沉淀等下次实战复用
+- 不影响 v1.1.2 release: 测试 135/135 全过, 静态路径 OK, 实战悬挂但有 fallback 路径 (CLI 直跑)
+
 **v1.1.1: Web 流水线管理面板 (M1-M5, 6 commits)**
 - `lib/pipeline.py` (350 行): PipelineRunner - 跨平台 1 本 1 进程调度
   - start(book, ch) → subprocess 启动 novel.py write + 写 .pipeline_state.json
