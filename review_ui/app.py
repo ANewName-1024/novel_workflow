@@ -623,6 +623,42 @@ def api_entities_delete(book, type, id):
 
     return ("", 204)
 
+
+# ── 实体管理页面 (v1.2 M1.3) ────────────────────────────────────────
+
+_TYPE_LABELS = {
+    "character": "角色",
+    "event": "事件",
+    "foreshadow": "伏笔",
+    "world_rule": "世界规则",
+}
+
+
+@app.route("/entities/<book>")
+def entities_page(book):
+    """GET /entities/<book>?type=character|event|foreshadow|world_rule"""
+    _ensure_book(book)
+    type_str = request.args.get("type", "character")
+
+    if type_str not in _TYPE_LABELS:
+        abort(400, description=f"Invalid type '{type_str}'")
+
+    entity_type = EntityType(type_str)
+    store = EntityStore(book)
+    entities = store.list_by_type(entity_type)
+    counts = store.counts()
+    cfg = storage.read_json(book, "config.json") or {"book_name": book}
+
+    return render_template(
+        "entities.html",
+        book=book,
+        cfg=cfg,
+        active_type=type_str,
+        active_label=_TYPE_LABELS[type_str],
+        entities=entities,
+        counts=counts,
+    )
+
 # ── main ────────────────────────────────────────────────────────────────────
 
 def main():

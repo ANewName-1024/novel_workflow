@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0e1217">
+<title>{{ cfg.book_name or book }} - 实体管理</title>
+<style>
+:root {
+  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
+  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(8px);
+}
+.back {
+  color: var(--accent); text-decoration: none; font-size: 14px;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
+  border-radius: 6px;
+}
+.back:active { background: var(--panel2); }
+h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tab {
+  padding: 10px 16px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab .count {
+  background: var(--panel2);
+  color: var(--muted);
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  margin-left: 6px;
+}
+.tab.active .count {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.toolbar {
+  padding: 0 20px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 14px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn:hover { background: var(--border); }
+.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.1); }
+.btn.danger { color: var(--crit); border-color: var(--crit); }
+.btn.danger:hover { background: var(--crit); color: var(--bg); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.entity-list {
+  padding: 0 20px 20px;
+}
+.entity-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+  transition: border-color 0.15s;
+}
+.entity-card:hover { border-color: var(--accent); }
+.entity-card .header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.entity-card .name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.entity-card .meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.entity-card .badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: var(--panel2);
+  color: var(--muted);
+}
+.badge.established, .badge.resolved, .badge.planted { background: rgba(109,217,155,0.15); color: var(--ok); }
+.badge.draft, .badge.progress { background: rgba(255,180,84,0.15); color: var(--warn); }
+.badge.abandoned { background: rgba(255,107,107,0.15); color: var(--crit); }
+.entity-card .desc {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.entity-card .constraints {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.entity-card .constraints ul {
+  margin: 4px 0 0 16px;
+  padding: 0;
+}
+.entity-card .constraints li {
+  color: var(--crit);
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+}
+
+.modal-bg {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-bg.show { display: flex; }
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal h2 { margin: 0 0 16px; font-size: 18px; }
+.field { margin-bottom: 12px; }
+.field label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.field input, .field textarea, .field select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.field textarea { min-height: 60px; resize: vertical; }
+.field input:focus, .field textarea:focus, .field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.field-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+.field-row .field { flex: 1; margin-bottom: 0; }
+.list-item-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.list-item-row input { flex: 1; }
+.list-item-row button {
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--crit);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.add-list-item {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.error {
+  background: rgba(255,107,107,0.15);
+  color: var(--crit);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 12px;
+  display: none;
+}
+.error.show { display: block; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/book/{{ book }}">← 返回 {{ cfg.book_name or book }}</a>
+  <h1>实体管理</h1>
+</header>
+
+<div class="tabs">
+  {% set types = [
+    ('character', '角色', counts.character),
+    ('event', '事件', counts.event),
+    ('foreshadow', '伏笔', counts.foreshadow),
+    ('world_rule', '世界规则', counts.world_rule),
+  ] %}
+  {% for type_id, label, count in types %}
+    <a class="tab {% if active_type == type_id %}active{% endif %}"
+       href="/entities/{{ book }}?type={{ type_id }}">
+      {{ label }}<span class="count">{{ count }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+<div class="toolbar">
+  <button class="btn primary" onclick="showCreate()">+ 新建{{ active_label }}</button>
+  <span style="color: var(--muted); font-size: 12px;">
+    共 {{ entities | length }} 条
+  </span>
+</div>
+
+<div class="entity-list">
+  {% if not entities %}
+    <div class="empty">暂无{{ active_label }},点击"新建"开始</div>
+  {% endif %}
+
+  {% for ent in entities %}
+    <div class="entity-card">
+      <div class="header-row">
+        <div style="flex: 1; min-width: 0;">
+          <div class="name">
+            {{ ent.data.name | default(ent.data.event) | default(ent.data.foreshadow) | default(ent.id) }}
+          </div>
+          <div class="meta">
+            {% if active_type == 'character' %}
+              {{ ent.data.role | default('配角') }} · {{ ent.data.importance | default('中') }}
+              {% if ent.data.first_appearance %} · 第 {{ ent.data.first_appearance }} 章登场{% endif %}
+            {% elif active_type == 'event' %}
+              {% if ent.data.chapter %}第 {{ ent.data.chapter }} 章 · {% endif %}
+              {{ ent.data.significance | default('') }}
+            {% elif active_type == 'foreshadow' %}
+              状态: <span class="badge {{ ent.data.status }}">{{ ent.data.status }}</span>
+              {% if ent.data.planted_chapter %} · 埋设:第 {{ ent.data.planted_chapter }} 章{% endif %}
+              {% if ent.data.resolved_chapter %} · 回收:第 {{ ent.data.resolved_chapter }} 章{% endif %}
+            {% elif active_type == 'world_rule' %}
+              ID: {{ ent.id }}
+            {% endif %}
+          </div>
+
+          {% if ent.data.description %}
+            <div class="desc">{{ ent.data.description }}</div>
+          {% endif %}
+
+          {% if ent.data.traits %}
+            <div class="desc"><strong>性格:</strong> {{ ent.data.traits }}</div>
+          {% endif %}
+          {% if ent.data.arc %}
+            <div class="desc"><strong>弧光:</strong> {{ ent.data.arc }}</div>
+          {% endif %}
+
+          <div class="badges">
+            {% if active_type == 'world_rule' %}
+              <span class="badge established">{{ ent.data.category }}</span>
+              <span class="badge {{ ent.data.status }}">{{ ent.data.status }}</span>
+              {% if ent.data.first_appearance %}
+                <span class="badge">第 {{ ent.data.first_appearance }} 章</span>
+              {% endif %}
+            {% elif active_type == 'character' %}
+              {% for alias in ent.data.aliases %}
+                <span class="badge">{{ alias }}</span>
+              {% endfor %}
+            {% endif %}
+          </div>
+
+          {% if ent.data.constraints %}
+            <div class="constraints">
+              <strong>硬约束:</strong>
+              <ul>
+                {% for c in ent.data.constraints %}<li>{{ c }}</li>{% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+
+          {% if ent.data.examples %}
+            <div class="constraints">
+              <strong>示例:</strong> {{ ent.data.examples | join('；') }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="actions">
+          <button class="btn" onclick="showEdit({{ ent | tojson }})">编辑</button>
+          <button class="btn danger" onclick="deleteEntity('{{ ent.id }}', '{{ ent.data.name | default('') }}')">删除</button>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<!-- 编辑/新建 Modal -->
+<div id="modal" class="modal-bg">
+  <div class="modal">
+    <h2 id="modal-title">编辑实体</h2>
+    <div id="modal-error" class="error"></div>
+    <form id="entity-form" onsubmit="submitForm(event)">
+      <input type="hidden" id="entity-id" value="">
+      <input type="hidden" id="entity-type" value="{{ active_type }}">
+
+      <div id="form-fields"></div>
+
+      <div style="display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end;">
+        <button type="button" class="btn" onclick="closeModal()">取消</button>
+        <button type="submit" class="btn primary" id="submit-btn">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const ACTIVE_TYPE = "{{ active_type }}";
+const BOOK = "{{ book }}";
+
+// 字段定义 (按类型)
+const FORM_DEFS = {
+  character: [
+    {key: "name", label: "名字", type: "text", required: true},
+    {key: "role", label: "角色", type: "select", options: ["主角", "配角", "反派", "路人"]},
+    {key: "importance", label: "重要性", type: "select", options: ["高", "中", "低"]},
+    {key: "traits", label: "性格特征", type: "textarea"},
+    {key: "appearance", label: "外貌", type: "textarea"},
+    {key: "first_appearance", label: "首次登场章节", type: "number"},
+    {key: "relationship", label: "当前关系网", type: "textarea"},
+    {key: "arc", label: "角色弧光", type: "textarea"},
+    {key: "aliases", label: "别名/绰号", type: "list"},
+    {key: "notes", label: "备注", type: "textarea"},
+  ],
+  event: [
+    {key: "event", label: "事件简述", type: "text", required: true},
+    {key: "chapter", label: "章节号", type: "number"},
+    {key: "significance", label: "对主线影响", type: "textarea"},
+    {key: "consequences", label: "后续影响", type: "textarea"},
+    {key: "participants", label: "参与角色", type: "list"},
+    {key: "notes", label: "备注", type: "textarea"},
+  ],
+  foreshadow: [
+    {key: "foreshadow", label: "伏笔内容", type: "text", required: true},
+    {key: "status", label: "状态", type: "select", options: ["已埋", "推进中", "已回收", "已放弃"]},
+    {key: "planted_chapter", label: "埋设章节", type: "number"},
+    {key: "resolved_chapter", label: "回收章节", type: "number"},
+    {key: "significance", label: "重要性", type: "textarea"},
+    {key: "hints", label: "暗示位置/措辞", type: "textarea"},
+    {key: "related_entities", label: "关联 ID", type: "list"},
+    {key: "notes", label: "备注", type: "textarea"},
+  ],
+  world_rule: [
+    {key: "name", label: "规则名", type: "text", required: true},
+    {key: "category", label: "类别", type: "select", options: ["体系", "地理", "历史", "宗教", "科技", "魔法", "政治", "其他"]},
+    {key: "status", label: "状态", type: "select", options: ["草案", "已确立", "已废弃"]},
+    {key: "description", label: "详细定义", type: "textarea"},
+    {key: "constraints", label: "硬约束 (违反则逻辑崩)", type: "list"},
+    {key: "examples", label: "示例", type: "list"},
+    {key: "first_appearance", label: "首次出现章节", type: "number"},
+    {key: "related_entities", label: "关联 ID", type: "list"},
+    {key: "notes", label: "备注", type: "textarea"},
+  ],
+};
+
+function renderForm(data) {
+  const defs = FORM_DEFS[ACTIVE_TYPE] || [];
+  const container = document.getElementById("form-fields");
+  container.innerHTML = "";
+
+  defs.forEach(def => {
+    const value = data ? (data[def.key] !== undefined ? data[def.key] : "") : "";
+    const wrapper = document.createElement("div");
+    wrapper.className = "field";
+
+    const label = document.createElement("label");
+    label.textContent = def.label + (def.required ? " *" : "");
+    wrapper.appendChild(label);
+
+    if (def.type === "select") {
+      const sel = document.createElement("select");
+      sel.dataset.key = def.key;
+      (def.options || []).forEach(opt => {
+        const o = document.createElement("option");
+        o.value = opt; o.textContent = opt;
+        if (opt === value) o.selected = true;
+        sel.appendChild(o);
+      });
+      wrapper.appendChild(sel);
+    } else if (def.type === "list") {
+      // 动态列表
+      const listWrap = document.createElement("div");
+      listWrap.dataset.key = def.key;
+      listWrap.dataset.type = "list";
+      const items = Array.isArray(value) ? value : [];
+      items.forEach(item => addListRow(listWrap, item));
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "add-list-item";
+      addBtn.textContent = "+ 添加";
+      addBtn.onclick = () => addListRow(listWrap, "");
+      listWrap.appendChild(addBtn);
+      wrapper.appendChild(listWrap);
+    } else if (def.type === "textarea") {
+      const ta = document.createElement("textarea");
+      ta.dataset.key = def.key;
+      ta.value = value || "";
+      wrapper.appendChild(ta);
+    } else if (def.type === "number") {
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.dataset.key = def.key;
+      inp.value = value !== "" ? value : "";
+      wrapper.appendChild(inp);
+    } else {
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.dataset.key = def.key;
+      inp.value = value || "";
+      if (def.required) inp.required = true;
+      wrapper.appendChild(inp);
+    }
+
+    container.appendChild(wrapper);
+  });
+}
+
+function addListRow(wrap, val) {
+  const row = document.createElement("div");
+  row.className = "list-item-row";
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = val || "";
+  row.appendChild(inp);
+  const rm = document.createElement("button");
+  rm.type = "button";
+  rm.textContent = "×";
+  rm.onclick = () => row.remove();
+  row.appendChild(rm);
+  // 插到 add 按钮之前
+  const addBtn = wrap.querySelector(".add-list-item");
+  wrap.insertBefore(row, addBtn);
+}
+
+function collectFormData() {
+  const data = {};
+  const form = document.getElementById("entity-form");
+  // 普通字段
+  form.querySelectorAll("[data-key]").forEach(el => {
+    if (el.dataset.type === "list") return;
+    const key = el.dataset.key;
+    let val = el.value;
+    if (el.type === "number") {
+      val = val === "" ? null : parseInt(val, 10);
+    }
+    if (val !== "" && val !== null) {
+      data[key] = val;
+    }
+  });
+  // 列表字段
+  form.querySelectorAll("[data-type='list']").forEach(el => {
+    const key = el.dataset.key;
+    const items = [];
+    el.querySelectorAll(".list-item-row input").forEach(inp => {
+      const v = inp.value.trim();
+      if (v) items.push(v);
+    });
+    if (items.length > 0) data[key] = items;
+  });
+  return data;
+}
+
+function showCreate() {
+  document.getElementById("modal-title").textContent = "新建实体";
+  document.getElementById("entity-id").value = "";
+  renderForm({});
+  document.getElementById("modal-error").classList.remove("show");
+  document.getElementById("modal").classList.add("show");
+}
+
+function showEdit(entity) {
+  document.getElementById("modal-title").textContent = "编辑实体";
+  document.getElementById("entity-id").value = entity.id;
+  renderForm(entity.data);
+  document.getElementById("modal-error").classList.remove("show");
+  document.getElementById("modal").classList.add("show");
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.remove("show");
+}
+
+function showError(msg) {
+  const el = document.getElementById("modal-error");
+  el.textContent = msg;
+  el.classList.add("show");
+}
+
+async function submitForm(e) {
+  e.preventDefault();
+  const id = document.getElementById("entity-id").value;
+  const data = collectFormData();
+  const btn = document.getElementById("submit-btn");
+  btn.disabled = true;
+  btn.textContent = "保存中...";
+
+  try {
+    let resp;
+    if (id) {
+      // 更新
+      resp = await fetch(`/api/entities/${BOOK}/${ACTIVE_TYPE}/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({fields: data}),
+      });
+    } else {
+      // 新建
+      resp = await fetch(`/api/entities/${BOOK}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({type: ACTIVE_TYPE, data: data}),
+      });
+    }
+    if (resp.ok) {
+      window.location.reload();
+    } else {
+      const txt = await resp.text();
+      showError(`保存失败 (${resp.status}): ${txt}`);
+      btn.disabled = false;
+      btn.textContent = "保存";
+    }
+  } catch (err) {
+    showError("网络错误: " + err.message);
+    btn.disabled = false;
+    btn.textContent = "保存";
+  }
+}
+
+async function deleteEntity(id, name) {
+  if (!confirm(`确认删除 "${name || id}" ?`)) return;
+  const resp = await fetch(`/api/entities/${BOOK}/${ACTIVE_TYPE}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (resp.ok || resp.status === 204) {
+    window.location.reload();
+  } else {
+    alert(`删除失败: ${await resp.text()}`);
+  }
+}
+
+// 点击背景关闭 modal
+document.getElementById("modal").addEventListener("click", (e) => {
+  if (e.target.id === "modal") closeModal();
+});
+</script>
+</body>
+</html>

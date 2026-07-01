@@ -313,3 +313,44 @@ class TestEntitiesIntegration:
         # 5. list (空)
         r = client.get("/api/entities/test_book?type=world_rule")
         assert r.get_json()["count"] == 0
+
+
+# ── 8. 页面路由 (M1.3) ────────────────────────────────────────────────
+
+class TestEntitiesPage:
+    def test_page_renders_empty(self, client, auth_disabled):
+        r = client.get("/entities/test_book?type=character")
+        assert r.status_code == 200
+        assert "实体管理".encode("utf-8") in r.data  # "实体管理"
+
+    def test_page_default_type_is_character(self, client, auth_disabled):
+        r = client.get("/entities/test_book")
+        assert r.status_code == 200
+        assert "角色".encode("utf-8") in r.data  # "角色" tab
+
+    def test_page_invalid_type_400(self, client, auth_disabled):
+        r = client.get("/entities/test_book?type=invalid")
+        assert r.status_code == 400
+
+    def test_page_shows_world_rule_with_constraints(self, client, auth_disabled, tmp_projects_root):
+        from lib.memory import EntityStore
+        from lib.entity import WorldRule
+        store = EntityStore("test_book")
+        store.add_world_rule(WorldRule(
+            name="灵根等级", category="体系",
+            description="修士天赋分三等",
+            constraints=["灵根品级先天决定", "高品压低品"],
+        ))
+        r = client.get("/entities/test_book?type=world_rule")
+        assert r.status_code == 200
+        # 中文 + 约束列表渲染
+        assert "灵根等级".encode("utf-8") in r.data
+        assert "硬约束".encode("utf-8") in r.data
+        assert "灵根品级先天决定".encode("utf-8") in r.data
+
+    def test_page_nav_link_added_in_book_html(self, client, auth_disabled):
+        """检查 book.html 加了"实体管理" 链接."""
+        r = client.get("/book/test_book")
+        assert r.status_code == 200
+        assert b"/entities/test_book?type=character" in r.data
+        assert "实体管理".encode("utf-8") in r.data
