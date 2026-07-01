@@ -142,6 +142,23 @@ def parse_args() -> argparse.Namespace:
     ext = sub.add_parser("extract", help="从最新章节提取记忆")
     add_project(ext)
 
+    # ----- NEW (v1.0 管理化增强) -----
+    # doctor 子命令: 环境诊断
+    doc = sub.add_parser("doctor", help="环境诊断 (Python/依赖/LLM/端口/磁盘/Git)")
+    doc.add_argument("--json", action="store_true", help="输出 JSON 给脚本调用")
+
+    # serve 子命令: 启动 review_ui Flask
+    srv = sub.add_parser("serve", help="启动 review_ui Web 界面")
+    srv.add_argument("--host", default=None, help="覆盖 config.yaml 的 host")
+    srv.add_argument("--port", type=int, default=None, help="覆盖 config.yaml 的 port")
+    srv.add_argument("--debug", action="store_true", help="Flask debug 模式")
+
+    # backup 子命令: 立即备份某个书 (也可交给 Task Scheduler 自动跑)
+    bk = sub.add_parser("backup", help="立即备份某书 (生成 projects/<书>/backups/yyyymmdd.tar.gz)")
+    add_project(bk)
+    bk.add_argument("--no-compress", action="store_true", help="不压 tar.gz")
+    bk.add_argument("--clean", action="store_true", help="顺手清理超过 retention_days 的旧快照")
+
     return p.parse_args()
 
 # ── commands ────────────────────────────────────────────────────────────────
@@ -605,6 +622,88 @@ def parse_chapter_range(spec: str) -> list[int]:
 
 # ── main ────────────────────────────────────────────────────────────────────
 
+
+
+# --- v1.0 NEW: doctor / serve / backup ---
+def cmd_doctor(args: argparse.Namespace) -> None:
+    """novel doctor — 环境诊断."""
+    import json as _json
+    from lib.doctor import run_all, format_report
+    results = run_all()
+    if args.json:
+        print(_json.dumps([r._asdict() for r in results], ensure_ascii=False, indent=2))
+    else:
+        print(format_report(results))
+    if any(r.status == "fail" for r in results):
+        sys.exit(1)
+
+
+def cmd_serve(args: argparse.Namespace) -> None:
+    """novel serve — 启动 review_ui Web 界面."""
+    from lib.config_loader import get_config
+    cfg = get_config()
+    host = args.host or cfg["review_ui"]["host"]
+    port = args.port or int(cfg["review_ui"]["port"])
+    print(f"\U0001f680 启动 review_ui Flask (config: {host}:{port})")
+    review_ui_dir = Path(__file__).resolve().parent / "review_ui"
+    app_path = review_ui_dir / "app.py"
+    if not app_path.exists():
+        print(f"\u274c 找不到 {app_path}")
+        sys.exit(1)
+    sys.argv = ["app.py", "--host", host, "--port", str(port)]
+    if args.debug:
+        sys.argv.append("--debug")
+    sys.path.insert(0, str(review_ui_dir))
+    import importlib
+    if "app" in sys.modules:
+        del sys.modules["app"]
+    app_mod = importlib.import_module("app")
+    if hasattr(app_mod, "main"):
+        app_mod.main()
+    else:
+        app_mod.app.run(host=host, port=port, debug=args.debug, use_reloader=False)
+
+
+def cmd_backup(args: argparse.Namespace) -> None:
+    """novel backup — 立即备份某书."""
+    import shutil
+    import tarfile
+    from datetime import datetime
+    from lib.config_loader import get_config
+    from lib.backup import clean_old_backups
+    book = args.book
+    proj_root = storage.project_root(book)
+    if not proj_root.exists():
+        print(f"\u274c 项目 [{book}] 不存在")
+        sys.exit(1)
+    backup_dir = proj_root / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    cfg = get_config()
+    compress = (not args.no_compress) and cfg.get("backup", {}).get("compress_tar", True)
+    suffix = ".tar.gz" if compress else ".zip"
+    out = backup_dir / f"snapshot-{ts}{suffix}"
+    print(f"\U0001f4e6 备份 [{book}] \u2192 {out.name}")
+    if compress:
+        with tarfile.open(out, "w:gz") as tf:
+            for item in proj_root.iterdir():
+                if item.name == "backups":
+                    continue
+                if item.is_dir():
+                    tf.add(str(item), arcname=item.name)
+                else:
+                    tf.add(str(item), arcname=item.name)
+    else:
+        shutil.make_archive(str(out).rsplit(".", 1)[0], "zip", proj_root)
+    out_size = out.stat().st_size
+    print(f"\u2705 完成: {out.name} ({out_size/1024:.1f} KB)")
+    if args.clean:
+        retention = int(cfg.get("backup", {}).get("retention_days", 7))
+        removed = clean_old_backups(backup_dir, retention)
+        if removed:
+            print(f"🧹 清理旧快照 {len(removed)} 个 (>{retention} 天): {', '.join(removed)}")
+
+
 def main() -> None:
     args = parse_args()
     if args.version:
@@ -657,6 +756,12 @@ def main() -> None:
         cmd_review_false_positive(args)
     elif cmd == "review-history":
         cmd_review_history(args)
+    elif cmd == "doctor":
+        cmd_doctor(args)
+    elif cmd == "serve":
+        cmd_serve(args)
+    elif cmd == "backup":
+        cmd_backup(args)
     else:
         print(f"未知命令: {cmd}")
         sys.exit(1)

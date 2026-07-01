@@ -1,0 +1,46 @@
+# ===== novel_workflow 全局配置 =====
+# 复制为 config.yaml, 改成你的实际值
+# 优先从 env ($VAR) 读, 例 ${REVIEW_UI_PASSWORD}
+
+# === LLM ===
+llm:
+  api_base: ${LLM_API_BASE:-http://127.0.0.1:60443/v1}
+  default_model: ${LLM_DEFAULT_MODEL:-Qwen3.6-35B-A3B-UD-Q4_K_M.gguf}
+  # 备用模型 (按顺序回退)
+  fallback_models:
+    - Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf
+  timeout_sec: ${LLM_TIMEOUT_SEC:-600}
+  max_retries: ${LLM_MAX_RETRIES:-3}
+
+# === review_ui ===
+review_ui:
+  host: 127.0.0.1
+  port: 21199
+  # Basic Auth (公网入口)
+  auth:
+    enabled: true
+    user: ${REVIEW_UI_USER:-weichao}
+    password: ${REVIEW_UI_PASSWORD:-}
+  # 反向代理前缀 (nginx 配置, 用于 url_for 自动生成 /novel/...)
+  proxy_prefix: /novel
+
+# === 备份 ===
+backup:
+  enabled: true
+  retention_days: ${BACKUP_RETENTION_DAYS:-7}
+  schedule_time: ${BACKUP_TIME:-03:00}
+  # 不压缩 (JSON 已经够小), 改 tar.gz 改成 true 可省 80% 空间
+  compress_tar: true
+
+# === 日志 ===
+logging:
+  level: ${LOG_LEVEL:-INFO}
+  file: ${LOG_FILE_PATH:-logs/novel_workflow.log}
+  rotation: ${LOG_ROTATION:-10MB x 5}
+
+# === 高级 (一般不改) ===
+projects:
+  # 项目目录根 (per-book 子目录)
+  root: projects
+  # 强制 ASCII book name (中文会导致 PS 5.1 GBK 坑, 提醒而非拒绝)
+  normalize_ascii_book_name: true
