@@ -47,3 +47,12 @@ projects:
   root: projects
   # 强制 ASCII book name (中文会导致 PS 5.1 GBK 坑, 提醒而非拒绝)
   normalize_ascii_book_name: true
+
+# === v1.1 Web 流水线面板 ===
+dashboard:
+  enabled: true
+  log_tail_default: 100        # /api/pipeline/logs 默认返回行数
+  log_max_buffer: 500          # SSE 客户端 buffer 上限
+  metrics_retention_days: 30   # metrics.jsonl 清理阈值 (启动时)
+  cancel_grace_seconds: 5      # cancel 后等子进程退出的宽限
+  stream_poll_interval: 1.0    # SSE 轮询 log 文件间隔 (秒)

@@ -117,6 +117,14 @@ def _defaults() -> dict[str, Any]:
             "root": "projects",
             "normalize_ascii_book_name": True,
         },
+        "dashboard": {
+            "enabled": True,
+            "log_tail_default": 100,
+            "log_max_buffer": 500,
+            "metrics_retention_days": 30,
+            "cancel_grace_seconds": 5,
+            "stream_poll_interval": 1.0,
+        },
     }
 
 
