@@ -31,7 +31,9 @@ from .entity import (
 # ── 文件 IO ───────────────────────────────────────────────────────────────
 
 def _mem_path(book: str, lib: str) -> Path:
-    return Path(__file__).parent.parent / "projects" / book / "memory" / f"{lib}.json"
+    """获取 memory 文件路径, 从 lib.storage.PROJECTS_ROOT 拼接."""
+    from . import storage
+    return storage.PROJECTS_ROOT / book / "memory" / f"{lib}.json"
 
 
 def _load_raw(book: str, lib: str) -> Any:
