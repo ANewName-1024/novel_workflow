@@ -4,6 +4,16 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ## [Unreleased]
 
+### Fixed (修复)
+
+**M6.1: review_ui auth 锁死** (commit ffd0816)
+- `config.yaml.example`: `auth.enabled: true` → `false` (默认安全, 公网部署再开) + 注释说明启用方法
+- `review_ui/app.py`: `_auth_gate` + `login()` 加空 password safeguard, 跟 `_check_basic_auth_header` 行为对称
+- 修复 L64: `get_config()` 浅合并 `config.yaml.example` 覆盖 `_defaults()` 锁死 review_ui
+- 修复 L65: enabled=True + password='' 视为配置错误, 全部放行
+- 3 新 tests (`TestAuthEnabledButEmptyPassword`): /api/projects 200, /login 跳首页, / 放行
+- 实战验证: review_ui 默认 config 启动后 /api/projects 200 ✓
+
 ## [1.0.0] - 2026-07-01
 
 工程化重构首版 (M1-M5 5 个 commit, 82 tests, 18 子命令)
