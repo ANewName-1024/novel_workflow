@@ -65,12 +65,38 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 }
 .queue-row {
   padding: 14px 16px; border-bottom: 1px solid var(--border);
-  cursor: pointer; text-decoration: none; color: inherit;
-  transition: background 0.15s;
-  display: block;
+  display: flex; align-items: center; gap: 12px;
   min-height: 44px;
 }
+.queue-row:last-child { border-bottom: 0; }
+.queue-row .row-body {
+  flex: 1; cursor: pointer; text-decoration: none; color: inherit;
+  display: block; padding: 4px 0;
+}
 .queue-row:hover { background: var(--panel2); }
+.queue-row .row-check {
+  width: 20px; height: 20px; flex-shrink: 0; cursor: pointer;
+}
+.batch-bar {
+  position: sticky; bottom: 0; margin-top: 14px;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; box-shadow: 0 -4px 12px rgba(0,0,0,0.3); z-index: 5;
+  flex-wrap: wrap;
+}
+.batch-bar .count { color: var(--muted); font-size: 13px; }
+.batch-bar .count strong { color: var(--accent); font-weight: 700; font-size: 16px; }
+.batch-bar button {
+  padding: 10px 20px; background: var(--ok); color: #0e1217;
+  border: 0; border-radius: 6px; font-size: 14px; font-weight: 600;
+  cursor: pointer; min-height: 40px;
+}
+.batch-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+.batch-bar button:active:not(:disabled) { transform: scale(0.97); }
+.batch-bar .select-all {
+  font-size: 13px; color: var(--muted); cursor: pointer; user-select: none;
+}
+.batch-bar .select-all input { vertical-align: middle; margin-right: 6px; width: 16px; height: 16px; }
 .queue-row:active { background: var(--panel2); }
 .queue-row:last-child { border-bottom: 0; }
 .queue-row-main {
@@ -174,21 +200,31 @@ footer {
     ⚠ 待审章节 <span class="count">({{ queue|length }})</span>
   </div>
   {% if queue %}
+  <form id="batch-form">
   <div class="queue-table">
     {% for r in queue %}
-    <a class="queue-row" href="{{ url_for('chapter_page', book=book, ch=r.chapter_id) }}">
-      <div class="queue-row-main">
-        <span class="ch">{{ r.chapter_id }}</span>
-        <span class="severity {{ r.auto_severity }}">{{ r.auto_severity }}</span>
-      </div>
-      <div class="queue-row-meta">
-        <span>🔍 自检 {{ r.auto_issues_count }} 项</span>
-        <span class="status {{ r.status }}">{{ r.status }}</span>
-        <span>📅 {{ r.history[-1].at[:19] if r.history else '无记录' }}</span>
-      </div>
-    </a>
+    <div class="queue-row">
+      <input type="checkbox" class="row-check" name="chapter_ids" value="{{ r.chapter_id }}">
+      <a class="row-body" href="{{ url_for('chapter_page', book=book, ch=r.chapter_id) }}">
+        <div class="queue-row-main">
+          <span class="ch">{{ r.chapter_id }}</span>
+          <span class="severity {{ r.auto_severity }}">{{ r.auto_severity }}</span>
+        </div>
+        <div class="queue-row-meta">
+          <span>🔍 自检 {{ r.auto_issues_count }} 项</span>
+          <span class="status {{ r.status }}">{{ r.status }}</span>
+          <span>📅 {{ r.history[-1].at[:19] if r.history else '无记录' }}</span>
+        </div>
+      </a>
+    </div>
     {% endfor %}
   </div>
+  <div class="batch-bar">
+    <label class="select-all"><input type="checkbox" id="select-all"> 全选</label>
+    <div class="count">已选 <strong id="selected-count">0</strong> 章</div>
+    <button type="button" id="batch-approve-btn" disabled>✓ 批量批准</button>
+  </div>
+  </form>
   {% else %}
   <div class="queue-table">
     <div class="empty-row">✓ 所有章节均已审核或自动通过</div>
@@ -207,6 +243,58 @@ footer {
 </div>
 <footer>
   <a href="{{ url_for('api_history', book=book) }}" style="color: var(--accent); word-break: break-all;">JSON API: /api/history/{{ book }}</a>
+  {% if session.get('auth_user') %}
+  <div style="margin-top: 8px; font-size: 11px;">
+    已登录: <strong>{{ session.auth_user }}</strong> · <a href="{{ url_for('logout') }}" style="color: var(--crit);">注销</a>
+  </div>
+  {% endif %}
 </footer>
+
+<script>
+(function() {
+  const checks = document.querySelectorAll('.row-check');
+  const countEl = document.getElementById('selected-count');
+  const btn = document.getElementById('batch-approve-btn');
+  const selectAll = document.getElementById('select-all');
+  if (!checks.length || !btn) return;
+
+  function update() {
+    const n = Array.from(checks).filter(c => c.checked).length;
+    countEl.textContent = n;
+    btn.disabled = n === 0;
+    if (selectAll) selectAll.checked = n === checks.length && checks.length > 0;
+  }
+  checks.forEach(c => c.addEventListener('change', update));
+  if (selectAll) selectAll.addEventListener('change', () => {
+    checks.forEach(c => { c.checked = selectAll.checked; });
+    update();
+  });
+
+  btn.addEventListener('click', async () => {
+    const ids = Array.from(checks).filter(c => c.checked).map(c => c.value);
+    if (!ids.length) return;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = '⏳ 处理中...';
+    try {
+      const r = await fetch('{{ request.script_root }}/api/batch-approve/{{ book }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chapters: ids, reviewer: '{{ session.auth_user or "wei_chao" }}', notes: 'Web UI 批量批准' }),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) {
+        throw new Error((data.results && data.results.filter(x=>!x.ok).map(x=>x.id+':'+x.error).join('; ')) || data.message || ('HTTP '+r.status));
+      }
+      btn.textContent = `✓ 成功 ${data.approved}/${data.total}`;
+      setTimeout(() => location.reload(), 1200);
+    } catch (e) {
+      btn.textContent = '✗ 失败';
+      btn.title = String(e);
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
+    }
+  });
+})();
+</script>
 </body>
 </html>

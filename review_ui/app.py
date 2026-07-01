@@ -20,9 +20,10 @@ Run:
   python review_ui/app.py [--port 21199] [--host 127.0.0.1]
 """
 from __future__ import annotations
-import sys, os, json, argparse
+import sys, os, json, argparse, base64, difflib
 from pathlib import Path
-from flask import Flask, jsonify, request, render_template, abort, Response
+from flask import (Flask, jsonify, request, render_template, abort, Response,
+                   session, redirect, url_for)
 
 # Add project root + lib to path
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "lib"))
 
 from lib import storage, review_service as revserv  # noqa
+from lib.config_loader import get_config  # noqa
 
 try:
     from werkzeug.middleware.proxy_fix import ProxyFix
@@ -41,16 +43,102 @@ app = Flask(
     template_folder=str(Path(__file__).resolve().parent / "templates"),
     static_folder=str(Path(__file__).resolve().parent / "static"),
 )
+# session secret for login cookies. Use env, fallback to stable dev key.
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-in-prod")
 # Honor X-Forwarded-Prefix from nginx (L55 fix 2026-07-01: /novel/ path on VPS)
 # so url_for() generates "/novel/book/..." not "/book/...".
 if ProxyFix is not None:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
 
+# ── M5: Auth (config-driven Basic Auth + session) ───────────────────────
+
+def _get_auth() -> dict:
+    """Read review_ui.auth from config (with env expansion already done)."""
+    cfg = get_config().get("review_ui", {}).get("auth", {}) or {}
+    return {
+        "enabled": bool(cfg.get("enabled", False)),
+        "user": str(cfg.get("user", "weichao")),
+        "password": str(cfg.get("password", "")),
+    }
+
+
+def _is_authed() -> bool:
+    return bool(session.get("auth_user"))
+
+
+def _check_basic_auth_header():
+    """如果传 Authorization: Basic ... 且对, 写入 session. 返回 True 表示已认证."""
+    auth = _get_auth()
+    if not auth["enabled"] or not auth["password"]:
+        return False
+    hdr = request.headers.get("Authorization", "")
+    if not hdr.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(hdr[6:]).decode("utf-8")
+        u, _, p = decoded.partition(":")
+        if u == auth["user"] and p == auth["password"]:
+            session["auth_user"] = u
+            return True
+    except Exception:
+        pass
+    return False
+
+
+@app.before_request
+def _auth_gate():
+    """统一 auth 检查. auth.enabled=False 时放行, 否则护所有非白名单 endpoint."""
+    auth = _get_auth()
+    if not auth["enabled"]:
+        return None  # 配置不上, 全部放行
+    # 白名单
+    if request.path.startswith("/static/"):
+        return None
+    if request.path in ("/login", "/logout"):
+        return None
+    # Basic Auth header 兼容 (curl 友好)
+    if _check_basic_auth_header():
+        return None
+    # 已登录
+    if _is_authed():
+        return None
+    # 未认证: API → 401 JSON, 页面 → 重定向 /login
+    if request.path.startswith("/api/") or request.path.startswith("/novel-api/"):
+        return jsonify({"error": "unauthorized",
+                        "message": "Auth required. POST /login or send Authorization: Basic header."}), 401
+    return redirect(url_for("login", next=request.path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    auth = _get_auth()
+    if not auth["enabled"]:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        u = (request.form.get("user") or "").strip()
+        p = request.form.get("password") or ""
+        if u == auth["user"] and p == auth["password"] and auth["password"]:
+            session["auth_user"] = u
+            nxt = request.args.get("next") or url_for("index")
+            return redirect(nxt)
+        error = "用户名或密码错"
+    return render_template("login.html", error=error), (401 if error else 200)
+
+
+@app.route("/logout")
+def logout():
+    session.pop("auth_user", None)
+    return redirect(url_for("login"))
+
+
+# ── helpers ──────────────────────────────────────────────────────────────
+
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 def _list_books() -> list[str]:
-    """List all novel projects under projects/."""
-    proj_dir = ROOT / "projects"
+    """List all novel projects. Use storage.PROJECTS_ROOT so tests can monkeypatch."""
+    proj_dir = Path(storage.PROJECTS_ROOT)
     if not proj_dir.exists():
         return []
     out = []
@@ -161,9 +249,41 @@ def chapter_page(book, ch):
     text = storage.read_chapter(book, ch) or ""
     v2_path = revserv.edited_path(book, ch)
     v2_text = v2_path.read_text(encoding="utf-8") if v2_path.exists() else None
+
+    # M5: 章节导航 (prev/next) — 按 ch_001, ch_002 ... 字典序
+    chapters = storage.list_chapters(book)
+    ch_ids = [c["id"] for c in chapters]
+    idx = ch_ids.index(ch) if ch in ch_ids else -1
+    prev_id = ch_ids[idx - 1] if idx > 0 else None
+    next_id = ch_ids[idx + 1] if 0 <= idx < len(ch_ids) - 1 else None
+
+    # M5: diff (原版 vs v2), 有 v2 才计算
+    diff_lines: list[str] = []
+    if v2_text is not None:
+        diff_lines = list(difflib.unified_diff(
+            text.splitlines(),
+            v2_text.splitlines(),
+            fromfile="v1 (原版)",
+            tofile="v2 (人工)",
+            lineterm="",
+            n=3,
+        ))
+
     return render_template("chapter.html",
-        book=book, chapter_id=ch, record=record, text=text, v2_text=v2_text,
+        book=book, chapter_id=ch, record=record,
+        text=text, v2_text=v2_text,
+        prev_id=prev_id, next_id=next_id,
+        diff_lines=diff_lines,
+        diff_stats=_diff_stats(text, v2_text) if v2_text is not None else None,
     )
+
+
+def _diff_stats(text1: str, text2: str) -> dict:
+    """原始行数和 v2 行数的快速统计."""
+    a = text1.splitlines()
+    b = text2.splitlines()
+    return {"v1_lines": len(a), "v2_lines": len(b),
+            "v1_chars": len(text1), "v2_chars": len(text2)}
 
 # ── JSON API ────────────────────────────────────────────────────────────────
 
@@ -256,6 +376,58 @@ def api_false_positive(book, ch):
         abort(400, description="notes required")
     record = revserv.mark_false_positive(book, ch, body.get("reviewer", "wei_chao"), body["notes"])
     return jsonify({"ok": True, "status": record["status"]})
+
+
+@app.route("/api/batch-approve/<book>", methods=["POST"])
+def api_batch_approve(book):
+    """M5: 批量批准. body: {"chapters": ["ch_001", ...], "reviewer": "...", "notes": "..."}.
+    每条独立处理, 部分失败不中断, 返回 ok/失败明细.
+    """
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    chapter_ids = body.get("chapters") or []
+    if not isinstance(chapter_ids, list) or not chapter_ids:
+        abort(400, description="chapters (non-empty list) required")
+    reviewer = (body.get("reviewer") or "wei_chao").strip()
+    notes = (body.get("notes") or "Web UI 批量批准").strip()
+    results = []
+    for cid in chapter_ids:
+        try:
+            if not isinstance(cid, str) or not cid.startswith("ch_"):
+                raise ValueError(f"invalid chapter id: {cid!r}")
+            rec = revserv.approve(book, cid, reviewer, notes)
+            results.append({"id": cid, "ok": True, "status": rec["status"]})
+        except Exception as e:
+            results.append({"id": cid, "ok": False, "error": str(e)})
+    n_ok = sum(1 for r in results if r["ok"])
+    n_fail = len(results) - n_ok
+    return jsonify({"ok": n_fail == 0,
+                    "total": len(results),
+                    "approved": n_ok,
+                    "failed": n_fail,
+                    "results": results})
+
+
+@app.route("/api/diff/<book>/<ch>")
+def api_diff(book, ch):
+    """M5: 返回 v1 vs v2 unified diff (纯 API, 模板不用)."""
+    _ensure_book(book)
+    text = storage.read_chapter(book, ch) or ""
+    v2_path = revserv.edited_path(book, ch)
+    if not v2_path.exists():
+        return jsonify({"has_diff": False, "diff": [], "stats": None})
+    v2_text = v2_path.read_text(encoding="utf-8")
+    diff_lines = list(difflib.unified_diff(
+        text.splitlines(),
+        v2_text.splitlines(),
+        fromfile="v1 (原版)",
+        tofile="v2 (人工)",
+        lineterm="",
+        n=3,
+    ))
+    return jsonify({"has_diff": True,
+                    "diff": diff_lines,
+                    "stats": _diff_stats(text, v2_text)})
 
 # ── main ────────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 小说评审台</title>
+<style>
+:root {
+  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
+  --crit: #ff6b6b; --ok: #6dd99b;
+}
+body {
+  margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  background: var(--bg); color: var(--text);
+  padding: 20px;
+}
+.box {
+  width: 100%; max-width: 360px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 32px 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+h1 { margin: 0 0 8px; font-size: 22px; text-align: center; }
+.sub { color: var(--muted); font-size: 13px; text-align: center; margin-bottom: 24px; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+input[type=text], input[type=password] {
+  width: 100%; padding: 12px 14px; font-size: 15px;
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-family: inherit;
+}
+input:focus { outline: none; border-color: var(--accent); }
+button {
+  width: 100%; padding: 14px; margin-top: 22px;
+  background: var(--accent); color: white; border: 0; border-radius: 6px;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  font-family: inherit; min-height: 48px;
+}
+button:active { transform: scale(0.98); }
+.err {
+  margin-top: 18px; padding: 10px 12px;
+  background: rgba(255,107,107,0.15); color: var(--crit);
+  border-radius: 6px; font-size: 13px; text-align: center;
+}
+.hint {
+  margin-top: 20px; padding-top: 18px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6;
+}
+.hint code { background: var(--panel2); padding: 2px 6px; border-radius: 3px; font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<form class="box" method="POST" action="{{ url_for('login') }}">
+  <h1>📚 小说评审台</h1>
+  <div class="sub">请登录以继续</div>
+
+  <label for="user">用户名</label>
+  <input type="text" id="user" name="user" autofocus required value="{{ request.form.user or '' }}">
+
+  <label for="password">密码</label>
+  <input type="password" id="password" name="password" required>
+
+  <button type="submit">登录</button>
+
+  {% if error %}
+  <div class="err">⚠ {{ error }}</div>
+  {% endif %}
+
+  <div class="hint">
+    配置项: <code>review_ui.auth</code> in <code>config.yaml</code>
+  </div>
+</form>
+</body>
+</html>

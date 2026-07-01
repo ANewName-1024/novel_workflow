@@ -32,6 +32,31 @@ header {
 .back:active { background: var(--panel2); }
 h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
 .subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; word-break: break-word; }
+.chapter-nav {
+  margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;
+}
+.nav-btn {
+  padding: 6px 12px; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  text-decoration: none; font-size: 13px; min-height: 32px;
+  display: inline-flex; align-items: center;
+}
+.nav-btn:active { background: var(--border); }
+.nav-btn.disabled { opacity: 0.4; cursor: not-allowed; }
+.diff-view {
+  background: var(--panel2); border-radius: 6px; padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.55; max-height: 500px; overflow: auto;
+  white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--border);
+  margin: 0;
+}
+.diff-add { color: #6dd99b; display: inline; }
+.diff-del { color: #ff6b6b; display: inline; text-decoration: line-through; opacity: 0.85; }
+.diff-meta { color: #ffb454; display: inline; }
+.diff-ctx { color: var(--muted); display: inline; }
+.diff-meta-line { display: inline; color: var(--accent); font-weight: 600; }
+.diff-meta { font-size: 12px; font-weight: normal; margin-left: 8px; }
+.diff-meta .diff-del { text-decoration: none; opacity: 0.7; }
 .container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
 @media (max-width: 600px) {
   .container { padding: 12px 14px; }
@@ -167,6 +192,16 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   <a href="{{ url_for('book_page', book=book) }}" class="back">← 返回《{{ book }}》</a>
   <h1 style="margin-top: 8px;">{{ chapter_id }} - 评审详情</h1>
   <div class="subtitle">📂 {{ book }}</div>
+  {% if prev_id or next_id %}
+  <nav class="chapter-nav">
+    {% if prev_id %}
+      <a href="{{ url_for('chapter_page', book=book, ch=prev_id) }}" class="nav-btn">← {{ prev_id }}</a>
+    {% else %}<span class="nav-btn disabled">← 上一章</span>{% endif %}
+    {% if next_id %}
+      <a href="{{ url_for('chapter_page', book=book, ch=next_id) }}" class="nav-btn">{{ next_id }} →</a>
+    {% else %}<span class="nav-btn disabled">下一章 →</span>{% endif %}
+  </nav>
+  {% endif %}
 </header>
 
 <div class="container">
@@ -180,6 +215,18 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
     <div class="panel">
       <h2>✏️ 人工编辑版本 v2 ({{ v2_text|length }} 字)</h2>
       <div class="chapter-text" style="border-color: var(--edit); border-left: 3px solid var(--edit);">{{ v2_text }}</div>
+    </div>
+    <div class="panel">
+      <h2>🔀 Diff (v1 → v2)
+        {% if diff_stats %}
+        <span class="diff-meta">
+          <span class="diff-del">{{ diff_stats.v1_chars }} → {{ diff_stats.v2_chars }} 字</span>
+          ({{ diff_stats.v1_lines }} → {{ diff_stats.v2_lines }} 行)
+        </span>
+        {% endif %}
+      </h2>
+      <pre class="diff-view">{% for line in diff_lines %}<span class="diff-{{ 'add' if line.startswith('+') and not line.startswith('+++') else ('del' if line.startswith('-') and not line.startswith('---') else ('meta' if line.startswith('@@') else 'ctx')) }}">{{ line }}
+</span>{% endfor %}</pre>
     </div>
     {% endif %}
   </div>
