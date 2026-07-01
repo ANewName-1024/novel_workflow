@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0e1217">
+<title>{{ chapter_id }} - 评审详情</title>
+<style>
+:root {
+  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
+  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
+  --edit: #b48cff;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.7;
+  -webkit-text-size-adjust: 100%;
+}
+header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(8px);
+}
+.back {
+  color: var(--accent); text-decoration: none; font-size: 14px;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
+  border-radius: 6px;
+}
+.back:active { background: var(--panel2); }
+h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
+.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; word-break: break-word; }
+.container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
+@media (max-width: 600px) {
+  .container { padding: 12px 14px; }
+  header { padding: 12px 14px; }
+  h1 { font-size: 17px; }
+}
+.layout {
+  display: grid; grid-template-columns: 1fr 380px; gap: 20px;
+}
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; gap: 14px; } }
+.panel {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; margin-bottom: 14px;
+}
+@media (max-width: 600px) {
+  .panel { padding: 14px 14px; margin-bottom: 12px; border-radius: 8px; }
+}
+.panel h2 {
+  font-size: 14px; font-weight: 600; margin: 0 0 12px;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.kv { display: grid; grid-template-columns: 90px 1fr; gap: 8px 12px; font-size: 14px; }
+@media (max-width: 400px) { .kv { grid-template-columns: 80px 1fr; font-size: 13px; } }
+.kv .k { color: var(--muted); }
+.chapter-text {
+  background: var(--panel2); border-radius: 6px; padding: 16px;
+  font-size: 15px; line-height: 1.85; white-space: pre-wrap; word-wrap: break-word;
+  max-height: 600px; overflow-y: auto;
+  border: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 600px) {
+  .chapter-text { font-size: 15px; padding: 14px; max-height: 70vh; }
+}
+.severity {
+  display: inline-block; padding: 3px 10px; border-radius: 4px;
+  font-size: 13px; font-weight: 600;
+}
+.severity.critical { background: rgba(255,107,107,0.2); color: var(--crit); }
+.severity.moderate { background: rgba(255,180,84,0.2); color: var(--pending); }
+.severity.minor { background: rgba(109,217,155,0.2); color: var(--ok); }
+.status {
+  display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 13px;
+}
+.status.pending_review { background: rgba(255,180,84,0.2); color: var(--pending); }
+.status.needs_rewrite { background: rgba(255,107,107,0.2); color: var(--crit); }
+.status.approved { background: rgba(109,217,155,0.2); color: var(--ok); }
+.status.human_edited { background: rgba(180,140,255,0.2); color: var(--edit); }
+.status.auto_passed { background: rgba(109,217,155,0.15); color: var(--muted); }
+.status.false_positive { background: var(--panel2); color: var(--muted); }
+.issue {
+  background: var(--panel2); border-left: 3px solid var(--warn);
+  padding: 10px 12px; margin-bottom: 8px; border-radius: 0 4px 4px 0;
+}
+.issue.crit { border-left-color: var(--crit); }
+.issue-text { font-size: 14px; word-break: break-word; }
+.issue-text strong { color: var(--muted); font-size: 12px; display: block; margin-bottom: 4px; }
+.issue-quote {
+  margin-top: 6px; padding: 6px 10px; background: var(--bg); border-radius: 4px;
+  font-size: 13px; color: var(--muted); font-style: italic;
+  border: 1px solid var(--border); word-break: break-word;
+}
+.history-item {
+  font-size: 13px; padding: 8px 0; border-bottom: 1px dashed var(--border);
+  word-break: break-word;
+}
+.history-item:last-child { border-bottom: 0; }
+.history-item .ts { color: var(--muted); font-size: 11px; display: block; margin-bottom: 2px; }
+.history-item .sev-inline {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 11px; font-weight: 600; margin-left: 4px;
+}
+.history-item .sev-inline.critical { background: rgba(255,107,107,0.2); color: var(--crit); }
+.history-item .sev-inline.moderate { background: rgba(255,180,84,0.2); color: var(--pending); }
+.history-item .sev-inline.minor { background: rgba(109,217,155,0.2); color: var(--ok); }
+.history-item .notes {
+  color: var(--muted); font-size: 12px; margin-top: 4px;
+  padding-left: 8px; border-left: 2px solid var(--border);
+}
+.action-btn {
+  display: block; width: 100%; padding: 12px 16px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel2); color: var(--text); font-size: 15px;
+  cursor: pointer; text-align: center; transition: all 0.15s;
+  min-height: 48px; font-family: inherit;
+}
+.action-btn:hover { background: var(--border); }
+.action-btn:active { transform: scale(0.98); }
+.action-btn.primary { background: var(--ok); color: #0e1217; border-color: var(--ok); font-weight: 600; }
+.action-btn.primary:hover { background: #5fc98a; }
+.action-btn.warn { background: var(--crit); color: white; border-color: var(--crit); font-weight: 600; }
+.action-btn.warn:hover { background: #ff5252; }
+.action-btn.edit { background: var(--edit); color: white; border-color: var(--edit); font-weight: 600; }
+.action-btn.edit:hover { background: #a679ff; }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.action-form { margin-bottom: 8px; }
+.action-form label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 4px; }
+.action-form textarea {
+  width: 100%; min-height: 60px; margin-bottom: 6px;
+  background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 10px; font-size: 14px;
+  font-family: inherit; resize: vertical;
+}
+.action-form textarea:focus {
+  outline: none; border-color: var(--accent);
+}
+.action-form textarea#edit-text {
+  min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+.action-form input[type=checkbox] {
+  width: 18px; height: 18px; vertical-align: middle; margin-right: 6px;
+}
+.action-form .checkbox-label { display: flex; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
+.action-form .checkbox-label input { cursor: pointer; }
+#toast {
+  position: fixed; top: 16px; left: 16px; right: 16px;
+  background: var(--ok); color: #0e1217;
+  padding: 14px 20px; border-radius: 8px; font-weight: 600; z-index: 1000;
+  display: none; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+#toast.err { background: var(--crit); color: white; }
+@media (max-width: 600px) {
+  .action-btn { font-size: 15px; padding: 14px 16px; min-height: 52px; }
+  .action-form textarea { font-size: 16px; } /* iOS no-zoom */
+  .kv { font-size: 13px; }
+  h2 { font-size: 13px !important; }
+}
+</style>
+</head>
+<body>
+<header>
+  <a href="{{ url_for('book_page', book=book) }}" class="back">← 返回《{{ book }}》</a>
+  <h1 style="margin-top: 8px;">{{ chapter_id }} - 评审详情</h1>
+  <div class="subtitle">📂 {{ book }}</div>
+</header>
+
+<div class="container">
+<div class="layout">
+  <div>
+    <div class="panel">
+      <h2>📖 章节正文 ({{ text|length }} 字)</h2>
+      <div class="chapter-text">{{ text }}</div>
+    </div>
+    {% if v2_text %}
+    <div class="panel">
+      <h2>✏️ 人工编辑版本 v2 ({{ v2_text|length }} 字)</h2>
+      <div class="chapter-text" style="border-color: var(--edit); border-left: 3px solid var(--edit);">{{ v2_text }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>📋 评审元信息</h2>
+      <div class="kv">
+        <div class="k">状态</div><div><span class="status {{ record.status }}">{{ record.status }}</span></div>
+        <div class="k">自检严重度</div>
+        <div>
+          {% if record.auto_severity %}
+            <span class="severity {{ record.auto_severity }}">{{ record.auto_severity }}</span>
+          {% else %}<span style="color: var(--muted);">无</span>{% endif %}
+        </div>
+        <div class="k">问题数</div><div>{{ record.auto_issues_count }}</div>
+        <div class="k">审核人</div><div style="word-break: break-all;">{{ record.reviewer or '-' }}</div>
+        <div class="k">审核时间</div><div style="font-size: 12px; word-break: break-all;">{{ record.reviewed_at or '-' }}</div>
+        {% if record.reviewer_notes %}
+        <div class="k">审核备注</div><div style="font-size: 13px; word-break: break-word;">{{ record.reviewer_notes }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if record.auto_result %}
+    <div class="panel">
+      <h2>🔍 自检问题 ({{ record.auto_issues_count }})</h2>
+      {% set ar = record.auto_result %}
+      {% for key, label in [
+        ('character_inconsistency', '角色一致性'),
+        ('timeline_conflict', '时间线'),
+        ('location_or_item_conflict', '地点/物品'),
+        ('foreshadow_problem', '伏笔'),
+        ('personality_drift', '性格漂移')
+      ] %}
+        {% if ar.get(key) %}
+          {% for it in ar.get(key)[:3] %}
+          <div class="issue {% if record.auto_severity == 'critical' %}crit{% endif %}">
+            <div class="issue-text"><strong>{{ label }}</strong>{{ it.issue }}</div>
+            {% if it.quote %}
+            <div class="issue-quote">「{{ it.quote[:150] }}{% if it.quote|length > 150 %}…{% endif %}」</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="panel">
+      <h2>🛠 人工操作</h2>
+      <button class="action-btn primary" onclick="doAction('approve', '{{ chapter_id }}')">
+        ✓ 批准通过
+      </button>
+      <div class="action-form">
+        <label>拒退原因：</label>
+        <textarea id="reject-reason" placeholder="如：时间线矛盾未解决..."></textarea>
+        <button class="action-btn warn" onclick="doAction('reject', '{{ chapter_id }}')">
+          ✗ 拒退（标记需重写）
+        </button>
+      </div>
+      <div class="action-form">
+        <label>编辑正文（保存到 v2.md）：</label>
+        <textarea id="edit-text" placeholder="粘贴新版本正文...留空 = 不编辑"></textarea>
+        <label class="checkbox-label" style="margin-top: 8px;">
+          <input type="checkbox" id="edit-apply"> 同时覆盖到 chapters/{{ chapter_id }}.md
+        </label>
+        <button class="action-btn edit" onclick="doAction('edit', '{{ chapter_id }}')">
+          💾 保存编辑
+        </button>
+      </div>
+      <div class="action-form">
+        <label>误报说明：</label>
+        <textarea id="fp-notes" placeholder="如：自检误判，角色其实没漂移..."></textarea>
+        <button class="action-btn" onclick="doAction('false-positive', '{{ chapter_id }}')">
+          🚫 标记为误报
+        </button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>📜 历史 ({{ record.history|length }})</h2>
+      {% for ev in record.history|reverse %}
+      <div class="history-item">
+        <span class="ts">{{ ev.at[:19] }}</span>
+        <strong>{{ ev.action }}</strong>
+        <span style="color: var(--muted); font-size: 12px;">by {{ ev.by }}</span>
+        {% if ev.severity %}<span class="sev-inline {{ ev.severity }}">{{ ev.severity }}</span>{% endif %}
+        {% if ev.notes %}<div class="notes">{{ ev.notes }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+function toast(msg, err) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = err ? 'err' : '';
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2500);
+}
+async function doAction(action, chapter) {
+  let body = {};
+  let url = `{{ request.script_root }}/api/${action}/{{ book }}/${chapter}`;
+  if (action === 'approve') {
+    body = { reviewer: 'wei_chao', notes: '通过 Web UI 批准' };
+  } else if (action === 'reject') {
+    const reason = document.getElementById('reject-reason').value.trim();
+    if (!reason) { toast('请填写拒退原因', true); return; }
+    body = { reviewer: 'wei_chao', reason };
+  } else if (action === 'edit') {
+    const text = document.getElementById('edit-text').value.trim();
+    if (!text) { toast('请粘贴新版本正文', true); return; }
+    const apply = document.getElementById('edit-apply').checked;
+    body = { reviewer: 'wei_chao', text, apply, notes: 'Web UI 编辑' };
+  } else if (action === 'false-positive') {
+    const notes = document.getElementById('fp-notes').value.trim();
+    if (!notes) { toast('请填写误报说明', true); return; }
+    body = { reviewer: 'wei_chao', notes };
+  }
+  // Disable button + show pending state
+  event.target.disabled = true;
+  event.target.textContent = '⏳ 处理中...';
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      let err;
+      try { err = await r.json(); } catch { err = {}; }
+      throw new Error(err.message || err.description || err.error || ('HTTP ' + r.status));
+    }
+    const data = await r.json();
+    toast(`✓ ${action} 成功 (${data.status})`);
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    toast('✗ 失败: ' + (e.message || e), true);
+    event.target.disabled = false;
+    event.target.textContent = event.target.dataset.origText || event.target.textContent;
+  }
+}
+// Save original button text for restoration
+document.querySelectorAll('.action-btn').forEach(btn => {
+  btn.dataset.origText = btn.textContent;
+});
+</script>
+</body>
+</html>

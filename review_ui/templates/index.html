@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0e1217">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>📚 小说评审台</title>
+<style>
+:root {
+  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
+  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  background: var(--bg); color: var(--text);
+  line-height: 1.6; -webkit-text-size-adjust: 100%;
+}
+header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(8px);
+}
+h1 { margin: 0; font-size: 22px; font-weight: 600; }
+h1 .icon { margin-right: 8px; }
+.subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+@media (max-width: 600px) {
+  .container { padding: 14px; }
+  header { padding: 14px 16px; }
+  h1 { font-size: 18px; }
+  .subtitle { font-size: 12px; }
+}
+.book-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; margin-bottom: 12px;
+  display: block;
+  transition: border-color 0.2s, transform 0.2s;
+  text-decoration: none; color: inherit;
+  min-height: 44px;
+}
+.book-card:hover { border-color: var(--accent); }
+.book-card:active { transform: scale(0.99); }
+.book-title { font-size: 17px; font-weight: 600; margin-bottom: 6px; word-break: break-word; }
+.book-meta {
+  color: var(--muted); font-size: 13px;
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+}
+.book-meta span { white-space: nowrap; }
+.stats { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.stat {
+  background: var(--panel2); padding: 6px 10px; border-radius: 6px;
+  font-size: 12px; display: flex; align-items: center; gap: 4px;
+  white-space: nowrap;
+}
+.stat.pending { background: rgba(255,180,84,0.18); color: var(--pending); font-weight: 600; }
+.stat.crit { background: rgba(255,107,107,0.18); color: var(--crit); font-weight: 600; }
+.stat.ok { background: rgba(109,217,155,0.18); color: var(--ok); font-weight: 600; }
+.stat .num { font-weight: 700; }
+.empty {
+  text-align: center; padding: 60px 20px; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+}
+.empty code { background: var(--panel2); padding: 2px 6px; border-radius: 4px; }
+footer { color: var(--muted); font-size: 12px; padding: 24px; text-align: center; }
+@media (max-width: 600px) {
+  .stats { gap: 4px; }
+  .stat { padding: 5px 8px; font-size: 11px; }
+  .book-meta { font-size: 12px; }
+  footer { padding: 16px; font-size: 11px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="icon">📚</span>小说评审台</h1>
+  <div class="subtitle">人工审核 · 章节评审队列 · 历史追溯</div>
+</header>
+<div class="container">
+  {% if books %}
+    {% for b in books %}
+    <a class="book-card" href="{{ url_for('book_page', book=b.name) }}">
+      <div class="book-title">{{ b.title }}</div>
+      <div class="book-meta">
+        <span>📂 {{ b.name }}</span>
+        <span>🎭 {{ b.genre }}</span>
+        <span>👤 {{ b.protagonist }}</span>
+        <span>📄 {{ b.chapters }} 章</span>
+      </div>
+      <div class="stats">
+        {% if b.pending %}
+        <div class="stat pending"><span class="num">⚠ {{ b.pending }}</span><span>待审</span></div>
+        {% endif %}
+        {% if b.needs_rewrite %}
+        <div class="stat crit"><span class="num">✗ {{ b.needs_rewrite }}</span><span>需重写</span></div>
+        {% endif %}
+        {% if b.approved %}
+        <div class="stat ok"><span class="num">✓ {{ b.approved }}</span><span>已批准</span></div>
+        {% endif %}
+        <div class="stat"><span class="num">{{ b.auto_passed }}</span><span>自动通过</span></div>
+        <div class="stat"><span class="num">{{ b.human_edited }}</span><span>人工编辑</span></div>
+        {% if b.false_positive %}
+        <div class="stat"><span class="num">{{ b.false_positive }}</span><span>误报</span></div>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  {% else %}
+    <div class="empty">
+      📭 没有项目。<br>在 <code>novel_workflow/projects/</code> 下用 <code>python novel.py init</code> 创建。
+    </div>
+  {% endif %}
+</div>
+<footer>
+  Novel Review UI · 端口 21199 · 数据: <code>novel_workflow/projects/</code>
+</footer>
+</body>
+</html>

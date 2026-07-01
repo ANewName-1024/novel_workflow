@@ -1,0 +1,87 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ===== 虚拟环境 =====
+venv/
+.venv/
+env/
+ENV/
+
+# ===== 项目运行时数据 (不入库) =====
+projects/*/chapters/*.md
+projects/*/summaries/*.txt
+projects/*/self_checks/*.json
+projects/*/reviews/*.review.json
+projects/*/reviews/*.v2.md
+projects/*/reviews/audit.log
+projects/*/memory/characters.json
+projects/*/memory/events.json
+projects/*/memory/foreshadowing.json
+projects/*/memory/relationships.json
+projects/*/memory/world.json
+projects/*/backups/
+projects/*/logs/
+projects/*/progress.json
+projects/*/state.json
+projects/*/style.json
+projects/*/outline.json
+projects/*/config.json
+projects/nonexistent*
+projects/不存在*
+projects/测试书籍/
+
+# ===== 部署/本地配置 (不入库, 含密码) =====
+config.yaml
+.env
+.env.local
+.env.*.local
+*.psd
+*.key
+*.pem
+*.crt
+
+# ===== 备份/日志 =====
+*.log
+*.log.*
+logs/
+*.tar.gz
+*.zip
+*.bak
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ===== 模板 (只跟项目名入, 内容不入) =====
+!projects/.gitkeep
+
+# ===== 模型/数据 (不入库) =====
+downloads/
+!downloads/.gitkeep
+
+# ===== review_ui 运行时 =====
+review_ui/flask_run.log
+review_ui/flask_run.log.err
+
+# ===== 临时/中间产物 =====
+tmp/
+temp/
+.cache/
+lib/__pycache__/
+review_ui/__pycache__/
+review_ui/setup_nginx2.ps1
+review_ui/setup_nginx3.ps1
+review_ui/check_ehandler.py

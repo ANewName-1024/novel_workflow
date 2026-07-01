@@ -1,0 +1,9 @@
+# novel_workflow 开发依赖 (装在开发环境)
+-r requirements.txt
+
+# 静态分析
+ruff>=0.5
+mypy>=1.10
+
+# 调试
+ipython>=8.0

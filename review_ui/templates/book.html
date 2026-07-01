@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0e1217">
+<title>{{ cfg.book_name or book }} - 评审</title>
+<style>
+:root {
+  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
+  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(8px);
+}
+.back {
+  color: var(--accent); text-decoration: none; font-size: 14px;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
+  border-radius: 6px;
+}
+.back:active { background: var(--panel2); }
+h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
+.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.subtitle span { margin-right: 10px; }
+.container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
+@media (max-width: 600px) {
+  .container { padding: 12px 14px; }
+  header { padding: 12px 14px; }
+  h1 { font-size: 17px; }
+}
+.section-title {
+  font-size: 15px; font-weight: 600; margin: 20px 0 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title .count { color: var(--muted); font-weight: 400; font-size: 13px; }
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px; margin-bottom: 20px;
+}
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+}
+.stat-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px;
+}
+.stat-card .label { color: var(--muted); font-size: 11px; }
+.stat-card .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.stat-card.pending .value { color: var(--pending); }
+.stat-card.crit .value { color: var(--crit); }
+.stat-card.ok .value { color: var(--ok); }
+.queue-table {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden;
+}
+.queue-row {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; text-decoration: none; color: inherit;
+  transition: background 0.15s;
+  display: block;
+  min-height: 44px;
+}
+.queue-row:hover { background: var(--panel2); }
+.queue-row:active { background: var(--panel2); }
+.queue-row:last-child { border-bottom: 0; }
+.queue-row-main {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; margin-bottom: 6px;
+}
+.queue-row-main .ch { font-weight: 600; color: var(--accent); font-size: 16px; }
+.queue-row-meta {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-size: 13px; color: var(--muted);
+}
+.severity {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 12px; font-weight: 600;
+}
+.severity.critical { background: rgba(255,107,107,0.2); color: var(--crit); }
+.severity.moderate { background: rgba(255,180,84,0.2); color: var(--pending); }
+.severity.minor { background: rgba(109,217,155,0.2); color: var(--ok); }
+.status {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px;
+  background: var(--panel2); color: var(--muted);
+}
+.status.pending_review { background: rgba(255,180,84,0.2); color: var(--pending); }
+.status.needs_rewrite { background: rgba(255,107,107,0.2); color: var(--crit); }
+.status.approved { background: rgba(109,217,155,0.2); color: var(--ok); }
+.chapter-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .chapter-list { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+}
+.chapter-pill {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; font-size: 13px; text-decoration: none; color: inherit;
+  display: flex; justify-content: space-between; align-items: center;
+  min-height: 44px;
+}
+.chapter-pill:hover { border-color: var(--accent); }
+.chapter-pill:active { background: var(--panel2); }
+.chapter-pill .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.chapter-pill .status-dot.auto_passed { background: var(--ok); }
+.chapter-pill .status-dot.pending_review { background: var(--pending); }
+.chapter-pill .status-dot.needs_rewrite { background: var(--crit); }
+.chapter-pill .status-dot.approved { background: var(--accent); }
+.chapter-pill .status-dot.human_edited { background: #b48cff; }
+.chapter-pill .status-dot.false_positive { background: var(--muted); }
+.empty-row {
+  padding: 24px; text-align: center; color: var(--muted); font-size: 14px;
+}
+footer {
+  color: var(--muted); font-size: 12px; padding: 24px; text-align: center;
+}
+@media (max-width: 600px) {
+  footer { padding: 16px; font-size: 11px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <a href="{{ url_for('index') }}" class="back">← 返回</a>
+  <h1>{{ cfg.book_name or book }}</h1>
+  <div class="subtitle">
+    <span>📂 {{ book }}</span>
+    <span>🎭 {{ cfg.genre }}</span>
+    <span>👤 {{ cfg.protagonist }}</span>
+    <span>📄 {{ chapters|length }} 章</span>
+  </div>
+</header>
+
+<div class="container">
+  <div class="section-title">📊 评审统计</div>
+  <div class="stats-grid">
+    <div class="stat-card pending">
+      <div class="label">待人工审</div>
+      <div class="value">{{ stats.pending_review }}</div>
+    </div>
+    <div class="stat-card crit">
+      <div class="label">需重写</div>
+      <div class="value">{{ stats.needs_rewrite }}</div>
+    </div>
+    <div class="stat-card ok">
+      <div class="label">已批准</div>
+      <div class="value">{{ stats.approved }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">人工编辑</div>
+      <div class="value">{{ stats.human_edited }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">自动通过</div>
+      <div class="value">{{ stats.auto_passed }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">误报</div>
+      <div class="value">{{ stats.false_positive }}</div>
+    </div>
+  </div>
+
+  <div class="section-title">
+    ⚠ 待审章节 <span class="count">({{ queue|length }})</span>
+  </div>
+  {% if queue %}
+  <div class="queue-table">
+    {% for r in queue %}
+    <a class="queue-row" href="{{ url_for('chapter_page', book=book, ch=r.chapter_id) }}">
+      <div class="queue-row-main">
+        <span class="ch">{{ r.chapter_id }}</span>
+        <span class="severity {{ r.auto_severity }}">{{ r.auto_severity }}</span>
+      </div>
+      <div class="queue-row-meta">
+        <span>🔍 自检 {{ r.auto_issues_count }} 项</span>
+        <span class="status {{ r.status }}">{{ r.status }}</span>
+        <span>📅 {{ r.history[-1].at[:19] if r.history else '无记录' }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="queue-table">
+    <div class="empty-row">✓ 所有章节均已审核或自动通过</div>
+  </div>
+  {% endif %}
+
+  <div class="section-title">📚 全部章节 <span class="count">({{ chapters|length }})</span></div>
+  <div class="chapter-list">
+    {% for ch in chapters %}
+    <a class="chapter-pill" href="{{ url_for('chapter_page', book=book, ch=ch.id) }}">
+      <span>{{ ch.id }} · {{ ch.word_count }}字</span>
+      <span class="status-dot auto_passed"></span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+<footer>
+  <a href="{{ url_for('api_history', book=book) }}" style="color: var(--accent); word-break: break-all;">JSON API: /api/history/{{ book }}</a>
+</footer>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# novel_workflow 依赖 (运行时)
+# Python 3.12+ 推荐, llama-server 独立运行
+
+# --- LLM 客户端 ---
+openai>=1.50,<2.0           # OpenAI-compat client (本地 llama-server 也走这个)
+
+# --- Token 估算 ---
+tiktoken>=0.7,<1.0          # GPT-4 tokenizer (粗估, 用于中文)
+
+# --- Web UI ---
+flask>=3.0,<4.0             # review_ui Web 框架
+# werkzeug>=3.0,<4.0        # 由 flask 间接依赖 (ProxyFix 在 werkzeug.middleware)
+
+# --- 测试 ---
+pytest>=8.0,<9.0
+pytest-cov>=5.0,<7.0
+responses>=0.25,<1.0        # mock OpenAI HTTP
+
+# --- 可选: 静态分析 ---
+# ruff>=0.5  # 装在开发环境即可, 不强制依赖
+# mypy>=1.10  # 同上
