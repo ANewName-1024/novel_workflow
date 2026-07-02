@@ -1077,6 +1077,100 @@ def api_outline_diff(book):
     return jsonify(diff)
 
 
+# ── Outline AI 助手 (v1.3 M2) ──────────────────────────────────────────────
+
+@app.route("/api/outline/<book>/ai-suggest", methods=["POST"])
+def api_outline_ai_suggest(book):
+    """POST /api/outline/<book>/ai-suggest
+    body: {count?: 3, next_num?: N}
+    Returns: {chapters: [{title, summary, pov, key_events, foreshadow}], reasoning: str}"""
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    count = int(body.get("count", 3))
+    count = max(1, min(count, 5))  # clamp 1-5
+
+    cfg = storage.read_json(book, "config.json") or {}
+    book_title = cfg.get("book_name", book)
+    genre = cfg.get("genre", "")
+
+    o = oe.load_outline_or_empty(book)
+    existing_count = len(o.get("chapters", []))
+    next_num = int(body.get("next_num", existing_count + 1))
+
+    # 构建 outline 文本供 LLM 上下文
+    outline_text = _outline_to_text(o)
+
+    from lib import outline_ai as oai
+    result = oai.suggest_chapters(
+        book_title=book_title,
+        genre=genre,
+        existing_count=existing_count,
+        outline_text=outline_text,
+        next_num=next_num,
+        count=count,
+    )
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/outline/<book>/ai-expand", methods=["POST"])
+def api_outline_ai_expand(book):
+    """POST /api/outline/<book>/ai-expand
+    body: {title: str, summary: str}
+    Returns: {key_events: [...], foreshadow: str, pov_notes: str}"""
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    title = body.get("title", "").strip()
+    summary = body.get("summary", "").strip()
+    if not title:
+        abort(400, description="'title' 必填")
+    if not summary:
+        abort(400, description="'summary' 必填")
+
+    cfg = storage.read_json(book, "config.json") or {}
+    book_title = cfg.get("book_name", book)
+    genre = cfg.get("genre", "")
+
+    from lib import outline_ai as oai
+    result = oai.expand_chapter(
+        book_title=book_title,
+        genre=genre,
+        title=title,
+        summary=summary,
+    )
+    return jsonify({"ok": True, **result})
+
+
+def _outline_to_text(o: dict) -> str:
+    """把 outline dict 转成可读文本 (供 LLM 上下文)."""
+    lines = []
+    meta = o.get("meta", {})
+    if meta.get("title"):
+        lines.append(f"书名: {meta['title']}")
+    # 同步 volumes[].chapters (用 chapters[] 完整信息)
+    chapters = o.get("chapters", [])
+    ch_by_id = {c.get("id"): c for c in chapters if c.get("id")}
+    for vol in o.get("volumes", []):
+        lines.append(f"\n## {vol.get('title', '卷')}: {vol.get('summary', '')}")
+        for ref in vol.get("chapters", []):
+            # ref 可能是 "ch_001|标题|摘要" 字符串, 也可能是 dict
+            if isinstance(ref, str):
+                ch_id = ref.split("|", 1)[0] if "|" in ref else ref
+                # 从 chapters[] 查详情
+                node = ch_by_id.get(ch_id, {})
+                ch_title = node.get("title", "无标题")
+                ch_summary = node.get("summary", "")
+                ch_pov = node.get("pov", "")
+            else:
+                ch_id = ref.get("id", "?")
+                ch_title = ref.get("title", "无标题")
+                ch_summary = ref.get("summary", "")
+                ch_pov = ref.get("pov", "")
+            lines.append(f"- [{ch_id}] {ch_title}: {ch_summary}")
+            if ch_pov:
+                lines.append(f"  POV: {ch_pov}")
+    return "\n".join(lines)
+
+
 @app.route("/outline/<book>")
 def outline_page(book):
     """GET /outline/<book> — outline editor page (tree view + edit panel)."""
