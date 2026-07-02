@@ -248,6 +248,23 @@ def book_page(book):
         chapters=chapters,
     )
 
+
+# 通知中心页面 (v1.2 M2)
+@app.route("/notifications/<book>")
+def notifications_page(book):
+    """GET /notifications/<book>?user=wei_chao — 通知中心."""
+    _ensure_book(book)
+    from lib import comments as comm_serv
+    user = request.args.get("user", "wei_chao")
+    items = comm_serv.list_notifications(book, user=user)
+    unread = comm_serv.unread_count(book, user)
+    return render_template("notifications.html",
+        book=book,
+        user=user,
+        items=items,
+        unread_count=unread,
+    )
+
 @app.route("/book/<book>/<ch>")
 def chapter_page(book, ch):
     _ensure_book(book)
@@ -442,6 +459,56 @@ def api_batch_approve(book):
                     "results": results})
 
 
+@app.route("/api/batch-reject/<book>", methods=["POST"])
+def api_batch_reject(book):
+    """M2: 批量拒绝. body: {"chapters": [...], "reviewer": "...", "reason": "..."}.
+    与 batch-approve 对称的拒绝路径, 需 reason.
+    """
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    chapter_ids = body.get("chapters") or []
+    if not isinstance(chapter_ids, list) or not chapter_ids:
+        abort(400, description="chapters (non-empty list) required")
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        abort(400, description="reason required")
+    reviewer = (body.get("reviewer") or "wei_chao").strip()
+    results = []
+    for cid in chapter_ids:
+        try:
+            if not isinstance(cid, str) or not cid.startswith("ch_"):
+                raise ValueError(f"invalid chapter id: {cid!r}")
+            rec = revserv.reject(book, cid, reviewer, reason)
+            results.append({"id": cid, "ok": True, "status": rec["status"]})
+        except Exception as e:
+            results.append({"id": cid, "ok": False, "error": str(e)})
+    n_ok = sum(1 for r in results if r["ok"])
+    n_fail = len(results) - n_ok
+    return jsonify({"ok": n_fail == 0,
+                    "total": len(results),
+                    "rejected": n_ok,
+                    "failed": n_fail,
+                    "results": results})
+
+
+@app.route("/api/queue/<book>/filtered")
+def api_queue_filtered(book):
+    """M2: 评审队列过滤. ?severity=critical|moderate|minor&status=pending_review
+    返回过滤后的列表, 在原 list 基础上按严重度/状态过滤.
+    """
+    _ensure_book(book)
+    _ensure_review_backfill(book)
+    queue = revserv.get_review_queue(book)
+    severity = request.args.get("severity")
+    status = request.args.get("status")
+    items = queue
+    if severity:
+        items = [q for q in items if q.get("auto_severity") == severity]
+    if status:
+        items = [q for q in items if q.get("status") == status]
+    return jsonify(items)
+
+
 @app.route("/api/diff/<book>/<ch>")
 def api_diff(book, ch):
     """M5: 返回 v1 vs v2 unified diff (纯 API, 模板不用)."""
@@ -462,6 +529,113 @@ def api_diff(book, ch):
     return jsonify({"has_diff": True,
                     "diff": diff_lines,
                     "stats": _diff_stats(text, v2_text)})
+
+
+# ── 评论流 + 通知 + 行级 diff 锚点 (v1.2 M2) ───────────────────────────
+
+from lib import comments as comm_serv  # noqa: E402
+
+
+@app.route("/api/comments/<book>", methods=["GET"])
+def api_comments_list(book):
+    """GET /api/comments/<book>?chapter=ch_001 — 列出评论."""
+    _ensure_book(book)
+    chapter = request.args.get("chapter")
+    return jsonify(comm_serv.list_comments(book, chapter))
+
+
+@app.route("/api/comments/<book>/<ch>", methods=["POST"])
+def api_comments_add(book, ch):
+    """POST /api/comments/<book>/<ch>
+    body: {author, text, line?, reply_to?}
+    """
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    text = (body.get("text") or "").strip()
+    if not text:
+        abort(400, description="text required")
+    author = (body.get("author") or "wei_chao").strip()
+    line = body.get("line")
+    reply_to = body.get("reply_to")
+    try:
+        c = comm_serv.add_comment(
+            book, ch, author=author, text=text,
+            line=line, reply_to=reply_to,
+        )
+    except ValueError as e:
+        abort(400, description=str(e))
+    return jsonify({"ok": True, "comment": c})
+
+
+@app.route("/api/comments/<book>/<ch>/<cid>", methods=["DELETE"])
+def api_comments_delete(book, ch, cid):
+    """DELETE /api/comments/<book>/<ch>/<cid>"""
+    _ensure_book(book)
+    if not comm_serv.delete_comment(book, ch, cid):
+        abort(404, description=f"comment {cid} not found")
+    return ("", 204)
+
+
+@app.route("/api/notifications/<book>", methods=["GET"])
+def api_notifications_list(book):
+    """GET /api/notifications/<book>?user=wei_chao&unread=1 — 列出通知."""
+    _ensure_book(book)
+    user = request.args.get("user")
+    unread_only = request.args.get("unread") in ("1", "true", "yes")
+    items = comm_serv.list_notifications(book, user=user, unread_only=unread_only)
+    return jsonify({
+        "items": items,
+        "unread_count": comm_serv.unread_count(book, user) if user else None,
+    })
+
+
+@app.route("/api/notifications/<book>/<nid>/read", methods=["POST"])
+def api_notifications_read(book, nid):
+    """POST /api/notifications/<book>/<nid>/read — 标记已读."""
+    _ensure_book(book)
+    if not comm_serv.mark_notification_read(book, nid):
+        abort(404, description=f"notification {nid} not found")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/notifications/<book>/read-all", methods=["POST"])
+def api_notifications_read_all(book):
+    """POST /api/notifications/<book>/read-all?user=wei_chao — 全部已读."""
+    _ensure_book(book)
+    user = request.args.get("user")
+    if not user:
+        abort(400, description="user query param required")
+    n = comm_serv.mark_all_read(book, user)
+    return jsonify({"ok": True, "marked": n})
+
+
+# 行级 diff 锚点: 按行号取上下文 ±N 行
+@app.route("/api/chapter/<book>/<ch>/context")
+def api_chapter_context(book, ch):
+    """GET /api/chapter/<book>/<ch>/context?line=42&window=3
+    返回 {line, target, before: [...], after: [...]} 上下文片段.
+    """
+    _ensure_book(book)
+    text = storage.read_chapter(book, ch)
+    if text is None:
+        abort(404, description=f"chapter {ch} not found")
+    try:
+        line = int(request.args.get("line", 0))
+    except ValueError:
+        abort(400, description="line must be int")
+    window = int(request.args.get("window", 3))
+    lines = text.splitlines()
+    if line < 1 or line > len(lines):
+        abort(400, description=f"line {line} out of range [1, {len(lines)}]")
+    start = max(0, line - 1 - window)
+    end = min(len(lines), line - 1 + window + 1)
+    return jsonify({
+        "line": line,
+        "before": [{"line_no": i + 1, "text": lines[i]} for i in range(start, line - 1)],
+        "target": {"line_no": line, "text": lines[line - 1]},
+        "after": [{"line_no": i + 1, "text": lines[i]} for i in range(line, end)],
+    })
+
 
 # ── 实体管理 API (v1.2 M1.2) ──────────────────────────────────────────
 

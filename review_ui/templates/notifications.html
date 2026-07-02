@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔔 通知中心 - {{ book }}</title>
+  <style>
+    :root {
+      --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+      --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff; --crit: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      background: var(--bg); color: var(--text);
+    }
+    header {
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    .nav-btn {
+      color: var(--text); text-decoration: none; padding: 6px 12px;
+      border-radius: 6px; border: 1px solid var(--border); background: transparent;
+      font-size: 13px;
+    }
+    .nav-btn:hover { background: var(--border); }
+    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .toolbar .info { color: var(--muted); font-size: 13px; }
+    .btn {
+      background: var(--accent); color: #fff; border: none; padding: 7px 14px;
+      border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+    .notif {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 16px; margin-bottom: 10px;
+    }
+    .notif.unread { border-left: 3px solid var(--accent); }
+    .notif .meta { display: flex; gap: 10px; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .notif .msg { font-size: 14px; line-height: 1.5; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; background: var(--panel2); color: var(--muted);
+    }
+    .badge.mention { background: var(--accent); color: #fff; }
+    a.chapter-link { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔔 通知中心 - {{ book }}</h1>
+    <div style="display:flex; gap:8px;">
+      <a href="/book/{{ book }}" class="nav-btn">← 返回</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="toolbar">
+      <div class="info">
+        用户: <strong>{{ user }}</strong> ·
+        未读: <strong id="unread-count">{{ unread_count }}</strong>
+      </div>
+      <button id="mark-all-btn" class="btn" {% if unread_count == 0 %}disabled{% endif %}>
+        全部已读
+      </button>
+    </div>
+
+    {% if not items %}
+    <div class="empty">🎉 暂无通知</div>
+    {% else %}
+    <div id="notif-list">
+      {% for n in items %}
+      <div class="notif {% if not n.read %}unread{% endif %}" data-id="{{ n.id }}">
+        <div class="meta">
+          <span class="badge {{ n.type }}">{{ n.type }}</span>
+          {% if n.ref_chapter %}
+          <a href="/book/{{ book }}/{{ n.ref_chapter }}" class="chapter-link">{{ n.ref_chapter }}</a>
+          {% endif %}
+          <span>{{ n.created_at }}</span>
+        </div>
+        <div class="msg">{{ n.message }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <script>
+  (function() {
+    const BOOK = "{{ book }}";
+    const USER = "{{ user }}";
+
+    document.getElementById("mark-all-btn")?.addEventListener("click", async () => {
+      const r = await fetch(`/api/notifications/${BOOK}/read-all?user=${encodeURIComponent(USER)}`, {method: "POST"});
+      if (r.ok) {
+        location.reload();
+      }
+    });
+
+    // Click notif to mark read + jump to chapter
+    document.querySelectorAll(".notif").forEach(el => {
+      el.addEventListener("click", async (e) => {
+        const id = el.dataset.id;
+        if (id && el.classList.contains("unread")) {
+          await fetch(`/api/notifications/${BOOK}/${id}/read`, {method: "POST"});
+          el.classList.remove("unread");
+          const counter = document.getElementById("unread-count");
+          if (counter) counter.textContent = Math.max(0, parseInt(counter.textContent) - 1);
+        }
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

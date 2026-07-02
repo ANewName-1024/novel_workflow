@@ -210,10 +210,29 @@ footer {
     <span>📄 {{ chapters|length }} 章</span>
   </div>
   <div class="nav-actions">
+    <a href="/notifications/{{ book }}?user={{ cfg.reviewer|default('wei_chao') }}" class="nav-btn" title="通知中心">🔔<span id="notif-badge" style="display:none; background:var(--crit); color:#fff; border-radius:10px; padding:1px 6px; font-size:11px; margin-left:2px;">0</span></a>
     <a href="/entities/{{ book }}?type=character" class="nav-btn">🧩 实体管理</a>
     <a href="/dashboard/{{ book }}" class="nav-btn">⚙️ 流水线面板</a>
   </div>
 </header>
+
+<script>
+(async function() {
+  const BOOK = "{{ book }}";
+  const USER = "{{ cfg.reviewer|default('wei_chao') }}";
+  try {
+    const r = await fetch(`/api/notifications/${BOOK}?user=${encodeURIComponent(USER)}&unread=1`);
+    if (r.ok) {
+      const d = await r.json();
+      const badge = document.getElementById("notif-badge");
+      if (badge && d.unread_count > 0) {
+        badge.textContent = d.unread_count;
+        badge.style.display = "inline-block";
+      }
+    }
+  } catch (e) { /* ignore */ }
+})();
+</script>
 
 <div class="container">
   <div class="section-title">📊 评审统计</div>
