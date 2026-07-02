@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0e1217">
+<title>{{ cfg.book_name or book }} - 大纲编辑器</title>
+<style>
+:root {
+  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
+  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
+  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  position: sticky; top: 0; z-index: 10;
+}
+.back {
+  color: var(--accent); text-decoration: none; font-size: 14px;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
+  border-radius: 6px;
+}
+.back:hover { background: var(--panel2); }
+h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
+
+.toolbar {
+  padding: 14px 20px;
+  display: flex; gap: 8px; align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.btn {
+  display: inline-flex; align-items: center;
+  min-height: 36px; padding: 6px 14px;
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  text-decoration: none; font-size: 13px; cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.btn:hover { background: var(--border); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.1); }
+.btn.danger { color: var(--crit); border-color: var(--crit); }
+.btn.danger:hover { background: var(--crit); color: var(--bg); }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 20px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tab {
+  padding: 10px 16px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  background: none;
+  border-left: none; border-right: none; border-top: none;
+  font-family: inherit;
+}
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.vol-section {
+  margin: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.vol-header {
+  padding: 12px 16px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+}
+.vol-header .vol-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 600;
+}
+.vol-header .vol-summary {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.vol-actions {
+  display: flex; gap: 4px;
+}
+
+.node-list {
+  list-style: none;
+  margin: 0; padding: 0;
+}
+.node-list:empty::after {
+  content: "(空卷 - 添加首个章节)";
+  display: block;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.node-list.drop-target {
+  background: rgba(78,163,255,0.08);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.node {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  cursor: grab;
+  user-select: none;
+}
+.node:last-child { border-bottom: none; }
+.node:active { cursor: grabbing; }
+.node.dragging { opacity: 0.4; }
+
+.node .grip {
+  color: var(--muted);
+  font-size: 14px;
+  cursor: grab;
+  width: 18px;
+  flex-shrink: 0;
+}
+.node .node-info { flex: 1; min-width: 0; }
+.node .node-id {
+  font-size: 11px; color: var(--muted);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  margin-right: 6px;
+}
+.node .node-title {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node .node-meta {
+  font-size: 11px; color: var(--muted);
+  margin-top: 2px;
+}
+.node-actions {
+  display: flex; gap: 4px;
+  flex-shrink: 0;
+}
+.node-actions .btn {
+  min-height: 32px; padding: 4px 10px; font-size: 12px;
+}
+
+.empty-section {
+  margin: 40px 20px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+.empty-section .hint { font-size: 13px; margin-top: 8px; }
+
+/* Modal (same as entities.html) */
+.modal-bg {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-bg.show { display: flex; }
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal h2 { margin: 0 0 16px; font-size: 18px; }
+.field { margin-bottom: 12px; }
+.field label {
+  display: block;
+  font-size: 12px; color: var(--muted);
+  margin-bottom: 4px; font-weight: 500;
+}
+.field input, .field textarea, .field select {
+  width: 100%;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px; font-family: inherit;
+}
+.field textarea { min-height: 60px; resize: vertical; }
+.field input:focus, .field textarea:focus, .field select:focus {
+  outline: none; border-color: var(--accent);
+}
+.list-item-row {
+  display: flex; gap: 6px; margin-bottom: 6px;
+}
+.list-item-row input { flex: 1; }
+.list-item-row button {
+  padding: 4px 8px; font-size: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--crit); border-radius: 4px; cursor: pointer;
+  font-family: inherit;
+}
+.add-list-item {
+  margin-top: 4px; font-size: 12px;
+  color: var(--accent); cursor: pointer;
+  background: none; border: none; padding: 0;
+  font-family: inherit;
+}
+.modal-actions {
+  display: flex; gap: 8px; margin-top: 16px;
+  justify-content: flex-end;
+}
+.error {
+  background: rgba(255,107,107,0.15);
+  color: var(--crit);
+  padding: 8px 12px; border-radius: 4px;
+  font-size: 12px; margin-bottom: 12px;
+  display: none;
+}
+.error.show { display: block; }
+
+/* Diff panel */
+.diff-panel {
+  margin: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.diff-panel h3 {
+  margin: 0 0 12px; font-size: 14px;
+}
+.diff-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.diff-row .badge {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--panel2);
+  font-size: 11px;
+}
+.diff-row .badge.added { background: rgba(109,217,155,0.2); color: var(--ok); }
+.diff-row .badge.removed { background: rgba(255,107,107,0.2); color: var(--crit); }
+.diff-row .badge.moved { background: rgba(78,163,255,0.2); color: var(--accent); }
+.diff-row .badge.edited { background: rgba(255,180,84,0.2); color: var(--warn); }
+
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 640px) {
+  .toolbar { flex-wrap: wrap; }
+  .btn { font-size: 12px; padding: 6px 10px; }
+  .node { padding: 8px 12px; }
+  .node-actions .btn { padding: 4px 6px; font-size: 11px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/book/{{ book }}">← 返回 {{ cfg.book_name or book }}</a>
+  <h1>📖 大纲编辑器 (v1.2 M4)</h1>
+</header>
+
+<div class="toolbar">
+  <button class="btn primary" onclick="showCreateVol()">+ 新建卷</button>
+  <button class="btn" onclick="showAddNode(null)">+ 在末卷添加章节</button>
+  <span style="color: var(--muted); font-size: 12px; margin-left: auto;">
+    💡 拖动 <span style="font-family:monospace">⋮⋮</span> 重排,或用上下移动按钮
+  </span>
+</div>
+
+<div id="content" style="padding: 0 0 40px;">
+  <div class="empty-section" id="loading">
+    <div class="spinner"></div>
+    <div class="hint">加载大纲...</div>
+  </div>
+</div>
+
+<!-- Modal: 编辑章节节点 / 新建章节 -->
+<div class="modal-bg" id="modal-node">
+  <div class="modal">
+    <h2 id="modal-node-title">新建章节</h2>
+    <div class="error" id="modal-node-error"></div>
+    <form id="form-node" onsubmit="submitNode(event)">
+      <input type="hidden" id="node-original-id" />
+      <div class="field">
+        <label for="node-title">标题</label>
+        <input type="text" id="node-title" required maxlength="200" />
+      </div>
+      <div class="field">
+        <label for="node-summary">摘要 (一句话)</label>
+        <textarea id="node-summary"></textarea>
+      </div>
+      <div class="field">
+        <label for="node-pov">POV (视角角色)</label>
+        <input type="text" id="node-pov" maxlength="100" placeholder="例: 李明" />
+      </div>
+      <div class="field">
+        <label>关键事件 (key_events)</label>
+        <div id="key-events-list"></div>
+        <button type="button" class="add-list-item" onclick="addListItem('key-events-list')">+ 添加事件</button>
+      </div>
+      <div class="field">
+        <label>伏笔 (foreshadow)</label>
+        <div id="foreshadow-list"></div>
+        <button type="button" class="add-list-item" onclick="addListItem('foreshadow-list')">+ 添加伏笔</button>
+      </div>
+      <div class="field">
+        <label for="node-vol">所属卷</label>
+        <select id="node-vol"></select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-node')">取消</button>
+        <button type="submit" class="btn primary" id="modal-node-submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: 新建卷 -->
+<div class="modal-bg" id="modal-vol">
+  <div class="modal">
+    <h2>新建卷</h2>
+    <div class="error" id="modal-vol-error"></div>
+    <form id="form-vol" onsubmit="submitVol(event)">
+      <div class="field">
+        <label for="vol-title">卷标题</label>
+        <input type="text" id="vol-title" required maxlength="200" />
+      </div>
+      <div class="field">
+        <label for="vol-summary">卷摘要</label>
+        <textarea id="vol-summary"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-vol')">取消</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Diff panel (隐藏直到用户点击"查看历史") -->
+<div class="diff-panel" id="diff-panel" style="display: none;">
+  <h3>📜 版本对比</h3>
+  <div id="diff-content"></div>
+</div>
+
+<script>
+const BOOK = {{ book | tojson }};
+let OUTLINE = null;  // 当前大纲 (volumes + chapters)
+let VERSIONS = [];   // 版本列表 (暂不通过前端接口加载 — 留接口位)
+
+// ── API helpers ────────────────────────────────────────────────────────────
+
+async function api(method, path, body = null) {
+  const opts = { method, headers: {"Content-Type": "application/json"} };
+  if (body !== null) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  const txt = await r.text();
+  if (!r.ok) {
+    let msg = txt;
+    try { msg = JSON.parse(txt).message || msg; } catch {}
+    throw new Error(`${r.status}: ${msg}`);
+  }
+  return txt ? JSON.parse(txt) : null;
+}
+
+// ── Load outline ───────────────────────────────────────────────────────────
+
+async function loadOutline() {
+  try {
+    OUTLINE = await api("GET", `/api/outline/${BOOK}`);
+    try {
+      VERSIONS = await api("GET", `/api/outline/${BOOK}/versions`);
+    } catch { VERSIONS = []; }
+  } catch (e) {
+    document.getElementById("content").innerHTML =
+      `<div class="empty-section">加载失败: ${e.message}</div>`;
+    return;
+  }
+  render();
+}
+
+function render() {
+  const c = document.getElementById("content");
+  if (!OUTLINE.volumes.length) {
+    c.innerHTML = `
+      <div class="empty-section">
+        <div>还没有大纲</div>
+        <div class="hint">点上方"+ 新建卷"开始</div>
+      </div>`;
+    return;
+  }
+  // Build per-vol node list
+  const volToNodes = {};
+  for (const v of OUTLINE.volumes) volToNodes[v.id] = [];
+  for (const ch of OUTLINE.chapters) {
+    if (volToNodes[ch.vol]) volToNodes[ch.vol].push(ch);
+  }
+  c.innerHTML = OUTLINE.volumes.map(vol => {
+    const nodes = volToNodes[vol.id];
+    const nodesHtml = nodes.map((n, idx) => `
+      <li class="node" draggable="true" data-ch-id="${escapeHtml(n.id)}" data-vol="${escapeHtml(vol.id)}" data-pos="${idx}">
+        <span class="grip">⋮⋮</span>
+        <div class="node-info">
+          <div>
+            <span class="node-id">${escapeHtml(n.id)}</span>
+            <span class="node-title">${escapeHtml(n.title || "(未命名)")}</span>
+          </div>
+          <div class="node-meta">
+            ${escapeHtml(n.pov || "")}
+            ${n.key_events && n.key_events.length ? ` · ${n.key_events.length} 事件` : ""}
+            ${n.foreshadow && n.foreshadow.length ? ` · ${n.foreshadow.length} 伏笔` : ""}
+          </div>
+        </div>
+        <div class="node-actions">
+          <button class="btn" onclick="moveNode('${escapeHtml(n.id)}', '${escapeHtml(vol.id)}', ${idx - 1})" ${idx === 0 ? "disabled" : ""}>↑</button>
+          <button class="btn" onclick="moveNode('${escapeHtml(n.id)}', '${escapeHtml(vol.id)}', ${idx + 2})" ${idx === nodes.length - 1 ? "disabled" : ""}>↓</button>
+          <button class="btn" onclick="showEditNode(${JSON.stringify(n).replace(/"/g, '&quot;')})">编辑</button>
+          <button class="btn danger" onclick="deleteNode('${escapeHtml(n.id)}', '${escapeHtml(n.title)}')">删</button>
+        </div>
+      </li>
+    `).join("");
+    return `
+      <div class="vol-section" data-vol="${escapeHtml(vol.id)}">
+        <div class="vol-header">
+          <div style="flex: 1;">
+            <div class="vol-title">${escapeHtml(vol.title)}</div>
+            <div class="vol-summary">${escapeHtml(vol.summary || "")} · ${nodes.length} 章</div>
+          </div>
+          <div class="vol-actions">
+            <button class="btn" onclick="showAddNode('${escapeHtml(vol.id)}')">+ 章节</button>
+            <button class="btn danger" onclick="deleteVolume('${escapeHtml(vol.id)}', '${escapeHtml(vol.title)}')">删卷</button>
+          </div>
+        </div>
+        <ul class="node-list" data-vol="${escapeHtml(vol.id)}">${nodesHtml}</ul>
+      </div>
+    `;
+  }).join("");
+  attachDragHandlers();
+}
+
+// ── Drag & drop ────────────────────────────────────────────────────────────
+
+let dragSrcId = null;
+
+function attachDragHandlers() {
+  document.querySelectorAll(".node").forEach(node => {
+    node.addEventListener("dragstart", e => {
+      dragSrcId = node.dataset.chId;
+      node.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", dragSrcId);
+    });
+    node.addEventListener("dragend", () => {
+      node.classList.remove("dragging");
+      document.querySelectorAll(".drop-target").forEach(el => el.classList.remove("drop-target"));
+    });
+  });
+  document.querySelectorAll(".node-list").forEach(list => {
+    list.addEventListener("dragover", e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      list.classList.add("drop-target");
+    });
+    list.addEventListener("dragleave", () => {
+      list.classList.remove("drop-target");
+    });
+    list.addEventListener("drop", async e => {
+      e.preventDefault();
+      list.classList.remove("drop-target");
+      const chId = e.dataTransfer.getData("text/plain");
+      if (!chId || chId === dragSrcId) return;
+      const targetVol = list.dataset.vol;
+      // 计算插入位置 (鼠标 Y 最近的 sibling)
+      const after = getDragAfterElement(list, e.clientY);
+      const siblings = Array.from(list.querySelectorAll(".node"));
+      let pos = siblings.length; // 默认 append
+      if (after == null) {
+        pos = siblings.length;
+      } else {
+        pos = siblings.indexOf(after);
+      }
+      await reorderNode(chId, targetVol, pos);
+    });
+  });
+}
+
+function getDragAfterElement(container, y) {
+  const els = [...container.querySelectorAll(".node:not(.dragging)")];
+  return els.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+async function reorderNode(chId, newVol, newPos) {
+  try {
+    await api("POST", `/api/outline/${BOOK}/reorder`,
+              {moves: [{ch_id: chId, new_vol: newVol, new_position: newPos}]});
+    await loadOutline();
+  } catch (e) {
+    alert("移动失败: " + e.message);
+  }
+}
+
+// ── Move up/down (按钮降级路径) ──────────────────────────────────────────────
+
+async function moveNode(chId, currentVol, newPos) {
+  await reorderNode(chId, currentVol, newPos);
+}
+
+// ── Modal: 章节节点 ──────────────────────────────────────────────────────────
+
+function showCreateVol() {
+  document.getElementById("vol-title").value = "";
+  document.getElementById("vol-summary").value = "";
+  document.getElementById("modal-vol-error").classList.remove("show");
+  document.getElementById("modal-vol").classList.add("show");
+}
+
+async function submitVol(e) {
+  e.preventDefault();
+  try {
+    await api("POST", `/api/outline/${BOOK}/volumes`, {
+      title: document.getElementById("vol-title").value.trim(),
+      summary: document.getElementById("vol-summary").value,
+    });
+    closeModal("modal-vol");
+    await loadOutline();
+  } catch (e) {
+    const el = document.getElementById("modal-vol-error");
+    el.textContent = "保存失败: " + e.message;
+    el.classList.add("show");
+  }
+}
+
+async function deleteVolume(volId, title) {
+  if (!confirm(`确认删除卷 "${title}"?\n它的章节会归并到第一个剩余卷。`)) return;
+  try {
+    const r = await api("DELETE", `/api/outline/${BOOK}/volumes/${volId}`);
+    if (!confirm(`已重新分配 ${r.reassigned} 章节到默认卷,确定继续吗?`)) return;
+    await loadOutline();
+  } catch (e) {
+    alert("删除失败: " + e.message);
+  }
+}
+
+function showAddNode(parentVol) {
+  document.getElementById("modal-node-title").textContent = "新建章节";
+  document.getElementById("node-original-id").value = "";
+  document.getElementById("node-title").value = "";
+  document.getElementById("node-summary").value = "";
+  document.getElementById("node-pov").value = "";
+  renderListItems("key-events-list", []);
+  renderListItems("foreshadow-list", []);
+  populateVolSelect(parentVol);
+  document.getElementById("modal-node-error").classList.remove("show");
+  document.getElementById("modal-node").classList.add("show");
+}
+
+function showEditNode(node) {
+  document.getElementById("modal-node-title").textContent = "编辑章节";
+  document.getElementById("node-original-id").value = node.id;
+  document.getElementById("node-title").value = node.title || "";
+  document.getElementById("node-summary").value = node.summary || "";
+  document.getElementById("node-pov").value = node.pov || "";
+  renderListItems("key-events-list", node.key_events || []);
+  renderListItems("foreshadow-list", node.foreshadow || []);
+  populateVolSelect(node.vol);
+  document.getElementById("modal-node-error").classList.remove("show");
+  document.getElementById("modal-node").classList.add("show");
+}
+
+function populateVolSelect(selectedVol) {
+  const sel = document.getElementById("node-vol");
+  sel.innerHTML = OUTLINE.volumes.map(v =>
+    `<option value="${escapeHtml(v.id)}" ${v.id === selectedVol ? "selected" : ""}>${escapeHtml(v.title)}</option>`
+  ).join("");
+  if (selectedVol && !OUTLINE.volumes.some(v => v.id === selectedVol)) {
+    sel.innerHTML += `<option value="" selected>(孤儿: ${escapeHtml(selectedVol)})</option>`;
+  }
+}
+
+function renderListItems(containerId, items) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = "";
+  items.forEach(v => addListItem(containerId, v));
+}
+
+function addListItem(containerId, value = "") {
+  const c = document.getElementById(containerId);
+  const row = document.createElement("div");
+  row.className = "list-item-row";
+  row.innerHTML = `
+    <input type="text" value="${escapeHtml(value)}" />
+    <button type="button" onclick="this.parentElement.remove()">×</button>
+  `;
+  c.appendChild(row);
+}
+
+function collectListItems(containerId) {
+  return [...document.getElementById(containerId).querySelectorAll("input")]
+    .map(i => i.value.trim())
+    .filter(v => v);
+}
+
+async function submitNode(e) {
+  e.preventDefault();
+  const origId = document.getElementById("node-original-id").value;
+  const data = {
+    title: document.getElementById("node-title").value.trim(),
+    summary: document.getElementById("node-summary").value,
+    pov: document.getElementById("node-pov").value,
+    key_events: collectListItems("key-events-list"),
+    foreshadow: collectListItems("foreshadow-list"),
+    vol: document.getElementById("node-vol").value,
+  };
+  const submitBtn = document.getElementById("modal-node-submit");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "保存中...";
+  try {
+    if (origId) {
+      await api("PUT", `/api/outline/${BOOK}/node/${encodeURIComponent(origId)}`, data);
+    } else {
+      await api("POST", `/api/outline/${BOOK}/node`, {
+        parent_vol: data.vol,
+        position: 999,  // append to vol
+        title: data.title,
+        summary: data.summary,
+        pov: data.pov,
+        key_events: data.key_events,
+        foreshadow: data.foreshadow,
+      });
+      data.vol = null;  // already used in POST
+    }
+    closeModal("modal-node");
+    await loadOutline();
+  } catch (e) {
+    const el = document.getElementById("modal-node-error");
+    el.textContent = "保存失败: " + e.message;
+    el.classList.add("show");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "保存";
+  }
+}
+
+async function deleteNode(chId, title) {
+  if (!confirm(`确认删除章节 "${title || chId}"?`)) return;
+  try {
+    await api("DELETE", `/api/outline/${BOOK}/node/${encodeURIComponent(chId)}`);
+    await loadOutline();
+  } catch (e) {
+    alert("删除失败: " + e.message);
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove("show");
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+// ── Diff panel (显示版本对比) ────────────────────────────────────────────────
+// 在 toolbar 增加"查看历史"按钮将触发
+
+async function showDiff() {
+  if (VERSIONS.length < 2) {
+    alert("至少需要 2 个版本才能对比 — 当前 " + VERSIONS.length + " 个");
+    return;
+  }
+  // 默认对比最新两个
+  const v1 = VERSIONS[VERSIONS.length - 1].version_id;
+  const v2 = VERSIONS[0].version_id;
+  try {
+    const diff = await api("GET", `/api/outline/${BOOK}/diff?v1=${v1}&v2=${v2}`);
+    renderDiff(diff, v1, v2);
+  } catch (e) {
+    alert("加载 diff 失败: " + e.message);
+  }
+}
+
+function renderDiff(d, v1, v2) {
+  const rows = [];
+  for (const id of d.chapters_added || [])
+    rows.push(`<div class="diff-row">章节 ${escapeHtml(id)} <span class="badge added">新增</span></div>`);
+  for (const id of d.chapters_removed || [])
+    rows.push(`<div class="diff-row">章节 ${escapeHtml(id)} <span class="badge removed">删除</span></div>`);
+  for (const m of d.chapters_moved || [])
+    rows.push(`<div class="diff-row">章节 ${escapeHtml(m.ch_id)} <span class="badge moved">移动</span> ${escapeHtml(m.from_vol)}#${m.from_pos} → ${escapeHtml(m.to_vol)}#${m.to_pos}</div>`);
+  for (const e of d.chapters_edited || [])
+    rows.push(`<div class="diff-row">章节 ${escapeHtml(e.ch_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
+  for (const id of d.volumes_added || [])
+    rows.push(`<div class="diff-row">卷 ${escapeHtml(id)} <span class="badge added">新增</span></div>`);
+  for (const id of d.volumes_removed || [])
+    rows.push(`<div class="diff-row">卷 ${escapeHtml(id)} <span class="badge removed">删除</span></div>`);
+  for (const e of d.volumes_edited || [])
+    rows.push(`<div class="diff-row">卷 ${escapeHtml(e.vol_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
+  document.getElementById("diff-content").innerHTML =
+    `<div class="diff-row">对比: ${escapeHtml(v2)} (新) ↔ ${escapeHtml(v1)} (旧)</div>` +
+    (rows.length ? rows.join("") : `<div class="diff-row">无差异</div>`);
+  document.getElementById("diff-panel").style.display = "block";
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+
+document.addEventListener("DOMContentLoaded", () => {
+  // 添加"查看历史"按钮
+  const tb = document.querySelector(".toolbar");
+  const btn = document.createElement("button");
+  btn.className = "btn";
+  btn.textContent = "📜 版本对比";
+  btn.onclick = showDiff;
+  tb.appendChild(btn);
+  loadOutline();
+});
+
+// 点背景关闭 modal
+document.getElementById("modal-node").addEventListener("click", e => {
+  if (e.target.id === "modal-node") closeModal("modal-node");
+});
+document.getElementById("modal-vol").addEventListener("click", e => {
+  if (e.target.id === "modal-vol") closeModal("modal-vol");
+});
+</script>
+</body>
+</html>

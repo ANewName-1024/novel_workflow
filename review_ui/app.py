@@ -1027,6 +1027,24 @@ def api_outline_volume_delete(book, vol_id):
     return jsonify({"ok": True, "reassigned": reassigned})
 
 
+@app.route("/api/outline/<book>/versions", methods=["GET"])
+def api_outline_versions_list(book):
+    """GET /api/outline/<book>/versions — list saved outline snapshots.
+    Used by outline.html to populate the version picker."""
+    _ensure_book(book)
+    from lib import version as ver_serv
+    versions = ver_serv.list_versions(book, "outline.json")
+    return jsonify([
+        {
+            "version_id": v["version_id"],
+            "ts": v.get("ts"),
+            "trigger": v.get("trigger"),
+            "char_count": v.get("char_count"),
+        }
+        for v in versions
+    ])
+
+
 @app.route("/api/outline/<book>/diff")
 def api_outline_diff(book):
     """GET /api/outline/<book>/diff?v1=<v_id>&v2=<v_id>
