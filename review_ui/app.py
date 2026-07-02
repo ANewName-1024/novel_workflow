@@ -492,6 +492,72 @@ def api_pipeline_resume(book, ch):
                     "message": result["message"]})
 
 
+@app.route("/api/llm/providers")
+def api_llm_providers():
+    """GET /api/llm/providers — 列所有 provider 配置 (不暴露完整 key)."""
+    from lib import llm_providers as lp
+    providers = {}
+    for name, cfg in sorted(lp.BUILTIN_PROVIDERS.items()):
+        providers[name] = {
+            "model": cfg.get("model", ""),
+            "api_base": cfg.get("api_base", ""),
+            "api_key_configured": bool(cfg.get("api_key")),
+        }
+    return jsonify({"ok": True, "providers": providers, "current_model": os.environ.get("MODEL", "")})
+
+
+@app.route("/api/llm/health", methods=["POST"])
+def api_llm_health_check():
+    """POST /api/llm/health — 测试指定 provider 连通性.
+
+    Body: {"provider": "deepseek", "model": "deepseek-chat"} (可选, 默认测试 book 当前配置)
+    """
+    body = request.get_json(silent=True) or {}
+    provider = body.get("provider", "")
+    model = body.get("model", "")
+    book = body.get("book", "")
+
+    from lib import llm_providers as lp
+    if book:
+        cfg = storage.read_json(book, "config.json") or {}
+        provider = provider or cfg.get("llm_provider", "local")
+    provider = provider or "local"
+
+    pcfg = lp.get_provider_config(provider)
+    if not pcfg:
+        return jsonify({"ok": False, "error": f"未知 provider: {provider}"}), 400
+
+    model = model or pcfg.get("model", "")
+    api_base = pcfg.get("api_base", "")
+    api_key = pcfg.get("api_key", "")
+
+    import requests
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    url = api_base.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "1"}],
+        "max_tokens": 2,
+        "temperature": 0,
+    }
+
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return jsonify({"ok": True, "http_status": r.status_code,
+                        "model": model, "provider": provider})
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "超时 (>10s)", "provider": provider}), 504
+    except requests.exceptions.ConnectionError as e:
+        return jsonify({"ok": False, "error": f"连接失败: {e}", "provider": provider}), 502
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "provider": provider}), 500
+
+
 @app.route("/api/chapter/<book>/<ch>/apply-feedback", methods=["POST"])
 def api_apply_feedback(book, ch):
     """POST /api/chapter/<book>/<ch>/apply-feedback — 根据评审反馈自动修订章节 (v1.3 M4).

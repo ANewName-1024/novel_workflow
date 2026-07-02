@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 novel.py — 长篇小说编写工作流 CLI
 
@@ -143,6 +143,28 @@ def parse_args() -> argparse.Namespace:
     # run-extract
     ext = sub.add_parser("extract", help="从最新章节提取记忆")
     add_project(ext)
+
+    # ── v1.3 M3: llm provider 管理 ──
+    llm_p = sub.add_parser("llm", help="LLM provider 管理 (列表/切换/测试)")
+    llm_sub = llm_p.add_subparsers(dest="llm_cmd", required=True)
+
+    # llm list
+    ll_list = llm_sub.add_parser("list", help="列出所有可用 provider 及配置")
+    ll_list.add_argument("-v", "--verbose", action="store_true", help="显示完整配置 (含 api_key 前 8 位)")
+
+    # llm switch <book> <provider>
+    ll_sw = llm_sub.add_parser("switch", help="切换 book 的 LLM provider")
+    add_project(ll_sw)
+    ll_sw.add_argument("provider", help="provider 名称 (如 local, deepseek, minimax)")
+    ll_sw.add_argument("--model", default="", help="模型名 (留空=provider 默认)")
+
+    # llm test <provider>
+    ll_test = llm_sub.add_parser("test", help="测试某个 provider 连通性")
+    ll_test.add_argument("provider", nargs="?", default="", help="provider 名称 (留空=测试当前 book 的)")
+    add_project(ll_test)
+    ll_test.add_argument("--book", default="", help="可选: 测试 book 当前配置的 provider")
+    ll_test.add_argument("--model", default="", help="指定模型名 (留空=provider 默认)")
+    ll_test.add_argument("--timeout", type=int, default=15, help="超时秒数 (默认 15)")
 
     # ----- NEW (v1.0 管理化增强) -----
     # doctor 子命令: 环境诊断
@@ -706,7 +728,7 @@ def cmd_backup(args: argparse.Namespace) -> None:
 
 def cmd_pipeline_resume(args: argparse.Namespace) -> None:
     """Recover and resume interrupted pipeline."""
-    from . import pipeline_v2 as pv
+    from lib import pipeline_v2 as pv
     if args.chapter:
         m = re.match(r"ch_?(\d+)", str(args.chapter))
         ch = int(m.group(1)) if m else int(args.chapter)
@@ -732,7 +754,7 @@ def cmd_pipeline_resume(args: argparse.Namespace) -> None:
 
 def cmd_pipeline_status(args: argparse.Namespace) -> None:
     """Show pipeline checkpoint snapshot."""
-    from . import pipeline_v2 as pv
+    from lib import pipeline_v2 as pv
     snapshot = pv.get_last_snapshot(args.book)
     if snapshot is None or not snapshot.get("available"):
         print("📭 无可用的 pipeline snapshot")
@@ -747,6 +769,120 @@ def cmd_pipeline_status(args: argparse.Namespace) -> None:
     for s, status in stages.items():
         icon = {"DONE": "✅", "FAILED": "❌", "RUNNING": "⏳", "PENDING": "⬜", "SKIPPED": "⏭️"}.get(status, "❓")
         print(f"    {icon} {s}: {status}")
+
+
+# ── v1.3 M3: llm provider 管理 ──────────────────────────────────────────
+
+def cmd_llm_list(args: argparse.Namespace) -> None:
+    """List all available LLM providers."""
+    from lib import llm_providers as lp
+    providers = lp.BUILTIN_PROVIDERS
+    if not providers:
+        print("❌ 没有可用的 provider (可能 llm_providers 未加载)")
+        return
+    print(f"📋 已注册 provider ({len(providers)} 个):")
+    for name, cfg in sorted(providers.items()):
+        model = cfg.get("model", "?")
+        api_base = cfg.get("api_base", "?")
+        key = cfg.get("api_key", "")
+        key_preview = (key[:8] + "..." + key[-4:]) if key and args.verbose else "••••••••" if key else "(无 key)"
+        print(f"\n  [{name}]")
+        print(f"    模型:    {model}")
+        print(f"    地址:    {api_base}")
+        print(f"    密钥:    {key_preview}")
+    # Also show book-level overrides
+    print("\n💡 提示: 切换到某个 book: python novel.py llm switch <book> <provider>")
+    print("  测试联通: python novel.py llm test <provider>")
+
+
+def cmd_llm_switch(args: argparse.Namespace) -> None:
+    """Switch LLM provider for a book."""
+    from lib import storage as _st
+    cfg = _st.read_json(args.book, "config.json") or {}
+    old_provider = cfg.get("llm_provider", "(未设置)")
+    old_model = cfg.get("llm_model", cfg.get("model", "(未设置)"))
+    cfg["llm_provider"] = args.provider
+    if args.model:
+        cfg["llm_model"] = args.model
+    _st.write_json(args.book, "config.json", cfg)
+    print(f"✅ [{args.book}] 切换成功:")
+    print(f"   {old_provider}:{old_model} → {args.provider}" + (f":{args.model}" if args.model else ""))
+    print(f"  可用: python novel.py llm test {args.provider}  --book {args.book}")
+
+
+def cmd_llm_test(args: argparse.Namespace) -> None:
+    """Test provider connectivity."""
+    from lib import llm_providers as lp
+    import requests, json, sys
+
+    # Resolve provider
+    provider = args.provider or (args.book and "")
+    if not provider and args.book:
+        from . import storage as _st
+        cfg = _st.read_json(args.book, "config.json") or {}
+        provider = cfg.get("llm_provider", "")
+    if not provider:
+        provider = "local"  # fallback
+
+    # Get provider config
+    pcfg = lp.get_provider_config(provider)
+    if not pcfg:
+        print(f"❌ 未知 provider: {provider}")
+        sys.exit(1)
+
+    model = args.model or pcfg.get("model", "")
+    api_base = pcfg.get("api_base", "")
+    api_key = pcfg.get("api_key", "")
+
+    print(f"🔌 测试 provider [{provider}]...")
+    print(f"   模型: {model}")
+    print(f"   地址: {api_base}")
+    print(f"   密钥: {'已配置 (前8位: ' + api_key[:8] + '...)' if api_key else '未配置 ❌'}")
+
+    if not api_key and provider not in ("local",):
+        print(f"❌ {provider} 未配置 API key")
+        print(f"  在 .env 中设置 {provider.upper()}_API_KEY")
+        sys.exit(1)
+    if not api_base:
+        print(f"❌ {provider} 未配置 api_base")
+        sys.exit(1)
+
+    # Send a simple chat completion to test connectivity
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    url = api_base.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "回答一个字: 1+1=?"}],
+        "max_tokens": 10,
+        "temperature": 0,
+    }
+
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=args.timeout)
+        r.raise_for_status()
+        data = r.json()
+        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        usage = data.get("usage", {})
+        print(f"✅ 连通成功! HTTP {r.status_code}")
+        print(f"   回复: {reply[:60]}")
+        tok_in = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
+        tok_out = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
+        print(f"   用量: {tok_in} in / {tok_out} out")
+    except requests.exceptions.Timeout:
+        print(f"❌ 超时 (>{args.timeout}s)")
+        sys.exit(1)
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ 连接失败: {e}")
+        sys.exit(1)
+    except requests.exceptions.HTTPError as e:
+        print(f"❌ HTTP {e.response.status_code}: {e.response.text[:200]}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ 未知错误: {e}")
+        sys.exit(1)
 
 
 def main() -> None:
@@ -845,6 +981,16 @@ def _dispatch(args: argparse.Namespace, log: logging.Logger) -> None:
             cmd_pipeline_resume(args)
         else:
             raise NovelError(ErrorCode.INVALID_ARGS, f"未知 pipeline 子命令: {pc}")
+    elif cmd == "llm":
+        lc = args.llm_cmd
+        if lc == "list":
+            cmd_llm_list(args)
+        elif lc == "switch":
+            cmd_llm_switch(args)
+        elif lc == "test":
+            cmd_llm_test(args)
+        else:
+            raise NovelError(ErrorCode.INVALID_ARGS, f"未知 llm 子命令: {lc}")
     else:
         raise NovelError(ErrorCode.INVALID_ARGS, f"未知命令: {cmd}")
 
