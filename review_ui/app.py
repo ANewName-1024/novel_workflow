@@ -60,7 +60,7 @@ _NAV_BOOK_ROUTES = {
     'entities_page': 'entities', 'chapter_page': 'chapter',
     'notifications_page': 'notifications',
 }
-_GLOBAL_ROUTES = {'index': 'home', 'overview_page': 'overview'}
+_GLOBAL_ROUTES = {'index': 'home', 'overview_page': 'overview', 'llm_config_page': 'llm'}
 
 @app.context_processor
 def _nav_context():
@@ -556,6 +556,31 @@ def api_llm_health_check():
         return jsonify({"ok": False, "error": f"连接失败: {e}", "provider": provider}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "provider": provider}), 500
+
+
+@app.route("/llm")
+def llm_config_page():
+    """GET /llm — LLM provider 配置页面 (v1.3 M3)."""
+    return render_template("llm_config.html", book_name="")
+
+
+@app.route("/api/config/<book>")
+def api_book_config_read(book):
+    """GET /api/config/<book> — 读取 book 配置."""
+    cfg = storage.read_json(book, "config.json") or {}
+    return jsonify({"ok": True, **cfg})
+
+
+@app.route("/api/config/<book>", methods=["POST"])
+def api_book_config_write(book):
+    """POST /api/config/<book> — 更新 book 配置 (部分更新)."""
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return jsonify({"ok": False, "error": "空 body"}), 400
+    cfg = storage.read_json(book, "config.json") or {}
+    cfg.update(body)
+    storage.write_json(book, "config.json", cfg)
+    return jsonify({"ok": True, "message": "已保存"})
 
 
 @app.route("/api/chapter/<book>/<ch>/apply-feedback", methods=["POST"])

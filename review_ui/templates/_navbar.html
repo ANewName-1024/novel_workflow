@@ -1,0 +1,148 @@
+﻿{# ------------------------------------------------------------------ #}
+{# _navbar.html - 统一导航栏 (v1.3 M3)                                  #}
+{#                                                                    #}
+{# 使用方式: 顶部放置在 <body> 后                                    #}
+{#   {% include "_navbar.html" %}                                     #}
+{#                                                                    #}
+{# 依赖 context_processor 注入 nav 变量:                              #}
+{#   - nav.global_active: 'home' | 'overview'                        #}
+{#   - nav.book_active:   'book' | 'outline' | 'entities' | ...       #}
+{#   - nav.books: 全部书籍 list [(name, title), ...]                  #}
+{#   - nav.current_book: str | None                                   #}
+{# ------------------------------------------------------------------ #}
+<header class="topnav">
+  <!-- 第 1 行: 全局 -->
+  <div class="topnav-row topnav-global-row">
+    <a href="/" class="topnav-brand" title="首页">🐾 novel_workflow</a>
+    <nav class="topnav-global">
+      <a href="/" class="topnav-link {% if nav.global_active == 'home' %}active{% endif %}">
+        📚 所有书籍
+      </a>
+      <a href="/overview" class="topnav-link {% if nav.global_active == 'overview' %}active{% endif %}">
+        📊 全项目总览
+      </a>
+      <a href="/llm" class="topnav-link {% if nav.global_active == 'llm' %}active{% endif %}">
+        🤖 LLM
+      </a>
+    </nav>
+    {% if nav.books and nav.books|length > 1 %}
+    <select class="topnav-book-switcher" onchange="if(this.value) location.href=this.value;" title="快速切换书籍">
+      {% for b_item in nav.books %}
+        <option value="/book/{{ b_item[0] }}" {% if b_item[0] == nav.current_book %}selected{% endif %}>
+          {{ b_item[1] }}
+        </option>
+      {% endfor %}
+    </select>
+    {% endif %}
+  </div>
+
+  <!-- 第 2 行: 当前书籍子导航 -->
+  {% if nav.current_book %}
+  <div class="topnav-row topnav-book-row">
+    <div class="topnav-book-title">
+      <a href="/book/{{ nav.current_book }}" title="返回本书主页">📖 {{ nav.current_book_title }}</a>
+      {% if nav.current_book_genre %}<span class="topnav-book-genre">{{ nav.current_book_genre }}</span>{% endif %}
+    </div>
+    <nav class="topnav-book-nav">
+      <a href="/book/{{ nav.current_book }}"
+         class="topnav-link {% if nav.book_active == 'book' %}active{% endif %}">📚 章节</a>
+      <a href="/outline/{{ nav.current_book }}"
+         class="topnav-link {% if nav.book_active == 'outline' %}active{% endif %}">🌳 大纲</a>
+      <a href="/entities/{{ nav.current_book }}?type=character"
+         class="topnav-link {% if nav.book_active == 'entities' %}active{% endif %}">🧩 实体</a>
+      <a href="/dashboard/{{ nav.current_book }}"
+         class="topnav-link {% if nav.book_active == 'dashboard' %}active{% endif %}">⚙️ 流水线</a>
+      <a href="/notifications/{{ nav.current_book }}"
+         class="topnav-link {% if nav.book_active == 'notifications' %}active{% endif %}">
+        🔔 通知{% if nav.unread_count %}<span class="topnav-badge">{{ nav.unread_count }}</span>{% endif %}
+      </a>
+    </nav>
+  </div>
+  {% endif %}
+</header>
+
+<style>
+/* ── 统一导航栏样式 (v1.3 M3) ─────────────────────────────────────── */
+.topnav {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+}
+.topnav-row {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 20px;
+  max-width: 1400px; margin: 0 auto;
+}
+.topnav-global-row {
+  border-bottom: 1px solid var(--border);
+  padding-top: 8px; padding-bottom: 8px;
+}
+.topnav-book-row {
+  padding-top: 6px; padding-bottom: 6px;
+  background: var(--panel2);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.topnav-brand {
+  font-weight: 700; font-size: 16px;
+  color: var(--accent); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 4px;
+}
+.topnav-brand:hover { background: var(--bg); }
+
+.topnav-global, .topnav-book-nav {
+  display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
+}
+.topnav-link {
+  color: var(--muted); text-decoration: none;
+  padding: 6px 12px; border-radius: 4px;
+  font-size: 13px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 32px;
+  transition: background 0.15s, color 0.15s;
+}
+.topnav-link:hover { background: var(--bg); color: var(--text); }
+.topnav-link.active {
+  background: rgba(78,163,255,0.15);
+  color: var(--accent);
+}
+
+.topnav-book-switcher {
+  margin-left: auto;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 10px; border-radius: 4px;
+  font-size: 12px; font-family: inherit;
+  cursor: pointer; min-height: 32px;
+}
+.topnav-book-switcher:hover { border-color: var(--accent); }
+
+.topnav-book-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600;
+  margin-right: 4px;
+}
+.topnav-book-title a {
+  color: var(--text); text-decoration: none;
+}
+.topnav-book-title a:hover { color: var(--accent); }
+.topnav-book-genre {
+  font-size: 10px; color: var(--muted);
+  background: var(--bg); padding: 2px 6px;
+  border-radius: 3px; font-weight: 500;
+}
+.topnav-badge {
+  background: var(--crit); color: #fff;
+  border-radius: 10px; padding: 1px 6px;
+  font-size: 11px; margin-left: 2px;
+}
+
+@media (max-width: 720px) {
+  .topnav-row { padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+  .topnav-link { padding: 5px 8px; font-size: 12px; }
+  .topnav-brand { font-size: 14px; }
+  .topnav-book-switcher { font-size: 11px; padding: 4px 6px; }
+}
+</style>

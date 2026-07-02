@@ -1,0 +1,202 @@
+{# llm_config.html — LLM provider 配置页面 (v1.3 M3) #}
+{% extends "_layout.html" %}
+{% block title %}LLM 配置 · {{ book_name }}{% endblock %}
+{% block head %}
+<style>
+.llm-provider-card {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: border-color .2s;
+}
+.llm-provider-card.success { border-color: var(--ok); }
+.llm-provider-card.fail    { border-color: var(--crit); }
+.llm-provider-card.pending { border-color: var(--pending); }
+.llm-provider-card h3 { margin: 0 0 8px; font-size: 16px; }
+.llm-provider-card .row {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 13px; color: var(--text); margin: 4px 0;
+}
+.llm-provider-card .row label { color: var(--muted); min-width: 60px; }
+.llm-status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 6px;
+}
+.llm-status-dot.ok  { background: var(--ok); }
+.llm-status-dot.fail { background: var(--crit); }
+.llm-status-dot.off { background: var(--muted); }
+
+.btn-test {
+  padding: 4px 14px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); cursor: pointer;
+  font-size: 12px; transition: .15s;
+}
+.btn-test:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-test:disabled { opacity: .5; cursor: not-allowed; }
+
+.book-model-row {
+  display: flex; gap: 12px; align-items: center;
+  padding: 8px 12px; background: var(--panel); border-radius: 6px;
+  margin: 8px 0;
+}
+.book-model-row select, .book-model-row input[type="text"] {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--panel2); color: var(--text); font-size: 13px;
+}
+</style>
+{% endblock %}
+{% block content %}
+<h1 style="margin-top:0;">🤖 LLM 模型配置</h1>
+<p style="color:var(--muted);font-size:14px;">
+  管理 AI provider 设置。修改后新请求自动使用新配置。
+</p>
+
+<!-- 全局 provider 状态 -->
+<h2 style="margin-top:24px;">注册的 Provider</h2>
+<div id="providers-list">
+  <p style="color:var(--muted);">加载中…</p>
+</div>
+
+<!-- 当前 book 的模型配置 (快速切换) -->
+{% if nav.current_book %}
+<h2 style="margin-top:28px;">📖 {{ nav.current_book_title }} 当前配置</h2>
+<div class="book-model-row">
+  <label style="min-width:80px;">Provider:</label>
+  <select id="book-provider-select">
+    <option value="">加载中…</option>
+  </select>
+  <label>模型:</label>
+  <input type="text" id="book-model-input" placeholder="留空自动" style="width:240px;">
+  <button class="btn-test" onclick="saveBookConfig()">💾 保存</button>
+  <span id="book-save-msg" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+// ── 加载 providers ────────────────────────────────────────────────────
+async function loadProviders() {
+  const el = document.getElementById('providers-list');
+  try {
+    const r = await fetch('/api/llm/providers');
+    const data = await r.json();
+    if (!data.ok) { el.innerHTML = `<p style="color:var(--crit);">${data.error}</p>`; return; }
+    el.innerHTML = '';
+    for (const [name, cfg] of Object.entries(data.providers)) {
+      const card = document.createElement('div');
+      card.className = 'llm-provider-card pending';
+      card.id = `card-${name}`;
+      card.innerHTML = `
+        <h3>${name}</h3>
+        <div class="row"><label>模型:</label><span class="model-name">${cfg.model || '默认'}</span></div>
+        <div class="row"><label>地址:</label><span>${cfg.api_base}</span></div>
+        <div class="row">
+          <label>密钥:</label>
+          <span>${cfg.api_key_configured
+            ? '<span class="llm-status-dot ok"></span>已配置'
+            : '<span class="llm-status-dot off"></span>未配置'}</span>
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <button class="btn-test" onclick="testProvider('${name}')" id="btn-test-${name}">🔌 测试连通性</button>
+          <span id="result-${name}" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
+        </div>
+      `;
+      el.appendChild(card);
+    }
+  } catch(e) {
+    el.innerHTML = `<p style="color:var(--crit);">加载失败: ${e.message}</p>`;
+  }
+}
+
+async function testProvider(name) {
+  const btn = document.getElementById(`btn-test-${name}`);
+  const result = document.getElementById(`result-${name}`);
+  const card = document.getElementById(`card-${name}`);
+  btn.disabled = true;
+  result.textContent = '⏳ 测试中…';
+  card.className = 'llm-provider-card pending';
+  try {
+    const r = await fetch('/api/llm/health', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({provider: name}),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      result.textContent = '✅ 连通正常 (HTTP ' + data.http_status + ')';
+      card.className = 'llm-provider-card success';
+    } else {
+      result.textContent = '❌ ' + (data.error || '失败');
+      card.className = 'llm-provider-card fail';
+    }
+  } catch(e) {
+    result.textContent = '❌ 网络错误: ' + e.message;
+    card.className = 'llm-provider-card fail';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Book 配置 ─────────────────────────────────────────────────────────
+let _bookProviders = [];
+
+async function loadBookConfig() {
+  const select = document.getElementById('book-provider-select');
+  const input = document.getElementById('book-model-input');
+  if (!select) return;
+  try {
+    const r = await fetch('/api/llm/providers');
+    const data = await r.json();
+    if (!data.ok) return;
+    _bookProviders = Object.keys(data.providers);
+    select.innerHTML = _bookProviders.map(p =>
+      `<option value="${p}">${p}</option>`
+    ).join('');
+    // Load current book config
+    const r2 = await fetch('/api/config/{{ nav.current_book }}');
+    if (r2.ok) {
+      const cfg = await r2.json();
+      select.value = cfg.llm_provider || 'local';
+      input.value = cfg.llm_model || '';
+    }
+  } catch(e) { /* ignore */ }
+}
+
+async function saveBookConfig() {
+  const select = document.getElementById('book-provider-select');
+  const input = document.getElementById('book-model-input');
+  const msg = document.getElementById('book-save-msg');
+  if (!select) return;
+  msg.textContent = '⏳ 保存…';
+  try {
+    const r = await fetch('/api/config/{{ nav.current_book }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        llm_provider: select.value,
+        llm_model: input.value,
+      }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      msg.textContent = '✅ 已保存（下次 LLM 调用生效）';
+      msg.style.color = 'var(--ok)';
+    } else {
+      msg.textContent = '❌ ' + (data.error || '保存失败');
+      msg.style.color = 'var(--crit)';
+    }
+  } catch(e) {
+    msg.textContent = '❌ ' + e.message;
+    msg.style.color = 'var(--crit)';
+  }
+  setTimeout(() => { msg.textContent = ''; }, 3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+loadProviders();
+loadBookConfig();
+</script>
+{% endblock %}
