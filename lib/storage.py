@@ -70,7 +70,19 @@ def read_chapter(book: str, chapter_id: str) -> Optional[str]:
 def write_chapter(book: str, chapter_id: str, content: str) -> None:
     path = chapters_dir(book) / f"{chapter_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
+    # v1.2 M3: 读老内容, 写完后再 snapshot
+    old_content = read_chapter(book, chapter_id)
     path.write_text(content, encoding="utf-8")
+    if old_content != content:
+        try:
+            from . import version as _v
+            _v.create_version(
+                book, chapter_id, content, trigger="auto",
+                meta={"prev_chars": len(old_content) if old_content else 0,
+                      "new_chars": len(content)},
+            )
+        except Exception:
+            pass
 
 def list_chapters(book: str) -> list[dict]:
     """Return sorted list of {id, title, word_count, preview} from chapters dir."""

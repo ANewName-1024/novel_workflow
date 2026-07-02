@@ -194,6 +194,39 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   .kv { font-size: 13px; }
   h2 { font-size: 13px !important; }
 }
+
+/* M3: 版本历史样式 */
+.version-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: 13px; flex-wrap: wrap;
+}
+.version-row:last-child { border-bottom: none; }
+.v-info { display: flex; gap: 8px; align-items: center; flex: 1 1 200px; }
+.v-stats { display: flex; gap: 8px; color: var(--muted); font-size: 12px; flex: 1 1 200px; }
+.v-actions { display: flex; gap: 4px; }
+.v-trigger { padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+.v-trigger-auto { background: var(--accent); color: #fff; }
+.v-trigger-edit { background: var(--panel2); color: var(--text); }
+.v-trigger-revert { background: var(--warn); color: #000; }
+.v-trigger-pre_revert { background: var(--crit); color: #fff; }
+.v-diff { padding: 0 4px; border-radius: 3px; }
+.v-pos { color: #6dd99b; }
+.v-neg { color: #ff6b6b; }
+.v-revert { color: var(--warn); }
+.v-by { color: var(--muted); font-size: 11px; }
+.v-btn {
+  background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  padding: 3px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;
+}
+.v-btn:hover { background: var(--border); }
+.v-btn-warn { color: var(--warn); }
+.version-content {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px; margin-top: 8px; max-height: 400px; overflow: auto;
+  white-space: pre-wrap; font-size: 12px;
+}
 </style>
 </head>
 <body>
@@ -242,6 +275,39 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 </span>{% endfor %}</pre>
     </div>
     {% endif %}
+
+    <div class="panel">
+      <h2>🕒 版本历史
+        {% if latest_v %}<span style="color:var(--muted); font-size:12px; font-weight:normal;">共 {{ versions|length }} 版 · 最新: v{{ versions|length }} ({{ latest_v.trigger }})</span>{% endif %}
+      </h2>
+      {% if versions %}
+      <div id="version-list">
+        {% for v in versions|reverse %}
+        <div class="version-row" data-vid="{{ v.version_id }}">
+          <div class="v-info">
+            <strong>{{ v.version_id }}</strong>
+            <span class="v-trigger v-trigger-{{ v.trigger }}">{{ v.trigger }}</span>
+            <span class="v-time">{{ v.ts }}</span>
+          </div>
+          <div class="v-stats">
+            <span class="v-chars">{{ v.char_count }} 字</span>
+            {% if v.char_diff != 0 %}<span class="v-diff {% if v.char_diff > 0 %}v-pos{% else %}v-neg{% endif %}">{% if v.char_diff > 0 %}+{% endif %}{{ v.char_diff }}</span>{% endif %}
+            {% if v.meta and v.meta.by %}<span class="v-by">by {{ v.meta.by }}</span>{% endif %}
+            {% if v.meta and v.meta.reverted_to %}<span class="v-revert">← {{ v.meta.reverted_to }}</span>{% endif %}
+          </div>
+          <div class="v-actions">
+            <button class="v-btn" onclick="viewVersion('{{ v.version_id }}')">查看</button>
+            <button class="v-btn" onclick="diffWith('{{ v.version_id }}')">对比</button>
+            {% if not loop.first %}<button class="v-btn v-btn-warn" onclick="revertTo('{{ v.version_id }}')">回滚</button>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <pre id="version-content" class="version-content" style="display:none;"></pre>
+      {% else %}
+      <div style="color:var(--muted); text-align:center; padding: 20px;">暂无版本记录</div>
+      {% endif %}
+    </div>
   </div>
 
   <div>
@@ -392,6 +458,45 @@ async function doAction(action, chapter) {
 document.querySelectorAll('.action-btn').forEach(btn => {
   btn.dataset.origText = btn.textContent;
 });
+
+// M3: 版本历史 JS
+const BOOK = "{{ book }}";
+const CH = "{{ chapter_id }}";
+let viewingVid = null;
+
+async function viewVersion(vid) {
+  const box = document.getElementById("version-content");
+  if (viewingVid === vid) { box.style.display = "none"; viewingVid = null; return; }
+  const r = await fetch(`/api/chapter/${BOOK}/${CH}/versions/${vid}`);
+  if (!r.ok) { alert("读版本失败: " + r.status); return; }
+  const data = await r.json();
+  box.textContent = `== ${vid} (${data.trigger}, ${data.char_count}字, ${data.ts}) ==\n\n${data.content}`;
+  box.style.display = "block";
+  viewingVid = vid;
+}
+
+async function diffWith(vid) {
+  const latest = "{{ latest_v.version_id if latest_v else '' }}";
+  if (vid === latest) { alert("已是最新版本, 无需对比"); return; }
+  const r = await fetch(`/api/chapter/${BOOK}/${CH}/diff-versions?v1=${vid}&v2=${latest}`);
+  if (!r.ok) { alert("diff 失败: " + r.status); return; }
+  const data = await r.json();
+  const box = document.getElementById("version-content");
+  box.textContent = `== diff: ${vid} vs ${latest} ==\n\n` + (data.diff || []).join("\n");
+  box.style.display = "block";
+  viewingVid = null;
+}
+
+async function revertTo(vid) {
+  if (!confirm(`确认回滚到 ${vid}? 当前内容会保存为新版本, 可回滚回来。`)) return;
+  const r = await fetch(`/api/chapter/${BOOK}/${CH}/revert/${vid}`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({by: "wei_chao"}),
+  });
+  if (!r.ok) { const e = await r.json(); alert("回滚失败: " + (e.message || r.status)); return; }
+  location.reload();
+}
 </script>
 </body>
 </html>

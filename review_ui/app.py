@@ -283,6 +283,10 @@ def chapter_page(book, ch):
     prev_id = ch_ids[idx - 1] if idx > 0 else None
     next_id = ch_ids[idx + 1] if 0 <= idx < len(ch_ids) - 1 else None
 
+    # M3: 版本列表 + 最新版
+    versions = ver_serv.list_versions(book, ch)
+    latest_v = versions[-1] if versions else None
+
     # M5: diff (原版 vs v2), 有 v2 才计算
     diff_lines: list[str] = []
     if v2_text is not None:
@@ -301,6 +305,7 @@ def chapter_page(book, ch):
         prev_id=prev_id, next_id=next_id,
         diff_lines=diff_lines,
         diff_stats=_diff_stats(text, v2_text) if v2_text is not None else None,
+        versions=versions, latest_v=latest_v,
     )
 
 
@@ -607,6 +612,56 @@ def api_notifications_read_all(book):
         abort(400, description="user query param required")
     n = comm_serv.mark_all_read(book, user)
     return jsonify({"ok": True, "marked": n})
+
+
+# 章节版本控制 (v1.2 M3)
+from lib import version as ver_serv  # noqa: E402
+
+
+@app.route("/api/chapter/<book>/<ch>/versions", methods=["GET"])
+def api_chapter_versions_list(book, ch):
+    """GET /api/chapter/<book>/<ch>/versions — 列表(不含content)."""
+    _ensure_book(book)
+    return jsonify(ver_serv.list_versions(book, ch))
+
+
+@app.route("/api/chapter/<book>/<ch>/versions/<vid>", methods=["GET"])
+def api_chapter_versions_get(book, ch, vid):
+    """GET /api/chapter/<book>/<ch>/versions/<vid> — 读完整版本(含content)."""
+    _ensure_book(book)
+    rec = ver_serv.get_version(book, ch, vid)
+    if not rec:
+        abort(404, description=f"version {vid} not found")
+    return jsonify(rec)
+
+
+@app.route("/api/chapter/<book>/<ch>/revert/<vid>", methods=["POST"])
+def api_chapter_revert(book, ch, vid):
+    """POST /api/chapter/<book>/<ch>/revert/<vid> — 回滚到某版本.
+    body: {"by": "wei_chao"}
+    """
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    by = (body.get("by") or "wei_chao").strip()
+    try:
+        rec = ver_serv.revert_to(book, ch, vid, by=by)
+    except ValueError as e:
+        abort(400, description=str(e))
+    return jsonify({"ok": True, "version": rec})
+
+
+@app.route("/api/chapter/<book>/<ch>/diff-versions", methods=["GET"])
+def api_chapter_diff_versions(book, ch):
+    """GET /api/chapter/<book>/<ch>/diff-versions?v1=v001&v2=v002 — 两版本 diff."""
+    _ensure_book(book)
+    v1 = request.args.get("v1")
+    v2 = request.args.get("v2")
+    if not v1 or not v2:
+        abort(400, description="v1 and v2 required")
+    try:
+        return jsonify(ver_serv.diff_versions(book, ch, v1, v2))
+    except ValueError as e:
+        abort(404, description=str(e))
 
 
 # 行级 diff 锚点: 按行号取上下文 ±N 行
