@@ -6,7 +6,40 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ### Added (新增)
 
-（暂无）
+**M2: 评审增强 (commit 15a26f8) — v1.2**
+- 评论流 `/api/comments/<book>/<ch>` POST/GET/DELETE (4 路由 + 6 测试)
+- 通知中心 `/api/notifications/<book>` GET + read/read-all
+  * 页面顶部铃铛 + 未读计数 + 全文查看
+- 行级 diff 锚点: review item 关联章节行号 + 上下文点击跳转
+- 批量审批增强: 选择 + 过滤（按严重度/阶段/标签）+ 撤销
+
+**M3: 章节版本控制 (commit fb142d0) — v1.2**
+- `lib/version.py` (207 行): 自研文件版本控制 + 最佳 commit hash
+  * `create_version / list_versions / get_version / latest_version / revert_to / diff_versions`
+  * 存储: `projects/<book>/chapters/.versions/<ch>/v001.json` + manifest
+  * 跳过连续重复内容, 避免 noise versions
+- `lib/storage.py: write_chapter` 自动 snapshot (best-effort)
+- 4 个 API 端点: versions list/get/revert/diff-versions
+- 章节页版本历史 panel: 4 类 trigger badge (auto/edit/revert/pre_revert)
+  * 查看 / 对比 / 回滚 按钮 (二次确认)
+- +38 测试 (301 → 339 passed in 15.41s)
+
+**M4: 大纲编辑器 — v1.2**
+- M4.1-M4.2 (commit 1700663): 节点 CRUD + 重排 + 9 API + 51 测试
+  * `lib/outline_editor.py` (354 行): volumes + chapters 操作 + 跨卷重排 + sync 自动重建 + 5 类 diff + validation
+  * 9 API endpoints (GET/PUT/POST/POST/DELETE/POST/POST/DELETE/GET) 路径在 /api/outline/<book>/*
+  * 完整章节编辑: 标题/摘要/pov/key_events/foreshadow/卷归属
+  * save_outline 自动触发 M3 版本快照 (best-effort, dict→json 字符串)
+- M4.3 (commit 07ceb65): 大纲编辑器 UI + versions/diff
+  * `review_ui/templates/outline.html` (575 行): 树状视图 + 节点编辑 modal + HTML5 native drag&drop
+  * 拖拽降级路径: ↑↓ 按钮重排 / 编辑 modal 改 vol
+  * `versions` endpoint: GET /api/outline/<book>/versions (list outline snapshots)
+  * diff 面板: added/removed/moved/edited 5 类变更
+  * +7 UI 测试 (390 → 397 passed in 16.24s)
+  * 总 v1.2 测试: 135 → 397 (+262 测试)
+- 文档: 待补 DESIGN-v1.2-outline.md
+
+**总状态: v1.2.0 M1-M4 全部完成 (4 commits, 58 新测试 under M2-M4, ~58 files + 397 tests)**
 
 ## [1.2.0] - 2026-07-02
 
