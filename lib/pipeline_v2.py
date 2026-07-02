@@ -32,7 +32,7 @@ from .errors import ErrorCode, NovelError
 # ── 常量 ──────────────────────────────────────────────────────────────────
 
 CHECKPOINT_FILE = ".pipeline_checkpoints.json"
-CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_SCHEMA_VERSION = 2
 
 
 class StageState(str, Enum):
@@ -45,7 +45,7 @@ class StageState(str, Enum):
 
 
 # 阶段定义 (顺序即执行顺序)
-STAGES = ["context", "writing", "extract", "summary", "state", "self_check", "done"]
+STAGES = ["context", "writing", "extract", "entity_diff", "summary", "state", "self_check", "done"]
 
 
 # FSM 合法转换矩阵
@@ -465,3 +465,147 @@ def get_v2() -> PipelineV2:
     if _default is None:
         _default = PipelineV2()
     return _default
+
+
+# ── v1.3 M4: snapshot & recovery ──────────────────────────────────────────
+
+def checkpoint_snapshot(book: str, ch: int, stage: str | None = None) -> dict:
+    """
+    Snapshot the current checkpoint state for recovery across sessions.
+    Returns a lightweight dict with stage status summary.
+    """
+    v2 = get_v2()
+    try:
+        ch_doc = v2.get_chapter(book, ch)
+    except Exception:
+        return {"book": book, "ch": ch, "available": False}
+
+    snapshot = {
+        "book": book,
+        "ch": ch,
+        "available": True,
+        "timestamp": _now_iso(),
+        "stages": {s: v.status for s, v in ch_doc.stages.items()},
+        "is_complete": ch_doc.is_complete(),
+        "current_stage": None,
+        "failed_stage": None,
+    }
+
+    for s in STAGES:
+        sc = ch_doc.stages[s]
+        if snapshot["current_stage"] is None and sc.status not in (
+            StageState.DONE.value, StageState.SKIPPED.value
+        ):
+            snapshot["current_stage"] = s
+        if snapshot["failed_stage"] is None and sc.status == StageState.FAILED.value:
+            snapshot["failed_stage"] = s
+
+    # Save to file (per book, for cross-session recovery)
+    from . import storage as _sto
+    snap_path = _sto.project_root(book) / "memory" / "pipeline_snapshot.json"
+    snap_path.parent.mkdir(parents=True, exist_ok=True)
+    snap_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return snapshot
+
+
+def get_last_snapshot(book: str) -> dict | None:
+    """Load the last saved pipeline snapshot (may be from previous session)."""
+    from . import storage as _sto
+    snap_path = _sto.project_root(book) / "memory" / "pipeline_snapshot.json"
+    if not snap_path.exists():
+        return None
+    try:
+        return json.loads(snap_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def get_interrupted_chapters(book: str) -> list[dict]:
+    """
+    Find all chapters with interrupted pipeline (neither complete nor clean).
+    Returns list of {ch, current_stage, failed_stage, timestamp}.
+    """
+    v2 = get_v2()
+    try:
+        doc = v2.load(book)
+    except Exception:
+        return []
+
+    result = []
+    for ch_num, ch_doc in sorted(doc.chapters.items()):
+        if ch_doc.is_complete():
+            continue
+        view = v2.get_pipeline_view(book, ch_num)
+        if view["current_stage"] is not None or view["failed_stage"] is not None:
+            result.append({
+                "ch": ch_num,
+                "current_stage": view["current_stage"],
+                "failed_stage": view["failed_stage"],
+                "stages": {s["name"]: s["status"] for s in view["stages"]},
+            })
+    return result
+
+
+def recover_stage(book: str, ch: int, from_stage: str | None = None) -> dict:
+    """
+    Recovery: automatically find the best stage to resume from.
+
+    - If from_stage given → call rerun_from(book, ch, from_stage)
+    - If no from_stage → find first FAILED or RUNNING stage, resume there
+    - If all complete → raise
+
+    Returns: {
+      "ok": bool,
+      "chapter": ch,
+      "recovered_stage": str | None,
+      "message": str,
+    }
+    """
+    v2 = get_v2()
+    try:
+        ch_doc = v2.get_chapter(book, ch)
+    except Exception as e:
+        return {"ok": False, "chapter": ch, "recovered_stage": None,
+                "message": f"无法读取 checkpoint: {e}"}
+
+    if ch_doc.is_complete():
+        return {"ok": False, "chapter": ch, "recovered_stage": None,
+                "message": "本章节 pipeline 已完成，无需恢复。"}
+
+    if from_stage:
+        try:
+            v2.rerun_from(book, ch, from_stage)
+        except Exception as e:
+            return {"ok": False, "chapter": ch, "recovered_stage": from_stage,
+                    "message": f"恢复失败: {e}"}
+        return {"ok": True, "chapter": ch, "recovered_stage": from_stage,
+                "message": f"从 [{from_stage}] 恢复并重置下游"}
+
+    # Auto-detect: find first non-DONE, non-SKIPPED stage
+    target = None
+    for s in STAGES:
+        sc = ch_doc.stages[s]
+        if sc.status == StageState.RUNNING.value:
+            target = s  # was running, now definitely dead → resume
+            break
+        if sc.status == StageState.FAILED.value:
+            target = s
+            break
+        if sc.status == StageState.PENDING.value:
+            # First pending after some DONE → the next one that should have been run
+            target = s
+            break
+
+    if target is None:
+        return {"ok": False, "chapter": ch, "recovered_stage": None,
+                "message": "未检测到可恢复的 stage"}
+
+    try:
+        v2.rerun_from(book, ch, target)
+    except Exception as e:
+        return {"ok": False, "chapter": ch, "recovered_stage": target,
+                "message": f"恢复失败: {e}"}
+
+    return {"ok": True, "chapter": ch, "recovered_stage": target,
+            "message": f"自动检测中断于 [{target}], 已重置为可恢复"}

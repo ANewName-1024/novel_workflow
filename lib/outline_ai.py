@@ -71,13 +71,9 @@ _OUTLINE_EXPAND_USER = """章节信息：
 
 # ── LLM client factory ─────────────────────────────────────────────────────
 
-def _get_llm() -> _llm.LLM:
-    cfg = get_config()
-    book_cfg = cfg.get("book", {})
-    return _llm.LLM(
-        model=book_cfg.get("llm_model", "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"),
-        api_base=book_cfg.get("api_base", "http://127.0.0.1:60443/v1"),
-    )
+def _get_llm(book: str = None) -> _llm.LLM:
+    """Create LLM client. Respects per-book llm_provider/llm_model if book is given."""
+    return _llm.get_llm(book=book)
 
 
 # ── core functions ─────────────────────────────────────────────────────────
@@ -91,13 +87,14 @@ def suggest_chapters(
     next_num: int,
     count: int = 3,
     temperature: float = 0.8,
+    book: str = None,
 ) -> dict[str, Any]:
     """为下一章生成 N 个候选章节建议.
 
     Returns: {"chapters": [...], "reasoning": str}
     Raises: RuntimeError on LLM failure.
     """
-    llm_client = _get_llm()
+    llm_client = _get_llm(book=book)
     user_prompt = _OUTLINE_SUGGEST_USER.format(
         book_title=book_title,
         genre=genre,
@@ -123,13 +120,14 @@ def expand_chapter(
     summary: str,
     *,
     temperature: float = 0.7,
+    book: str = None,
 ) -> dict[str, Any]:
     """展开一个章节的 key_events 和 foreshadowing.
 
     Returns: {"key_events": [...], "foreshadow": str, ...}
     Raises: RuntimeError on LLM failure.
     """
-    llm_client = _get_llm()
+    llm_client = _get_llm(book=book)
     user_prompt = _OUTLINE_EXPAND_USER.format(
         book_title=book_title,
         genre=genre,

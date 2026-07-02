@@ -155,7 +155,7 @@ class TestCheckConsistencyAPI:
                             "evidence": "主角服丹药提升品级", "severity": "critical"}],
             "overall_ok": False, "summary": "违反",
         }))
-        monkeypatch.setattr(llm_mod, "get_llm", lambda: mock_llm)
+        monkeypatch.setattr(llm_mod, "get_llm", lambda **kw: mock_llm)
 
         r = client.post("/api/entities/test_book/check-consistency",
                         data=json.dumps({"chapter_id": "ch_001"}),

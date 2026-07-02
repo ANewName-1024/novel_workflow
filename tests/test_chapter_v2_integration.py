@@ -43,6 +43,9 @@ def test_v2_checkpoints_written_on_transition_calls(tmp_projects_root):
         ("writing", "DONE"),
         ("extract", "RUNNING"),
         ("extract", "DONE"),
+        # v1.3 M4: entity_diff stage (between extract and summary)
+        ("entity_diff", "RUNNING"),
+        ("entity_diff", "DONE"),
         ("summary", "RUNNING"),
         ("summary", "DONE"),
         ("state", "RUNNING"),
@@ -79,7 +82,9 @@ def test_v2_failure_path_writes_failed_status(tmp_projects_root):
     view = v2.get_pipeline_view(book, 1)
     assert view["failed_stage"] == "extract"
     assert view["stages"][2]["status"] == "FAILED"  # extract
-    assert view["stages"][3]["status"] == "PENDING"  # summary
+    # entity_diff (index 3) and summary (index 4) not run since extract failed
+    assert view["stages"][3]["status"] == "PENDING"  # entity_diff (skipped)
+    assert view["stages"][4]["status"] == "PENDING"  # summary
 
 
 # ── 3. v2 故障不影响主流程 ──────────────────────────────────────────────

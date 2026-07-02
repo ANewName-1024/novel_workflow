@@ -51,6 +51,70 @@ from .dashboard import dashboard_bp  # noqa: E402
 app.register_blueprint(dashboard_bp)
 # session secret for login cookies. Use env, fallback to stable dev key.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-in-prod")
+
+# ── 统一导航栏 context (v1.3 M3) ─────────────────────────────────────────
+# Inject `nav` into all templates for _navbar.html
+import re as _re
+_NAV_BOOK_ROUTES = {
+    'book_page': 'book', 'outline_page': 'outline', 'dashboard_page': 'dashboard',
+    'entities_page': 'entities', 'chapter_page': 'chapter',
+    'notifications_page': 'notifications',
+}
+_GLOBAL_ROUTES = {'index': 'home', 'overview_page': 'overview'}
+
+@app.context_processor
+def _nav_context():
+    """Inject nav context for unified navbar."""
+    endpoint = request.endpoint or ''
+    rule = request.url_rule.rule if request.url_rule else ''
+
+    # 提取 book 名称 (路径参数)
+    book = None
+    m = _re.search(r'/(?:book|outline|entities|dashboard|notifications|chapter)/([^/?]+)', request.path)
+    if m:
+        book = m.group(1)
+
+    # 当前激活的章节
+    book_active = None
+    for ep, sec in _NAV_BOOK_ROUTES.items():
+        if endpoint == ep:
+            book_active = sec
+            break
+
+    # 全局激活
+    global_active = None
+    if endpoint in _GLOBAL_ROUTES:
+        global_active = _GLOBAL_ROUTES[endpoint]
+
+    # 书籍列表 (下拉)
+    books = []
+    try:
+        from lib import storage as _storage
+        for b in _storage.list_projects():
+            cfg = _storage.read_json(b, "config.json") or {}
+            books.append((b, cfg.get('book_name') or b, cfg.get('genre', '')))
+    except Exception:
+        pass
+
+    # 当前书籍的标题 / genre
+    cur_title = book
+    cur_genre = ''
+    if book:
+        cfg_b = storage.read_json(book, "config.json") or {}
+        cur_title = cfg_b.get('book_name') or book
+        cur_genre = cfg_b.get('genre', '')
+
+    return dict(nav={
+        'global_active': global_active,
+        'book_active': book_active,
+        'books': books,
+        'current_book': book,
+        'current_book_title': cur_title,
+        'current_book_genre': cur_genre,
+        'unread_count': 0,  # TODO: 接通知 API
+    })
+
+
 # Honor X-Forwarded-Prefix from nginx (L55 fix 2026-07-01: /novel/ path on VPS)
 # so url_for() generates "/novel/book/..." not "/book/...".
 if ProxyFix is not None:
@@ -240,12 +304,35 @@ def book_page(book):
     stats = revserv.get_review_stats(book)
     queue = revserv.get_review_queue(book)
     chapters = storage.list_chapters(book)
+    # Pre-compute chapter numbers for gap detection (avoids Jinja2 |replace|int)
+    import re as _re
+    chapters_display = []
+    prev_num = None
+    for i, ch in enumerate(chapters):
+        ch_id = ch.get("id", "")
+        m = _re.search(r"ch_(\d+)", ch_id)
+        ch_num = int(m.group(1)) if m else 0
+        # Gap if previous chapter number exists and jump > 1
+        gap_before = prev_num is not None and ch_num - prev_num > 1
+        gap_count = ch_num - prev_num - 1 if gap_before else 0
+        gap_label = (f"ch_{prev_num + 1:03d}" if prev_num else "") if gap_before else ""
+        gap_label_end = (f"ch_{ch_num - 1:03d}" if prev_num else "") if gap_before else ""
+        chapters_display.append({
+            **ch,
+            "ch_num": ch_num,
+            "_idx": i,
+            "gap_before": gap_before,
+            "gap_count": gap_count,
+            "gap_label": f"跳过 {gap_label} ~ {gap_label_end} ({gap_count} 章)" if gap_before else "",
+        })
+        prev_num = ch_num
     return render_template("book.html",
         book=book,
         cfg=cfg,
         stats=stats,
         queue=queue,
         chapters=chapters,
+        chapters_display=chapters_display,
     )
 
 
@@ -369,6 +456,57 @@ def api_chapter(book, ch):
         abort(404)
     return Response(text, mimetype="text/plain; charset=utf-8")
 
+@app.route("/api/chapter/<book>/<ch>/entity-diff")
+def api_chapter_entity_diff(book, ch):
+    """GET /api/chapter/<book>/<ch>/entity-diff — 本章节实体变化记录 (v1.3 M4)."""
+    _ensure_book(book)
+    from lib import entity_diff as edmod
+    diff = edmod.get_chapter_changes(book, ch)
+    if diff is None:
+        return jsonify({"ok": False, "error": "无实体变化记录"})
+    summary = edmod.summarize_changes(diff)
+    return jsonify({"ok": True, "diff": diff, "summary": summary})
+
+
+@app.route("/api/pipeline/<book>/interruptions")
+def api_pipeline_interruptions(book):
+    """GET /api/pipeline/<book>/interruptions — 列出所有中断的管道 (v1.3 M4)."""
+    _ensure_book(book)
+    from lib import pipeline_v2 as pv
+    interrupted = pv.get_interrupted_chapters(book)
+    return jsonify({"ok": True, "chapters": interrupted})
+
+
+@app.route("/api/pipeline/<book>/<ch>/resume", methods=["POST"])
+def api_pipeline_resume(book, ch):
+    """POST /api/pipeline/<book>/<ch>/resume — 恢复中断的管道 (v1.3 M4)."""
+    _ensure_book(book)
+    m = re.match(r"ch_(\d+)", ch)
+    if not m:
+        abort(400, description=f"Invalid chapter id: {ch}")
+    chapter_num = int(m.group(1))
+    from lib import pipeline_v2 as pv
+    result = pv.recover_stage(book, chapter_num)
+    return jsonify({"ok": result["ok"], "chapter": result["chapter"],
+                    "recovered_stage": result["recovered_stage"],
+                    "message": result["message"]})
+
+
+@app.route("/api/chapter/<book>/<ch>/apply-feedback", methods=["POST"])
+def api_apply_feedback(book, ch):
+    """POST /api/chapter/<book>/<ch>/apply-feedback — 根据评审反馈自动修订章节 (v1.3 M4).
+
+    可选 body: {"dry_run": true} — 不保存，只返回 AI 修订内容预览.
+    """
+    _ensure_book(book)
+    from lib import review_actions as ramod
+    dry_run = (request.get_json(silent=True) or {}).get("dry_run", False)
+    result = ramod.apply_feedback_to_chapter(book, ch, dry_run=dry_run, save=not dry_run)
+    if not result.get("ok"):
+        abort(400, description=result.get("error", "apply failed"))
+    return jsonify(result)
+
+
 @app.route("/api/stats/<book>")
 def api_stats(book):
     _ensure_book(book)
@@ -392,6 +530,12 @@ def api_approve(book, ch):
     reviewer = body.get("reviewer", "wei_chao")
     notes = body.get("notes", "")
     record = revserv.approve(book, ch, reviewer, notes)
+    # v1.3 M4: log
+    try:
+        from lib import session_log as _slog
+        _slog.hook_review_action(book, ch, "approve", notes)
+    except Exception:
+        pass
     return jsonify({"ok": True, "status": record["status"]})
 
 @app.route("/api/reject/<book>/<ch>", methods=["POST"])
@@ -401,6 +545,11 @@ def api_reject(book, ch):
     if not body.get("reason"):
         abort(400, description="reason required")
     record = revserv.reject(book, ch, body.get("reviewer", "wei_chao"), body["reason"])
+    try:
+        from lib import session_log as _slog
+        _slog.hook_review_action(book, ch, "reject", body.get("reason", ""))
+    except Exception:
+        pass
     return jsonify({"ok": True, "status": record["status"]})
 
 @app.route("/api/edit/<book>/<ch>", methods=["POST"])
@@ -411,6 +560,11 @@ def api_edit(book, ch):
     if not text:
         abort(400, description="text required")
     reviewer = body.get("reviewer", "wei_chao")
+    try:
+        from lib import session_log as _slog
+        _slog.hook_review_action(book, ch, "edit")
+    except Exception:
+        pass
     notes = body.get("notes", "")
     apply = bool(body.get("apply", False))
     record = revserv.edit(book, ch, reviewer, text, notes)

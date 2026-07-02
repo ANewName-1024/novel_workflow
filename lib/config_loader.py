@@ -15,6 +15,35 @@ import logging
 from pathlib import Path
 from typing import Any
 
+# ── .env 自动加载 ──────────────────────────────────────────────────────────
+_DOTENV_LOADED = False
+
+def _load_dotenv() -> None:
+    """Load .env file into os.environ (idempotent, no third-party deps)."""
+    global _DOTENV_LOADED
+    if _DOTENV_LOADED:
+        return
+    _DOTENV_LOADED = True
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            # 不覆盖已存在的环境变量
+            if key and value and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        pass
+
+
 try:
     import yaml
 except ImportError:  # 环境未装 pyyaml

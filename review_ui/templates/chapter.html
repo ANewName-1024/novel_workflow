@@ -214,6 +214,10 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .v-pos { color: #6dd99b; }
 .v-neg { color: #ff6b6b; }
 .v-revert { color: var(--warn); }
+.entity-added { padding: 2px 8px; background: rgba(109,217,155,0.12); border-left: 2px solid var(--ok); margin: 2px 0; font-size: 13px; }
+.entity-updated { padding: 2px 8px; background: rgba(255,180,84,0.12); border-left: 2px solid var(--pending); margin: 2px 0; font-size: 13px; }
+.entity-resolved { padding: 2px 8px; background: rgba(255,180,84,0.15); border-left: 2px solid var(--warn); margin: 2px 0; font-size: 13px; }
+.entity-removed { padding: 2px 8px; background: rgba(255,107,107,0.12); border-left: 2px solid var(--crit); margin: 2px 0; font-size: 13px; }
 .v-by { color: var(--muted); font-size: 11px; }
 .v-btn {
   background: var(--panel2); color: var(--text); border: 1px solid var(--border);
@@ -231,16 +235,16 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 </head>
 <body>
 <header>
-  <a href="{{ url_for('book_page', book=book) }}" class="back">← 返回《{{ book }}》</a>
+  <a href="/book/{{ book }}" class="back">← 返回《{{ book }}》</a>
   <h1 style="margin-top: 8px;">{{ chapter_id }} - 评审详情</h1>
   <div class="subtitle">📂 {{ book }}</div>
   {% if prev_id or next_id %}
   <nav class="chapter-nav">
     {% if prev_id %}
-      <a href="{{ url_for('chapter_page', book=book, ch=prev_id) }}" class="nav-btn">← {{ prev_id }}</a>
+      <a href="/book/{{ book }}/{{ prev_id }}" class="nav-btn">← {{ prev_id }}</a>
     {% else %}<span class="nav-btn disabled">← 上一章</span>{% endif %}
     {% if next_id %}
-      <a href="{{ url_for('chapter_page', book=book, ch=next_id) }}" class="nav-btn">{{ next_id }} →</a>
+      <a href="/book/{{ book }}/{{ next_id }}" class="nav-btn">{{ next_id }} →</a>
     {% else %}<span class="nav-btn disabled">下一章 →</span>{% endif %}
   </nav>
   {% endif %}
@@ -355,11 +359,30 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
     </div>
     {% endif %}
 
+    <div class="panel" id="interrupted-banner" style="display:none;border-color:var(--warn);background:rgba(255,180,84,0.1);">
+      <h2>⚠️ 管道状态</h2>
+    </div>
+
+    <div class="panel" id="entity-diff-panel">
+      <h2>🔄 本章节实体变化</h2>
+      <div id="entity-diff-loading" style="color:var(--muted);font-size:13px;">加载中…</div>
+      <div id="entity-diff-content" style="display:none;"></div>
+    </div>
+
     <div class="panel">
       <h2>🛠 人工操作</h2>
       <button class="action-btn primary" onclick="doAction('approve', '{{ chapter_id }}')">
         ✓ 批准通过
       </button>
+      <button class="action-btn edit" id="btn-apply-feedback" onclick="applyFeedback()">
+        🔄 应用评审反馈自动修订
+      </button>
+      <div id="feedback-preview" style="display:none;" class="action-form">
+        <label>AI 修订预览：</label>
+        <pre id="feedback-preview-text" style="background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:10px;white-space:pre-wrap;word-wrap:break-word;font-size:12px;max-height:400px;overflow:auto;margin:6px 0;"></pre>
+        <button class="action-btn primary" onclick="confirmApplyFeedback()">✓ 确认应用此修订</button>
+        <button class="action-btn" onclick="document.getElementById('feedback-preview').style.display='none'">取消</button>
+      </div>
       <div class="action-form">
         <label>拒退原因：</label>
         <textarea id="reject-reason" placeholder="如：时间线矛盾未解决..."></textarea>
@@ -459,9 +482,140 @@ document.querySelectorAll('.action-btn').forEach(btn => {
   btn.dataset.origText = btn.textContent;
 });
 
+// ── v1.3 M4: entity-diff panel ──────────────────────────────────────
+async function loadEntityDiff() {
+  const loading = document.getElementById("entity-diff-loading");
+  const content = document.getElementById("entity-diff-content");
+  try {
+    const r = await fetch(`/api/chapter/${BOOK}/${CH}/entity-diff`);
+    if (!r.ok) { loading.textContent = "加载失败: HTTP " + r.status; return; }
+    const data = await r.json();
+    if (!data.ok) { loading.textContent = data.error || "无记录"; return; }
+    loading.style.display = "none";
+    content.style.display = "block";
+    content.innerHTML = renderEntityDiff(data.diff, data.summary);
+  } catch(e) {
+    loading.textContent = "网络错误: " + (e.message || e);
+  }
+}
+
+function renderEntityDiff(diff, summary) {
+  const s = summary;
+  const e = diff.entities || {};
+
+  const icon = (n) => n > 0 ? `<span style="color:var(--ok)">+${n}</span>`
+                  : n < 0 ? `<span style="color:var(--crit)">${n}</span>`
+                  : `<span style="color:var(--muted)">0</span>`;
+
+  const section = (label, icon_s, added, updated, removed, resolved, type) => {
+    const extras = resolved !== undefined
+      ? `<span class="diff-meta" style="margin-left:8px;">收:<span style="color:var(--warn)">${resolved}</span></span>` : "";
+    const updated_s = updated !== undefined ? `<span class="diff-meta" style="margin-left:8px;">变:<span style="color:var(--pending)">${updated}</span></span>` : "";
+    const rows = [];
+    const entity_list = e[type] || {};
+
+    const render_items = (key, cls) => {
+      const items = entity_list[key] || [];
+      if (!items.length) return "";
+      return items.map(item => {
+        if (typeof item === "string") return `<div class="entity-added">+ ${item}</div>`;
+        const name = item.name || item.id || item.event || item.foreshadow || JSON.stringify(item).slice(0,40);
+        return `<div class="entity-${cls}">+ ${name}${item.fields_changed ? ` <span style="color:var(--muted);font-size:11px;">(${item.fields_changed.join(",")})</span>` : ""}</div>`;
+      }).join("");
+    };
+
+    return `
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
+        <strong>${icon_s} ${label}</strong>
+        ${added !== undefined ? `<span style="color:var(--ok);font-size:13px;">+${added}</span>` : ""}
+        ${updated !== undefined ? `<span style="color:var(--pending);font-size:13px;">~${updated}</span>` : ""}
+        ${resolved !== undefined ? `<span style="color:var(--warn);font-size:13px;">收${resolved}</span>` : ""}
+        ${removed !== undefined ? `<span style="color:var(--crit);font-size:13px;">-${removed}</span>` : ""}
+      </div>
+      ${render_items("added", "added")}
+      ${updated !== undefined ? render_items("updated", "updated") : ""}
+      ${resolved !== undefined ? render_items("resolved", "resolved") : ""}
+      ${removed !== undefined ? render_items("removed", "removed") : ""}
+    </div>`;
+  };
+
+  const src = diff.source || "";
+  const ts = diff.generated_at ? diff.generated_at.slice(0, 16) : "";
+  return `
+  <div style="margin-bottom:10px;font-size:12px;color:var(--muted);">
+    来源: ${src} · ${ts}
+    · <strong style="color:var(--accent)">${s.total_changes}</strong> 项总变化
+  </div>
+  ${section("角色", "👤", s.characters.added, s.characters.updated, s.characters.removed, undefined, "character")}
+  ${section("事件", "📌", s.events.added, s.events.updated, s.events.removed, undefined, "event")}
+  ${section("伏笔", "🌱", s.foreshadows.added, s.foreshadows.updated, s.foreshadows.removed, s.foreshadows.resolved, "foreshadow")}
+  ${section("世界规则", "🌍", s.world_rules.added, s.world_rules.updated, s.world_rules.removed, undefined, "world_rule")}
+  `;
+}
+
+// Load on page ready
+loadEntityDiff();
+
+// ── v1.3 M4: check for interrupted pipeline ───────────────────────────
+async function checkInterrupted() {
+  try {
+    const r = await fetch(`/api/pipeline/${BOOK}/interruptions`);
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!data.ok) return;
+    const ours = (data.chapters || []).find(c => c.ch == chNumFromId(CH));
+    if (!ours) return;
+    const iv = document.getElementById("interrupted-banner");
+    if (!iv) return;
+    iv.style.display = "block";
+    iv.innerHTML = `<span style="font-weight:bold;font-size:14px;">⚠️ 上次 session 中断于此章节</span><br>
+    <span>当前阶段: <code>${ours.current_stage || ours.failed_stage || "?"}</code></span><br>
+    <button class="action-btn primary" onclick="resumePipeline()" style="margin-top:4px;">▶ 恢复管道</button>
+    &nbsp;
+    <span id="resume-msg" style="font-size:13px;color:var(--muted);"></span>`;
+  } catch(e) { /* silent */ }
+}
+
+function chNumFromId(id) {
+  const m = id && id.match(/ch_(\d+)/);
+  return m ? parseInt(m[1]) : 0;
+}
+
+async function resumePipeline() {
+  const btn = document.querySelector("#interrupted-banner .action-btn");
+  const msg = document.getElementById("resume-msg");
+  btn.disabled = true;
+  btn.textContent = "⏳ 恢复中…";
+  try {
+    const r = await fetch(`/api/pipeline/${BOOK}/${CH}/resume`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+    });
+    const data = await r.json();
+    if (data.ok) {
+      msg.textContent = data.message + " (刷新后可操作)";
+      msg.style.color = "var(--ok)";
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      msg.textContent = data.message;
+      msg.style.color = "var(--crit)";
+    }
+  } catch(e) {
+    msg.textContent = "网络错误: " + (e.message || e);
+    msg.style.color = "var(--crit)";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶ 恢复管道";
+  }
+}
+
 // M3: 版本历史 JS
 const BOOK = "{{ book }}";
 const CH = "{{ chapter_id }}";
+
+// Check for interruptions on page load (delayed a bit for other scripts to init)
+setTimeout(checkInterrupted, 500);
 let viewingVid = null;
 
 async function viewVersion(vid) {
@@ -496,6 +650,63 @@ async function revertTo(vid) {
   });
   if (!r.ok) { const e = await r.json(); alert("回滚失败: " + (e.message || r.status)); return; }
   location.reload();
+}
+
+// ── v1.3 M4: apply-feedback ────────────────────────────────────────────
+let _pendingFeedback = null;
+
+async function applyFeedback() {
+  const btn = document.getElementById("btn-apply-feedback");
+  btn.disabled = true;
+  btn.textContent = "⏳ AI 修订中…";
+  try {
+    const r = await fetch(`/api/chapter/${BOOK}/${CH}/apply-feedback`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({dry_run: true}),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) {
+      toast(data.error || "AI 修订失败", true);
+      return;
+    }
+    _pendingFeedback = data;
+    const preview = document.getElementById("feedback-preview");
+    const previewText = document.getElementById("feedback-preview-text");
+    previewText.textContent = data.new_text || "(无新文本)";
+    preview.style.display = "block";
+    btn.textContent = "🔄 修订预览已生成 — 确认或取消";
+  } catch(e) {
+    toast("网络错误: " + (e.message||e), true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function confirmApplyFeedback() {
+  if (!_pendingFeedback) return;
+  const btn = document.getElementById("btn-apply-feedback");
+  btn.disabled = true;
+  btn.textContent = "⏳ 应用中…";
+  try {
+    const r = await fetch(`/api/chapter/${BOOK}/${CH}/apply-feedback`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({dry_run: false}),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) {
+      toast(data.error || "应用失败", true);
+      return;
+    }
+    toast(`✓ 修订已保存 (v${data.new_version}, ${data.diff_lines} 行改动)`);
+    document.getElementById("feedback-preview").style.display = "none";
+    setTimeout(() => location.reload(), 1500);
+  } catch(e) {
+    toast("网络错误: " + (e.message||e), true);
+  } finally {
+    btn.disabled = false;
+  }
 }
 </script>
 </body>

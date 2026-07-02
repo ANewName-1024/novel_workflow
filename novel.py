@@ -161,6 +161,16 @@ def parse_args() -> argparse.Namespace:
     bk.add_argument("--no-compress", action="store_true", help="不压 tar.gz")
     bk.add_argument("--clean", action="store_true", help="顺手清理超过 retention_days 的旧快照")
 
+    # ── v1.3 M4: pipeline resume ──
+    pl = sub.add_parser("pipeline", help="Pipeine 状态/恢复")
+    pl_sub = pl.add_subparsers(dest="pipeline_cmd", required=True)
+    pr = pl_sub.add_parser("status", help="查看 pipeline 快照")
+    add_project(pr)
+    pv = pl_sub.add_parser("resume", help="恢复中断的 pipeline")
+    add_project(pv)
+    pv.add_argument("--chapter", type=str, default="", help="章节号 (如 6 或 ch_006)")
+    pv.add_argument("--from-stage", type=str, default=None, help="从指定 stage 开始 (留空则自动检测)")
+
     return p.parse_args()
 
 # ── commands ────────────────────────────────────────────────────────────────
@@ -692,6 +702,53 @@ def cmd_backup(args: argparse.Namespace) -> None:
             print(f"🧹 清理旧快照 {len(removed)} 个 (>{retention} 天): {', '.join(removed)}")
 
 
+# ── v1.3 M4: pipeline resume / status ─────────────────────────────────────
+
+def cmd_pipeline_resume(args: argparse.Namespace) -> None:
+    """Recover and resume interrupted pipeline."""
+    from . import pipeline_v2 as pv
+    if args.chapter:
+        m = re.match(r"ch_?(\d+)", str(args.chapter))
+        ch = int(m.group(1)) if m else int(args.chapter)
+        result = pv.recover_stage(args.book, ch, args.from_stage)
+        if result["ok"]:
+            print(f"✅ {result['message']}")
+            print(f"  运行: python novel.py write {args.book} --chapters {ch}")
+        else:
+            print(f"❌ {result['message']}")
+    else:
+        interrupted = pv.get_interrupted_chapters(args.book)
+        if not interrupted:
+            print("✅ 所有章节管道状态正常, 无中断。")
+            return
+        print(f"⚠️  发现 {len(interrupted)} 个中断章节:")
+        for ic in interrupted:
+            ch = ic["ch"]
+            cur = ic.get("current_stage") or ic.get("failed_stage") or "?"
+            print(f"  ch_{ch:03d}: 中断于 [{cur}]")
+            print(f"    恢复: python novel.py pipeline resume {args.book} --chapter {ch}")
+        print("\n提示: 也可在 WebUI 章节页面点击 [▶ 恢复管道] 按钮。")
+
+
+def cmd_pipeline_status(args: argparse.Namespace) -> None:
+    """Show pipeline checkpoint snapshot."""
+    from . import pipeline_v2 as pv
+    snapshot = pv.get_last_snapshot(args.book)
+    if snapshot is None or not snapshot.get("available"):
+        print("📭 无可用的 pipeline snapshot")
+        return
+    print(f"📋 Pipeline Snapshot ({snapshot['timestamp']}):")
+    print(f"  章节: ch_{snapshot['ch']:03d}")
+    print(f"  完成: {'✅' if snapshot['is_complete'] else '⏳'}")
+    print(f"  当前阶段: {snapshot.get('current_stage', '-')}")
+    print(f"  失败阶段: {snapshot.get('failed_stage', '-')}")
+    print("  各阶段状态:")
+    stages = snapshot.get("stages", {})
+    for s, status in stages.items():
+        icon = {"DONE": "✅", "FAILED": "❌", "RUNNING": "⏳", "PENDING": "⬜", "SKIPPED": "⏭️"}.get(status, "❓")
+        print(f"    {icon} {s}: {status}")
+
+
 def main() -> None:
     args = parse_args()
     if args.version:
@@ -780,6 +837,14 @@ def _dispatch(args: argparse.Namespace, log: logging.Logger) -> None:
         cmd_serve(args)
     elif cmd == "backup":
         cmd_backup(args)
+    elif cmd == "pipeline":
+        pc = args.pipeline_cmd
+        if pc == "status":
+            cmd_pipeline_status(args)
+        elif pc == "resume":
+            cmd_pipeline_resume(args)
+        else:
+            raise NovelError(ErrorCode.INVALID_ARGS, f"未知 pipeline 子命令: {pc}")
     else:
         raise NovelError(ErrorCode.INVALID_ARGS, f"未知命令: {cmd}")
 

@@ -34,7 +34,7 @@ class _FakeLLM:
 def fake_llm(monkeypatch):
     """Inject fake LLM into outline_ai module."""
     fake = _FakeLLM(canned="")  # default: empty
-    monkeypatch.setattr(oai, "_get_llm", lambda: fake)
+    monkeypatch.setattr(oai, "_get_llm", lambda **kw: fake)
     return fake
 
 

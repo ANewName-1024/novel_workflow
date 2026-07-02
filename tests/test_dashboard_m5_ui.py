@@ -84,7 +84,7 @@ def test_dashboard_m5_init_loads_checkpoint_via_api(client, book):
     data = resp.get_json()
     assert data["ok"] is True
     assert data["chapter"] == 1
-    assert len(data["stages"]) == 7
+    assert len(data["stages"]) == 8  # v1.3: 8 stages (was 7 before entity_diff)
     # 默认全 PENDING
     for s in data["stages"]:
         assert s["status"] == "PENDING"

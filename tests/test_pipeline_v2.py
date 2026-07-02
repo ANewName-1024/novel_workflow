@@ -260,7 +260,7 @@ def test_pipeline_view_returns_all_stages(tmp_projects_root, book):
     """get_pipeline_view 返回 7 个 stage 列表."""
     v2 = pv2.PipelineV2()
     view = v2.get_pipeline_view(book, 1)
-    assert len(view["stages"]) == 7
+    assert len(view["stages"]) == 8  # v1.3 M4: 8 stages (was 7 before entity_diff)
     assert [s["name"] for s in view["stages"]] == pv2.STAGES
 
 

@@ -256,7 +256,7 @@ def world_rule_consistency(
 
     if llm is None:
         from .llm import get_llm
-        llm = get_llm()
+        llm = get_llm(book=book)
 
     raw = llm.complete(
         prompt=prompt,

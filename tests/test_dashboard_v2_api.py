@@ -50,7 +50,7 @@ def test_api_checkpoints_returns_view(client, book):
     assert data["ok"] is True
     assert data["book"] == book
     assert data["chapter"] == 1
-    assert len(data["stages"]) == 7
+    assert len(data["stages"]) == 8  # v1.3: 8 stages (was 7 before entity_diff)
     assert data["failed_stage"] == "writing"
     assert data["current_stage"] == "writing"
 

@@ -7,7 +7,7 @@ import json, re
 from .llm import LLM
 from .prompts import EXTRACT_SYSTEM, EXTRACT_USER
 
-def extract_from_chapter(chapter_text: str, llm: LLM = None) -> dict:
+def extract_from_chapter(chapter_text: str, llm: LLM = None, book: str = None) -> dict:
     """
     Run extraction LLM call on chapter text.
     Returns dict with new_characters, updated_characters, new_events,
@@ -24,7 +24,7 @@ def extract_from_chapter(chapter_text: str, llm: LLM = None) -> dict:
     # Use separate LLM instance for extraction if not passed
     if llm is None:
         from .llm import get_llm
-        llm = get_llm()
+        llm = get_llm(book=book)
 
     raw = llm.complete(
         prompt=user_prompt,

@@ -18,12 +18,31 @@ def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
     """Best-effort write to pipeline_v2 checkpoint. Never raise.
 
     v2 故障不能影响主流程 (extract/summary/state 都是 non-fatal 标注的).
+    Also snapshots checkpoint + session log on each completed stage.
     """
     try:
         from . import pipeline_v2 as _pv2
         _pv2.get_v2().transition(book, ch, stage, status, **kwargs)
     except Exception as _e:
         print(f"  [v2-checkpoint] {stage}→{status} 写入失败: {_e}", file=sys.stderr)
+
+    # ── v1.3 M4: snapshot checkpoint after each stage change ──────────
+    try:
+        _pv2.checkpoint_snapshot(book, ch, stage)
+    except Exception:
+        pass  # snapshot failure is non-critical
+
+    # ── v1.3 M4: session log hook ─────────────────────────────────────
+    try:
+        from . import session_log as _slog
+        if status == "RUNNING":
+            _slog.hook_pipeline_start(book, ch)
+        elif status in ("DONE", "SKIPPED"):
+            _slog.hook_pipeline_done(book, ch)
+        elif status == "FAILED":
+            _slog.hook_pipeline_failed(book, ch, kwargs.get("error", ""))
+    except Exception:
+        pass  # session_log is non-critical
 
 
 def write_chapter(
@@ -160,6 +179,33 @@ def run_post_write_pipeline(
         print(f"  ⚠ extract 失败 (非致命): {e}")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=failed")
         _v2_mark(book, chapter_num, "extract", "FAILED", error=str(e))
+
+    # 1b) Entity diff (v1.3 M4): compute & record per-chapter entity changes
+    _v2_mark(book, chapter_num, "entity_diff", "RUNNING")
+    print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=start")
+    try:
+        from . import entity_diff as edmod
+        before_snap = edmod.snapshot_memory(book)
+        # Re-read after extract to capture the changes extract made
+        # (we already saved; the diff will compare before_snap → current state)
+        diff_entry = edmod.run_entity_diff_stage(book, chapter_num, chapter_id, before_snap)
+        summary = edmod.summarize_changes(diff_entry)
+        print(f"  ✓ 实体变化记录: {summary['total_changes']} 项 "
+              f"(角色+{summary['characters']['added']}/~{summary['characters']['updated']}, "
+              f"事件+{summary['events']['added']}, "
+              f"伏笔+{summary['foreshadows']['added']}/收{summary['foreshadows']['resolved']}, "
+              f"规则~{summary['world_rules']['updated']})")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=done")
+        _v2_mark(book, chapter_num, "entity_diff", "DONE",
+                 artifacts={"total_changes": summary["total_changes"],
+                            "characters_added": summary["characters"]["added"],
+                            "events_added": summary["events"]["added"],
+                            "foreshadows_added": summary["foreshadows"]["added"],
+                            "foreshadows_resolved": summary["foreshadows"]["resolved"]})
+    except Exception as e:
+        print(f"  ⚠ entity_diff 失败 (非致命): {e}")
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=failed")
+        _v2_mark(book, chapter_num, "entity_diff", "FAILED", error=str(e))
 
     # 2) Generate rolling summary
     _v2_mark(book, chapter_num, "summary", "RUNNING")

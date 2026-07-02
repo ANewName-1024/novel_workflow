@@ -1,26 +1,63 @@
 """
-LLM wrapper: OpenAI-compat API (local llama-server).
+LLM wrapper: OpenAI-compat API (local llama-server / DeepSeek / MiniMax / OpenAI).
 Handles streaming, retries, token counting, context window management.
+
+v1.3: Multi-provider support via llm_providers.py
 """
 from __future__ import annotations
 
 import time, json, tiktoken
-from typing import Generator, Optional
+from typing import Generator, Optional, TYPE_CHECKING
 from openai import OpenAI, RateLimitError, APIError
 
+from .llm_providers import resolve_model, resolve_for_book, get_provider_config, BUILTIN_PROVIDERS
+
 DEFAULT_API_BASE = "http://127.0.0.1:60443/v1"
+DEFAULT_MODEL = "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
+
 
 class LLM:
     def __init__(
         self,
-        model: str = "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
-        api_base: str = DEFAULT_API_BASE,
-        api_key: str = "no-key-needed",
+        model: Optional[str] = None,
+        api_base: Optional[str] = None,
+        api_key: Optional[str] = None,
+        provider: Optional[str] = None,
         max_retries: int = 3,
         retry_delay: float = 10.0,
     ):
+        """
+        Create an LLM client.
+
+        Resolution order (model/api_base/api_key):
+        1. Explicit kwargs (highest)
+        2. provider config from llm_providers (if provider given)
+        3. Global config.yaml llm.* (legacy)
+        4. Hardcoded defaults (back-compat)
+        """
+        # Provider-based resolution
+        if provider:
+            cfg = resolve_model(provider, model)
+            self.provider = provider
+            self.model = cfg["model"]
+            api_base = api_base or cfg["api_base"]
+            api_key = api_key or cfg["api_key"]
+        else:
+            # Legacy / direct args
+            self.provider = "local"  # default
+            if model is None and api_base is None:
+                # Use global config
+                from .config_loader import get_config
+                cfg = get_config().get("llm", {})
+                model = cfg.get("default_model", DEFAULT_MODEL)
+                api_base = cfg.get("api_base", DEFAULT_API_BASE)
+            self.model = model or DEFAULT_MODEL
+            api_base = api_base or DEFAULT_API_BASE
+            api_key = api_key or "no-key-needed"
+        
+        self.api_base = api_base
+        self.api_key = api_key
         self.client = OpenAI(base_url=api_base, api_key=api_key, timeout=600)
-        self.model = model
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         #cl100k_base is used for GPT-4 context; use the same for rough token estimation
@@ -35,15 +72,21 @@ class LLM:
         self._current_stage = "unknown"
         self._current_ch = 0
 
+    def describe(self) -> dict:
+        """Return a human-readable summary of this LLM instance."""
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "api_base": self.api_base,
+            "has_api_key": bool(self.api_key) and self.api_key != "no-key-needed",
+        }
+
     def set_metrics_callback(self, cb) -> None:
         """设置指标回调. cb 签名: cb(stage, ch, model, in_tok, out_tok, latency_ms)."""
         self._metrics_cb = cb
 
     def set_stage_context(self, stage: str, ch: int = 0) -> None:
-        """设置当前 stage/ch. 后续 complete() / call() 会带上这些字段调用回调.
-
-        用法: llm.set_stage_context("extract", 8); llm.complete(...); llm.set_stage_context("summary", 8); ...
-        """
+        """设置当前 stage/ch. 后续 complete() / call() 会带上这些字段调用回调."""
         self._current_stage = stage
         self._current_ch = ch
 
@@ -82,7 +125,6 @@ class LLM:
 
         v1.1: stage/ch 可隐式通过 set_stage_context() 上下文设, 显式参数覆盖隐式.
         """
-        # 隐式 stage/ch 上下文 (参数未传时回退到 context)
         eff_stage = stage if stage is not None else self._current_stage
         eff_ch = ch if ch is not None else self._current_ch
 
@@ -96,6 +138,7 @@ class LLM:
             try:
                 if stream:
                     text = self._stream_completion(messages, max_tokens, stop)
+                    resp = None
                 else:
                     resp = self.client.chat.completions.create(
                         model=self.model,
@@ -105,14 +148,12 @@ class LLM:
                         stop=stop or None,
                     )
                     text = resp.choices[0].message.content or ""
-                # 成功后: 调 metrics callback
                 latency_ms = (time.time() - t0) * 1000
                 usage = getattr(resp, "usage", None) if not stream else None
                 if usage is not None:
                     in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
                     out_tok = int(getattr(usage, "completion_tokens", 0) or 0)
                 else:
-                    # fallback: 用 tiktoken 估算 (不依赖 server 返 usage)
                     in_tok = self._count_tokens(prompt + system)
                     out_tok = self._count_tokens(text)
                 self._emit_metrics(eff_stage, eff_ch, in_tok, out_tok, latency_ms)
@@ -148,7 +189,7 @@ class LLM:
 
     def call(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096,
              stage: Optional[str] = None, ch: Optional[int] = None) -> str:
-        """Low-level messages-based call (for extracted memory prompts). v1.1 加 stage/ch (隐式 context)."""
+        """Low-level messages-based call."""
         eff_stage = stage if stage is not None else self._current_stage
         eff_ch = ch if ch is not None else self._current_ch
         t0 = time.time()
@@ -167,7 +208,6 @@ class LLM:
                     in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
                     out_tok = int(getattr(usage, "completion_tokens", 0) or 0)
                 else:
-                    # fallback 估算
                     all_input = " ".join(m.get("content", "") for m in messages)
                     in_tok = self._count_tokens(all_input)
                     out_tok = self._count_tokens(text)
@@ -188,11 +228,51 @@ class LLM:
         out_tok = self.estimate_input_tokens(output_text)
         return {"input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": 0.0}
 
+
+# ── Factory helpers ────────────────────────────────────────────────
+
 # Singleton (lazy – init on first use)
 _llm: Optional[LLM] = None
 
-def get_llm(api_base: str = DEFAULT_API_BASE, model: str = "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf") -> LLM:
+def get_llm(
+    api_base: str = DEFAULT_API_BASE,
+    model: str = DEFAULT_MODEL,
+    provider: Optional[str] = None,
+    book: Optional[str] = None,
+) -> LLM:
+    """
+    Get an LLM instance.
+    
+    v1.3: Supports provider-based routing. Order of priority:
+    1. provider + model explicit args
+    2. book (looks up book's config.json llm_provider/llm_model)
+    3. Legacy api_base/model args
+    4. Global config.yaml llm.* 
+    5. Hardcoded defaults
+    """
     global _llm
+    
+    # Book-based resolution
+    if book:
+        cfg = resolve_for_book(book)
+        return LLM(
+            model=cfg["model"],
+            api_base=cfg["api_base"],
+            api_key=cfg["api_key"],
+            provider=cfg["provider"],
+        )
+    
+    # Provider explicit
+    if provider:
+        return LLM(provider=provider, model=model)
+    
+    # Legacy singleton path (back-compat)
     if _llm is None:
         _llm = LLM(model=model, api_base=api_base)
     return _llm
+
+
+def reset_singleton() -> None:
+    """Reset the global singleton (for testing or after config change)."""
+    global _llm
+    _llm = None
