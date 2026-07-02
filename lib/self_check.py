@@ -141,6 +141,171 @@ def get_self_check(book: str, chapter_id: str) -> dict | None:
     except (json.JSONDecodeError, OSError):
         return None
 
+
+# ── World Rule Consistency (v1.2 M1.4) ─────────────────────────────────
+
+WORLD_RULE_CONSISTENCY_PROMPT = """你是资深长篇小说终审编辑。
+
+请【重读章节正文】, 对照【世界规则硬约束】, 找出章节中【违反】硬约束的内容。
+
+【世界规则 (含硬约束)】
+{rules_text}
+
+【章节正文】
+{chapter_text}
+
+【输出严格 JSON】 (不要任何解释):
+```json
+{{
+  "violations": [
+    {{
+      "rule_id": "rule_xxx",
+      "rule_name": "规则名",
+      "constraint": "被违反的硬约束原文",
+      "evidence": "章节中违反约束的原文引用 (10-50字)",
+      "severity": "minor/moderate/critical"
+    }}
+  ],
+  "overall_ok": true/false,
+  "summary": "一句话总结 (10-30字)"
+}}
+```
+
+【判断准则】
+- "minor" = 小矛盾 (称谓不一/小逻辑偏差), 可接受
+- "moderate" = 中度违反 (隐含了不该出现的设定)
+- "critical" = 严重违反 (完全反转规则核心)
+- 无违反 → violations 返回空数组, overall_ok=true
+- 仅当章节【明确呈现】违反行为时报告, 不要基于"可能违反"推测
+- evidence 必填, 是章节原文片段, 不是推断"""
+
+
+def _format_rules_for_prompt(book: str) -> str:
+    """把 WorldRule 列表格式化为 LLM prompt 文本."""
+    from .entity import EntityType, WorldRule, WorldRuleStatus
+    from .memory import EntityStore
+
+    store = EntityStore(book)
+    rules = store.list_world_rules()
+
+    # 只检查已确立的规则 (草案/废弃忽略)
+    active = [r for r in rules if r.status == WorldRuleStatus.ESTABLISHED.value]
+    if not active:
+        return "（暂无已确立的世界规则）"
+
+    lines = []
+    for r in active:
+        lines.append(f"### {r.name} [{r.category}] (id={r.id})")
+        if r.description:
+            lines.append(f"  定义: {r.description}")
+        if r.constraints:
+            lines.append(f"  硬约束:")
+            for c in r.constraints:
+                lines.append(f"    - {c}")
+        if r.examples:
+            lines.append(f"  示例: {'；'.join(r.examples)}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def world_rule_consistency(
+    book: str,
+    chapter_id: str,
+    llm: "LLM" = None,
+    save: bool = True,
+) -> dict:
+    """扫描章节是否违反已确立 WorldRule 的硬约束.
+
+    Returns:
+        {
+          "violations": [{rule_id, rule_name, constraint, evidence, severity}, ...],
+          "overall_ok": bool,
+          "summary": str,
+          "chapter_id": str,
+          "rules_checked": int,
+        }
+    """
+    text = storage.read_chapter(book, chapter_id)
+    if not text:
+        raise FileNotFoundError(f"Chapter {chapter_id} not found")
+
+    # Truncate if too long (last 5000 chars enough for cross-ref)
+    snippet = text if len(text) <= 5000 else text[-5000:]
+
+    rules_text = _format_rules_for_prompt(book)
+
+    # If no active rules, skip LLM call
+    if rules_text == "（暂无已确立的世界规则）":
+        result = {
+            "violations": [],
+            "overall_ok": True,
+            "summary": "无已确立规则, 跳过检查",
+            "chapter_id": chapter_id,
+            "rules_checked": 0,
+        }
+        if save:
+            storage.selfcheck_path(book, chapter_id).write_text(
+                json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        return result
+
+    prompt = WORLD_RULE_CONSISTENCY_PROMPT.format(
+        rules_text=rules_text,
+        chapter_text=snippet,
+    )
+
+    if llm is None:
+        from .llm import get_llm
+        llm = get_llm()
+
+    raw = llm.complete(
+        prompt=prompt,
+        system="你是资深长篇小说终审编辑。",
+        temperature=0.2,
+        max_tokens=2000,
+    )
+
+    # Parse
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        raw = "\n".join(l for l in lines if not l.strip().startswith("```")).strip()
+    first = raw.find("{")
+    last = raw.rfind("}")
+    if first >= 0 and last > first:
+        raw = raw[first:last+1]
+
+    from lib.memory import EntityStore
+    rules_checked = sum(1 for r in EntityStore(book).list_world_rules()
+                        if r.status == "已确立")
+
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        result = {
+            "violations": [],
+            "overall_ok": None,
+            "summary": "LLM 输出解析失败",
+            "raw_response": raw,
+            "parse_error": True,
+            "chapter_id": chapter_id,
+            "rules_checked": rules_checked,
+        }
+    else:
+        # 补全 metadata
+        result.setdefault("violations", [])
+        result.setdefault("overall_ok", len(result.get("violations", [])) == 0)
+        result.setdefault("summary", "")
+        result["chapter_id"] = chapter_id
+        result["rules_checked"] = rules_checked
+
+    if save:
+        storage.selfcheck_path(book, chapter_id).write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    return result
+
 # ── auto-rewrite on critical ───────────────────────────────────────────────
 
 REWRITE_SYSTEM = """你是一位长篇小说作者，正在根据资深编辑的反馈重写一章。"""

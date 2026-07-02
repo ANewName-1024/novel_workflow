@@ -659,6 +659,41 @@ def entities_page(book):
         counts=counts,
     )
 
+
+# ── 一致性扫描 API (v1.2 M1.4) ────────────────────────────────────────
+
+@app.route("/api/entities/<book>/check-consistency", methods=["POST"])
+def api_check_consistency(book):
+    """POST /api/entities/<book>/check-consistency
+    body: {chapter_id: 'ch_001'} 或 {all: true} — 扫描所有章节
+    返回 violations 列表 (含 rule_id, constraint, evidence, severity)."""
+    _ensure_book(book)
+    from lib import self_check
+
+    body = request.get_json(silent=True) or {}
+    chapter_id = body.get("chapter_id")
+    scan_all = body.get("all", False)
+
+    if not chapter_id and not scan_all:
+        abort(400, description="chapter_id 或 all 必填")
+
+    if scan_all:
+        chapters = storage.list_chapters(book)
+        results = []
+        for ch in chapters:
+            try:
+                r = self_check.world_rule_consistency(book, ch["id"], save=True)
+                results.append(r)
+            except FileNotFoundError:
+                continue
+        return jsonify({"results": results, "total": len(results)})
+    else:
+        try:
+            result = self_check.world_rule_consistency(book, chapter_id, save=True)
+        except FileNotFoundError:
+            abort(404, description=f"Chapter {chapter_id} not found")
+        return jsonify(result)
+
 # ── main ────────────────────────────────────────────────────────────────────
 
 def main():
