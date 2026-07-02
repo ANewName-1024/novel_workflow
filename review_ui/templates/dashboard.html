@@ -182,6 +182,30 @@ label { font-size: 12px; color: var(--muted); }
     <div id="stageHint" style="margin-top:8px;color:var(--muted);font-size:12px;">未运行</div>
   </div>
 
+  <!-- ── 3b. Pipeline 阶段控制 (M5) ── -->
+  <div class="card">
+    <h2>🎛 Pipeline 阶段控制 (M5) <span id="m5Status" class="badge idle">未加载</span></h2>
+    <div class="control-row">
+      <label style="font-size:13px;color:var(--muted);">章节:</label>
+      <input type="number" id="m5Ch" min="1" value="{{ next_chapter or 1 }}" style="width:70px;padding:4px;">
+      <label style="font-size:13px;color:var(--muted);margin-left:8px;">操作:</label>
+      <select id="m5Stage" style="padding:4px;">
+        <option value="context">context</option>
+        <option value="writing">writing</option>
+        <option value="extract">extract</option>
+        <option value="summary">summary</option>
+        <option value="state">state</option>
+        <option value="self_check">self_check</option>
+        <option value="done">done</option>
+      </select>
+      <button id="m5SkipBtn" class="btn">⊘ Skip</button>
+      <button id="m5RerunBtn" class="btn">↻ Rerun from here</button>
+      <button id="m5RefreshBtn" class="btn">🔄 刷新</button>
+      <button id="m5ResetBtn" class="btn" style="background:var(--crit);">⚠ Reset</button>
+    </div>
+    <div id="m5Detail" style="margin-top:8px;color:var(--muted);font-size:12px;">选择章节后点击"刷新"加载 checkpoint</div>
+  </div>
+
   <!-- ── 4. Token 用量图 ── -->
   <div class="card">
     <h2>📈 Token 用量 (近 7 天)</h2>
@@ -213,6 +237,17 @@ const API = {
   status: () => fetch(`/api/pipeline/status/${encodeURIComponent(BOOK)}`).then(r => r.json()),
   logs: (tail) => fetch(`/api/pipeline/logs/${encodeURIComponent(BOOK)}?tail=${tail}`).then(r => r.json()),
   metrics: (range) => fetch(`/api/pipeline/metrics/${encodeURIComponent(BOOK)}?range=${range}`).then(r => r.json()),
+  // M5 v2 endpoints
+  checkpoints: (ch) => fetch(`/api/pipeline/checkpoints/${encodeURIComponent(BOOK)}?ch=${ch}`).then(r => r.json()),
+  skip: (ch, stage, reason) => fetch(`/api/pipeline/skip/${encodeURIComponent(BOOK)}`, {
+    method: 'POST', body: new URLSearchParams({ch, stage, reason: reason || ''})
+  }).then(r => r.json()),
+  rerun: (ch, fromStage) => fetch(`/api/pipeline/rerun/${encodeURIComponent(BOOK)}`, {
+    method: 'POST', body: new URLSearchParams({ch, from_stage: fromStage})
+  }).then(r => r.json()),
+  reset: (ch) => fetch(`/api/pipeline/reset/${encodeURIComponent(BOOK)}`, {
+    method: 'POST', body: new URLSearchParams({ch})
+  }).then(r => r.json()),
 };
 
 const STAGE_ORDER = ['context', 'writing', 'extract', 'summary', 'state', 'self_check', 'done'];
@@ -428,6 +463,76 @@ document.getElementById('logClearBtn').onclick = () => {
   logLines = [];
   document.getElementById('logView').innerHTML = '';
   document.getElementById('logCount').textContent = '0 行';
+};
+
+// ── M5: Pipeline 阶段控制 ─────────────────────────────────────
+const STAGE_LABEL = {PENDING:'○', RUNNING:'⟳', DONE:'✓', FAILED:'⚠', SKIPPED:'⊘'};
+
+function renderM5(view) {
+  const badge = document.getElementById('m5Status');
+  const detail = document.getElementById('m5Detail');
+  if (!view || !view.stages || view.stages.length === 0) {
+    badge.className = 'badge idle'; badge.textContent = '无 checkpoint';
+    detail.textContent = '选择章节后点击"刷新"加载 checkpoint';
+    return;
+  }
+  // 顶部 summary
+  const failed = view.failed_stage;
+  const cur = view.current_stage;
+  if (view.is_complete) {
+    badge.className = 'badge done'; badge.textContent = '完成';
+  } else if (failed) {
+    badge.className = 'badge failed'; badge.textContent = '失败: ' + failed;
+  } else if (cur) {
+    badge.className = 'badge running'; badge.textContent = '当前: ' + cur;
+  } else {
+    badge.className = 'badge idle'; badge.textContent = 'idle';
+  }
+  // 7 stage 状态行
+  const rows = view.stages.map(s => {
+    const lab = STAGE_LABEL[s.status] || '?';
+    const err = s.error ? ` <span style="color:var(--crit)">(${s.error.slice(0,40)})</span>` : '';
+    const tok = (s.tokens && (s.tokens.in || s.tokens.out)) ?
+      ` <span style="color:var(--muted)">[in=${s.tokens.in||0} out=${s.tokens.out||0}]</span>` : '';
+    return `<span style="margin-right:10px;">${s.name}:${lab}${s.status}${tok}${err}</span>`;
+  }).join('');
+  detail.innerHTML = rows;
+}
+
+async function refreshM5() {
+  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
+  const data = await API.checkpoints(ch);
+  if (data.ok) {
+    renderM5(data);
+  } else {
+    document.getElementById('m5Detail').textContent = '加载失败: ' + (data.error || JSON.stringify(data));
+  }
+}
+
+document.getElementById('m5RefreshBtn').onclick = refreshM5;
+document.getElementById('m5SkipBtn').onclick = async () => {
+  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
+  const stage = document.getElementById('m5Stage').value;
+  const reason = prompt(`Skip stage [${stage}] of ch ${ch}? 输入原因 (可空):`, 'manual skip');
+  if (reason === null) return;  // 用户取消
+  const data = await API.skip(ch, stage, reason);
+  if (data.ok) { toast(`✓ Skipped ${stage} → ${data.new_state}`); await refreshM5(); }
+  else toast('Skip 失败: ' + (data.error || JSON.stringify(data)), 'error');
+};
+document.getElementById('m5RerunBtn').onclick = async () => {
+  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
+  const fromStage = document.getElementById('m5Stage').value;
+  if (!confirm(`Rerun ch ${ch} from [${fromStage}]? 上游 DONE 会保留, 下游全 PENDING, 然后启动新 subprocess.`)) return;
+  const data = await API.rerun(ch, fromStage);
+  if (data.ok) { toast(`✓ Rerun started from ${fromStage} (PID ${data.state?.pid})`); await refreshM5(); }
+  else toast('Rerun 失败: ' + (data.error || JSON.stringify(data)), 'error');
+};
+document.getElementById('m5ResetBtn').onclick = async () => {
+  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
+  if (!confirm(`Reset ch ${ch}? 全部 stage 回 PENDING, checkpoint 清空, 但 v1 进程不自动取消.`)) return;
+  const data = await API.reset(ch);
+  if (data.ok) { toast('✓ Reset'); await refreshM5(); }
+  else toast('Reset 失败: ' + (data.error || JSON.stringify(data)), 'error');
 };
 
 // ── 启动 ────────────────────────────────────────────────────────────────

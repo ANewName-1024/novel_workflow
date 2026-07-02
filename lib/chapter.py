@@ -13,6 +13,19 @@ from . import self_check as scmod
 from . import review_service as revserv
 from .prompts import CHAPTER_SYSTEM, CHAPTER_USER
 
+
+def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
+    """Best-effort write to pipeline_v2 checkpoint. Never raise.
+
+    v2 故障不能影响主流程 (extract/summary/state 都是 non-fatal 标注的).
+    """
+    try:
+        from . import pipeline_v2 as _pv2
+        _pv2.get_v2().transition(book, ch, stage, status, **kwargs)
+    except Exception as _e:
+        print(f"  [v2-checkpoint] {stage}→{status} 写入失败: {_e}", file=sys.stderr)
+
+
 def write_chapter(
     book: str,
     chapter_num: int,
@@ -103,7 +116,10 @@ def write_chapter(
     # ── Post-write pipeline ──
     run_post_write_pipeline(book, chapter_num, ctx["chapter_id"], llm, cfg)
 
+    _v2_mark(book, chapter_num, "done", "RUNNING")
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=done status=start")
+    _v2_mark(book, chapter_num, "done", "DONE",
+             artifacts={"word_count": len(text)})
     return text
 
 
@@ -123,6 +139,7 @@ def run_post_write_pipeline(
       5. If self_check enabled in config → run anti-drift check
     """
     # 1) Extract & merge
+    _v2_mark(book, chapter_num, "extract", "RUNNING")
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=start")
     llm.set_stage_context("extract", chapter_num)
     try:
@@ -135,31 +152,42 @@ def run_post_write_pipeline(
               f"{len(extraction.get('new_foreshadowing',[]))} 伏笔, "
               f"{len(extraction.get('new_characters',[]))} 角色")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=done")
+        _v2_mark(book, chapter_num, "extract", "DONE",
+                 artifacts={"events": len(extraction.get("new_events", [])),
+                            "foreshadowing": len(extraction.get("new_foreshadowing", [])),
+                            "characters": len(extraction.get("new_characters", []))})
     except Exception as e:
         print(f"  ⚠ extract 失败 (非致命): {e}")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=failed")
+        _v2_mark(book, chapter_num, "extract", "FAILED", error=str(e))
 
     # 2) Generate rolling summary
+    _v2_mark(book, chapter_num, "summary", "RUNNING")
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=start")
     llm.set_stage_context("summary", chapter_num)
     try:
         summod.generate_chapter_summary(book, chapter_id, llm)
         print(f"  ✓ 章节摘要生成")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=done")
+        _v2_mark(book, chapter_num, "summary", "DONE")
     except Exception as e:
         print(f"  ⚠ 摘要生成失败 (非致命): {e}")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=failed")
+        _v2_mark(book, chapter_num, "summary", "FAILED", error=str(e))
 
     # 3) Update state snapshot
+    _v2_mark(book, chapter_num, "state", "RUNNING")
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=start")
     llm.set_stage_context("state", chapter_num)
     try:
         statemod.update_state_after_chapter(book, chapter_num, llm)
         print(f"  ✓ 状态快照更新")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=done")
+        _v2_mark(book, chapter_num, "state", "DONE")
     except Exception as e:
         print(f"  ⚠ 状态更新失败 (非致命): {e}")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=failed")
+        _v2_mark(book, chapter_num, "state", "FAILED", error=str(e))
 
     # 4) Style anchor (only after ch_001 first write)
     if chapter_num == 1 and not stylemod.get_style_anchor(book):
@@ -172,12 +200,15 @@ def run_post_write_pipeline(
 
     # 5) Self-check (optional, doubles per-chapter LLM calls)
     if cfg.get("self_check", False):
+        _v2_mark(book, chapter_num, "self_check", "RUNNING")
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=self_check status=start")
         llm.set_stage_context("self_check", chapter_num)
         try:
             result = scmod.self_check_chapter(book, chapter_id, llm)
             sev = result.get("severity", "unknown")
             print(f"[PIPELINE] book={book} ch={chapter_num} stage=self_check status=done severity={sev}")
+            _v2_mark(book, chapter_num, "self_check", "DONE",
+                     artifacts={"severity": sev})
 
             # ── Auto-flag in review service (regardless of rewrite path) ──
             try:
@@ -227,6 +258,7 @@ def run_post_write_pipeline(
                 print(f"  ✓ 自检通过 (severity={sev})")
         except Exception as e:
             print(f"  ⚠ 自检失败 (非致命): {e}")
+            _v2_mark(book, chapter_num, "self_check", "FAILED", error=str(e))
 
     # Update progress (use shared helper so review/human-edit paths also stay in sync)
     storage.mark_chapter_completed(book, chapter_id, chapter_num)
