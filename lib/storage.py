@@ -159,3 +159,12 @@ def init_project(book: str, cfg: dict[str, Any]) -> None:
 
 def project_exists(book: str) -> bool:
     return (project_root(book) / "config.json").exists()
+
+def list_projects() -> list[str]:
+    """Return all project names that have a config.json (sorted)."""
+    if not PROJECTS_ROOT.exists():
+        return []
+    return sorted([
+        d.name for d in PROJECTS_ROOT.iterdir()
+        if d.is_dir() and (d / "config.json").exists()
+    ])

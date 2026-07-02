@@ -507,3 +507,20 @@ def get_runner() -> PipelineRunner:
     if _default_runner is None:
         _default_runner = PipelineRunner()
     return _default_runner
+
+
+def get_overview_state(books: list[str]) -> dict[str, Optional[dict[str, Any]]]:
+    """Get pipeline state for many books at once (for overview page).
+
+    Returns: {book_name: state_dict_or_None}
+    - 校准逻辑同 .status() (running PID 死 → failed)
+    - 单本书失败不影响其他 (per-book try/except)
+    """
+    runner = get_runner()
+    out: dict[str, Optional[dict[str, Any]]] = {}
+    for book in books:
+        try:
+            out[book] = runner.status(book)
+        except Exception:
+            out[book] = None
+    return out

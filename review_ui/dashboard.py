@@ -24,8 +24,100 @@ from lib import pipeline_v2 as pv2
 from lib.config_loader import get_config
 from lib.errors import ErrorCode, NovelError
 
-# url_prefix 鐣欑┖, 璺敱閲屾墜鍐?/api/pipeline/...
 dashboard_bp = Blueprint("dashboard", __name__)
+
+
+# ── v1.3 M1: 全项目进度总览 ───────────────────────────────────────────────
+@dashboard_bp.route("/overview")
+def overview_page():
+    """全项目进度总览页面 (WebUI 进度大屏)"""
+    return render_template("overview.html")
+
+
+@dashboard_bp.route("/api/overview")
+def api_overview():
+    """Get all projects + their pipeline state for overview page."""
+    books = storage.list_projects()
+    states = pipeline.get_overview_state(books)
+    out = []
+    for book in books:
+        cfg = storage.read_json(book, "config.json") or {}
+        prog = storage.read_json(book, "progress.json") or {}
+        state = states.get(book)
+        out.append({
+            "name": book,
+            "title": cfg.get("book_name", book) or book,
+            "genre": cfg.get("genre", ""),
+            "current_chapter": prog.get("current_chapter", 0),
+            "total_chapters": prog.get("total_chapters", 0),
+            "pipeline": None if state is None else {
+                "status": state.get("status"),
+                "ch": state.get("chapter_num"),
+                "stage": state.get("current_stage"),
+                "started_at": state.get("started_at"),
+                "ended_at": state.get("ended_at"),
+                "pid": state.get("pid"),
+            },
+        })
+    return jsonify({"ok": True, "projects": out, "count": len(out)}), 200
+
+
+@dashboard_bp.route("/api/overview/stream")
+def api_overview_stream():
+    """SSE: push overview state every N seconds.
+
+    每 3s poll 所有项目状态, 仅在有变化时推送.
+    """
+    import threading as _th
+    cfg = _dashboard_cfg()
+    poll = float(cfg.get("stream_poll_interval", 1.0)) * 3  # 3s for overview
+    # cache 上一帧 hash, 只有变化时才推
+    last_sig = {"v": None}
+
+    def generate():
+        while True:
+            try:
+                books = storage.list_projects()
+                states = pipeline.get_overview_state(books)
+                # 构造轻量签名
+                sig_parts = []
+                for b in books:
+                    s = states.get(b)
+                    if s is None:
+                        sig_parts.append(f"{b}:null")
+                    else:
+                        sig_parts.append(f"{b}:{s.get('status')}:{s.get('current_stage')}:{s.get('chapter_num')}")
+                sig = "|".join(sig_parts)
+                if sig != last_sig["v"]:
+                    last_sig["v"] = sig
+                    payload = {
+                        "ts": int(time.time()),
+                        "count": len(books),
+                        "states": {b: (None if states.get(b) is None else {
+                            "status": states[b].get("status"),
+                            "stage": states[b].get("current_stage"),
+                            "ch": states[b].get("chapter_num"),
+                        }) for b in books},
+                    }
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            time.sleep(poll)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# ── v1.3 M1 结束 ───────────────────────────────────────────────
+
+# url_prefix 鐣欑┖, 璺敱閲屾墜鍐?/api/pipeline/...
 
 
 @dashboard_bp.route("/dashboard/<book>")
