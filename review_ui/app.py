@@ -889,6 +889,184 @@ def entities_page(book):
     )
 
 
+# ── 大纲编辑器 API (v1.2 M4) ──────────────────────────────────────────
+# REST surface for the outline editor page:
+#   GET    /api/outline/<book>                   current outline (synced volumes)
+#   PUT    /api/outline/<book>                   replace full outline (validated)
+#   POST   /api/outline/<book>/node              add chapter node
+#   PUT    /api/outline/<book>/node/<ch_id>      update node fields
+#   DELETE /api/outline/<book>/node/<ch_id>      remove node
+#   POST   /api/outline/<book>/reorder           batch reorder
+#   POST   /api/outline/<book>/volumes           add volume
+#   DELETE /api/outline/<book>/volumes/<vol_id>  remove volume (reassign chapters)
+#   GET    /api/outline/<book>/diff              structural diff between 2 saved versions
+
+from lib import outline_editor as oe  # noqa: E402
+
+
+@app.route("/api/outline/<book>")
+def api_outline_get(book):
+    """GET /api/outline/<book> — returns the current outline with
+    volumes[].chapters synced from chapters[]."""
+    _ensure_book(book)
+    o = oe.load_outline_or_empty(book)
+    oe.sync_volumes_chapters(o)  # always resync before serving
+    return jsonify(o)
+
+
+@app.route("/api/outline/<book>", methods=["PUT"])
+def api_outline_replace(book):
+    """PUT /api/outline/<book> — body: full outline dict.
+    Validates first (duplicate ids / unknown vol refs) before saving."""
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        abort(400, description="body must be JSON object")
+    errors = oe.validate_outline(body)
+    if errors:
+        abort(400, description="; ".join(errors))
+    oe.save_outline(book, body)
+    return jsonify({"ok": True, "errors": []})
+
+
+@app.route("/api/outline/<book>/node", methods=["POST"])
+def api_outline_node_add(book):
+    """POST /api/outline/<book>/node
+    body: {parent_vol: 'vol_1', position: 0, title: '...', summary: '...',
+           pov: '...', key_events: [...], foreshadow: [...]}"""
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    parent_vol = body.get("parent_vol") or body.get("vol")
+    position = int(body.get("position", 0))
+    if not parent_vol:
+        abort(400, description="'parent_vol' 必填")
+    o = oe.load_outline_or_empty(book)
+    fields = {k: v for k, v in body.items() if k in oe.NODE_FIELDS and k != "id"}
+    node = oe.add_node(o, parent_vol, position, **fields)
+    oe.save_outline(book, o)
+    return jsonify({"ok": True, "node": node}), 201
+
+
+@app.route("/api/outline/<book>/node/<ch_id>", methods=["PUT"])
+def api_outline_node_update(book, ch_id):
+    """PUT /api/outline/<book>/node/<ch_id>
+    body: {title, summary, pov, key_events, foreshadow, vol}
+    Any of NODE_FIELDS except id."""
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    fields = {k: v for k, v in body.items() if k in oe.NODE_FIELDS and k != "id"}
+    if not fields:
+        abort(400, description="no editable fields provided")
+    o = oe.load_outline_or_empty(book)
+    try:
+        node = oe.update_node(o, ch_id, **fields)
+    except ValueError as e:
+        abort(404, description=str(e))
+    oe.save_outline(book, o)
+    return jsonify({"ok": True, "node": node})
+
+
+@app.route("/api/outline/<book>/node/<ch_id>", methods=["DELETE"])
+def api_outline_node_delete(book, ch_id):
+    """DELETE /api/outline/<book>/node/<ch_id> — remove chapter node."""
+    _ensure_book(book)
+    o = oe.load_outline_or_empty(book)
+    removed = oe.remove_node(o, ch_id)
+    if removed is None:
+        abort(404, description=f"chapter {ch_id} not found")
+    oe.save_outline(book, o)
+    return ("", 204)
+
+
+@app.route("/api/outline/<book>/reorder", methods=["POST"])
+def api_outline_reorder(book):
+    """POST /api/outline/<book>/reorder
+    body: {moves: [{ch_id, new_vol, new_position}, ...]}
+    Applied sequentially; later moves see earlier results."""
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    moves = body.get("moves")
+    if not isinstance(moves, list) or not moves:
+        abort(400, description="'moves' must be a non-empty list")
+    o = oe.load_outline_or_empty(book)
+    try:
+        oe.reorder_nodes(o, moves)
+    except ValueError as e:
+        abort(400, description=str(e))
+    oe.save_outline(book, o)
+    return jsonify({"ok": True, "chapters": o["chapters"]})
+
+
+@app.route("/api/outline/<book>/volumes", methods=["POST"])
+def api_outline_volume_add(book):
+    """POST /api/outline/<book>/volumes
+    body: {title: '...', summary: '...'}"""
+    _ensure_book(book)
+    body = request.get_json(silent=True) or {}
+    title = body.get("title", "").strip()
+    if not title:
+        abort(400, description="'title' 必填")
+    o = oe.load_outline_or_empty(book)
+    vol = oe.add_volume(o, title=title, summary=body.get("summary", ""))
+    oe.save_outline(book, o)
+    return jsonify({"ok": True, "volume": vol}), 201
+
+
+@app.route("/api/outline/<book>/volumes/<vol_id>", methods=["DELETE"])
+def api_outline_volume_delete(book, vol_id):
+    """DELETE /api/outline/<book>/volumes/<vol_id>
+    Chapters in the volume get reassigned to the first remaining volume.
+    Returns the count of reassigned chapters."""
+    _ensure_book(book)
+    o = oe.load_outline_or_empty(book)
+    try:
+        reassigned = oe.remove_volume(o, vol_id)
+    except ValueError as e:
+        abort(404, description=str(e))
+    oe.save_outline(book, o)
+    return jsonify({"ok": True, "reassigned": reassigned})
+
+
+@app.route("/api/outline/<book>/diff")
+def api_outline_diff(book):
+    """GET /api/outline/<book>/diff?v1=<v_id>&v2=<v_id>
+    Structural diff between two saved outline snapshots.
+    Versions live at projects/<book>/chapters/.versions/outline.json/<v_id>.json
+    (populated automatically by oe.save_outline's best-effort snapshot)."""
+    _ensure_book(book)
+    v1_id = request.args.get("v1")
+    v2_id = request.args.get("v2")
+    if not v1_id or not v2_id:
+        abort(400, description="'v1' and 'v2' both required")
+
+    book_root = storage.project_root(book)
+    versions_root = book_root / "chapters" / ".versions" / "outline.json"
+    if not versions_root.exists():
+        abort(404, description="no saved outline versions yet")
+    v1_path = versions_root / f"{v1_id}.json"
+    v2_path = versions_root / f"{v2_id}.json"
+    if not v1_path.exists():
+        abort(404, description=f"version {v1_id} not found")
+    if not v2_path.exists():
+        abort(404, description=f"version {v2_id} not found")
+    old_raw = json.loads(v1_path.read_text(encoding="utf-8"))
+    new_raw = json.loads(v2_path.read_text(encoding="utf-8"))
+    # Each version snapshot wraps the outline dict inside {"content": "...json str..."}
+    # (lib.version's create_version contract stores content as a string).
+    old = json.loads(old_raw["content"])
+    new = json.loads(new_raw["content"])
+    diff = oe.diff_outlines(old, new)
+    return jsonify(diff)
+
+
+@app.route("/outline/<book>")
+def outline_page(book):
+    """GET /outline/<book> — outline editor page (tree view + edit panel)."""
+    _ensure_book(book)
+    cfg = storage.read_json(book, "config.json") or {"book_name": book}
+    return render_template("outline.html", book=book, cfg=cfg)
+
+
 # ── 一致性扫描 API (v1.2 M1.4) ────────────────────────────────────────
 
 @app.route("/api/entities/<book>/check-consistency", methods=["POST"])
