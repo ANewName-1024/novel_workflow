@@ -6,7 +6,63 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ### Added (新增)
 
-**v1.2: 精细化管理 (实体/版本/状态机)** — 设计阶段, 见 `docs/IMPLEMENTATION-v1.1-to-v2.0.md`
+（暂无）
+
+## [1.2.0] - 2026-07-02
+
+**实体管理精细化** — v1.2 M1 全部完成 (M1.1 → M1.5)
+
+详细设计: `docs/DESIGN-v1.2-entities.md`
+
+### Added (新增)
+
+**M1.1: 实体基础 (commit 7df99ea)**
+- `lib/entity.py` (272 行): 4 个 Pydantic 模型 + 序列化
+  - Character/Event/Foreshadow/WorldRule + WorldRuleCategory/EntityType/ForeshadowStatus/WorldRuleStatus
+- `lib/memory.py`: 加 EntityStore, 读写 4 类实体 JSON 文件
+  - world.json 新格式: {rules: {id: WorldRule}, raw_notes, _legacy}
+  - 向后兼容旧格式 {key: text} (自动升级)
+- `lib/extract.py`: new_world_rules 字段, 抽取时自动写入 EntityStore
+- `lib/prompts.py`: EXTRACT_SYSTEM prompt 加世界规则章节 + 8 类 category
+
+**M1.2: API (commit b1d1841 + 53c91b2)**
+- `lib/extract.py`: new_world_rules 8 类硬约束 (体系/地理/历史/宗教/科技/魔法/政治/其他)
+- `review_ui/app.py`: 6 个 REST 端点 (list/counts/get/create/update/delete)
+  - GET/POST /api/entities/\<book\>?type=... — 列表/新建
+  - GET/PUT/DELETE /api/entities/\<book\>/\<type\>/\<id\> — 单体操作
+- `lib/memory.py`: _mem_path 改为 storage.PROJECTS_ROOT (可测试)
+
+**M1.3: UI (commit e5e854c)**
+- `review_ui/templates/entities.html` (623 行): 统一实体管理页面
+  - 顶部 tabs 切换 4 类实体; 卡片列表显示核心字段 + status badges
+  - WorldRule 显示硬约束 (红色列表) + 关联实体
+  - Modal 编辑器: 动态表单, list 类型支持 add/remove item, 暗色主题
+- `review_ui/app.py`: GET /entities/\<book\>?type=... 路由
+- `review_ui/templates/book.html`: nav 加"实体管理"链接
+- `tools/migrate_world.py` (161 行): world.json 旧→新格式迁移
+  - dry-run / --apply 写入 / --backup 备份
+  - 检测格式: empty/legacy/new/mixed
+
+**M1.4: 一致性扫描 (commit fb80da7)**
+- `lib/self_check.py`: world_rule_consistency() 函数
+  - 扫描章节是否违反已确立 WorldRule 的硬约束
+  - 无 active 规则时跳过 LLM 调用 (省 token)
+  - 输出 violations + overall_ok + summary
+- `review_ui/app.py`: POST /api/entities/\<book\>/check-consistency
+  - {chapter_id} 或 {all: true} 批量扫描
+
+**M1.5: tag v1.2.0** (本 commit)
+
+### Tests
+
+- `tests/test_entity.py`: 37 测试 (4 实体模型 CRUD + 校验)
+- `tests/test_memory_entity_store.py`: 24 测试 (EntityStore 核心路径)
+- `tests/test_extract_world_rules.py`: 8 测试 (抽取 + 硬约束)
+- `tests/test_review_ui_entities.py`: 31 测试 (REST API + 页面渲染)
+- `tests/test_migrate_world.py`: 9 测试 (迁移脚本全路径)
+- `tests/test_world_rule_consistency.py`: 13 测试 (一致性扫描)
+
+**总测试: 135 → 252 passed in 15.00s**
 
 ## [1.1.2] - 2026-07-02
 
