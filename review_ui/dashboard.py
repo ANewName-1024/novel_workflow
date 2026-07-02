@@ -34,6 +34,22 @@ def overview_page():
     return render_template("overview.html")
 
 
+def _to_iso(val) -> Optional[str]:
+    """Convert Unix timestamp (int/float) or ISO string to ISO date string, or None.
+
+    pipeline_state.json stores started_at as Unix timestamp (int),
+    but ended_at as ISO string (via _now_iso()). This normalises both to
+    ISO strings so the frontend fmtTs() always receives a parseable value.
+    """
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        # Unix seconds → ISO string
+        import datetime
+        return datetime.datetime.utcfromtimestamp(val).strftime("%Y-%m-%dT%H:%M:%S")
+    return str(val)  # already ISO or similar
+
+
 @dashboard_bp.route("/api/overview")
 def api_overview():
     """Get all projects + their pipeline state for overview page."""
@@ -54,8 +70,8 @@ def api_overview():
                 "status": state.get("status"),
                 "ch": state.get("chapter_num"),
                 "stage": state.get("current_stage"),
-                "started_at": state.get("started_at"),
-                "ended_at": state.get("ended_at"),
+                "started_at": _to_iso(state.get("started_at")),
+                "ended_at": _to_iso(state.get("ended_at")),
                 "pid": state.get("pid"),
             },
         })

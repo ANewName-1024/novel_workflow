@@ -206,9 +206,18 @@ function escapeHtml(s) {
 
 function fmtTs(ts) {
   if (!ts) return "—";
-  const d = new Date(ts * 1000);
-  const now = Date.now() / 1000;
-  const diff = now - ts;
+  // 支持 Unix timestamp (数字, 秒) 或 ISO string
+  let ms;
+  if (typeof ts === "number") {
+    ms = ts * 1000;
+  } else {
+    ms = Date.parse(ts);
+  }
+  if (isNaN(ms)) return "—";
+  const d = new Date(ms);
+  const nowSec = Date.now() / 1000;
+  const tsSec = ms / 1000;
+  const diff = nowSec - tsSec;
   if (diff < 60) return `${Math.floor(diff)}s 前`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m 前`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h 前`;
