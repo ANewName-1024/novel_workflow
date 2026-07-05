@@ -85,3 +85,6 @@ review_ui/__pycache__/
 review_ui/setup_nginx2.ps1
 review_ui/setup_nginx3.ps1
 review_ui/check_ehandler.py
+
+# ===== OpenClaw session 交接日志 (openclaw memory, 非仓库功能) =====
+memory/
