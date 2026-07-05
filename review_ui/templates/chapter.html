@@ -566,35 +566,33 @@ let viewingVid = null;
 async function viewVersion(vid) {
   const box = document.getElementById("version-content");
   if (viewingVid === vid) { box.style.display = "none"; viewingVid = null; return; }
-  const r = await fetch(`/api/chapter/${BOOK}/${CH}/versions/${vid}`);
-  if (!r.ok) { alert("读版本失败: " + r.status); return; }
-  const data = await r.json();
-  box.textContent = `== ${vid} (${data.trigger}, ${data.char_count}字, ${data.ts}) ==\n\n${data.content}`;
-  box.style.display = "block";
-  viewingVid = vid;
+  try {
+    const data = await NW.api("GET", `/api/chapter/${BOOK}/${CH}/versions/${vid}`);
+    box.textContent = `== ${vid} (${data.trigger}, ${data.char_count}字, ${data.ts}) ==\n\n${data.content}`;
+    box.style.display = "block";
+    viewingVid = vid;
+  } catch (e) { NW.toast("读版本失败: " + e.message, "err"); }
 }
 
 async function diffWith(vid) {
   const latest = "{{ latest_v.version_id if latest_v else '' }}";
-  if (vid === latest) { alert("已是最新版本, 无需对比"); return; }
-  const r = await fetch(`/api/chapter/${BOOK}/${CH}/diff-versions?v1=${vid}&v2=${latest}`);
-  if (!r.ok) { alert("diff 失败: " + r.status); return; }
-  const data = await r.json();
-  const box = document.getElementById("version-content");
-  box.textContent = `== diff: ${vid} vs ${latest} ==\n\n` + (data.diff || []).join("\n");
-  box.style.display = "block";
-  viewingVid = null;
+  if (vid === latest) { NW.toast("已是最新版本, 无需对比", "info"); return; }
+  try {
+    const data = await NW.api("GET", `/api/chapter/${BOOK}/${CH}/diff-versions?v1=${vid}&v2=${latest}`);
+    const box = document.getElementById("version-content");
+    box.textContent = `== diff: ${vid} vs ${latest} ==\n\n` + (data.diff || []).join("\n");
+    box.style.display = "block";
+    viewingVid = null;
+  } catch (e) { NW.toast("diff 失败: " + e.message, "err"); }
 }
 
 async function revertTo(vid) {
-  if (!confirm(`确认回滚到 ${vid}? 当前内容会保存为新版本, 可回滚回来。`)) return;
-  const r = await fetch(`/api/chapter/${BOOK}/${CH}/revert/${vid}`, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({by: "wei_chao"}),
-  });
-  if (!r.ok) { const e = await r.json(); alert("回滚失败: " + (e.message || r.status)); return; }
-  location.reload();
+  if (!await NW.confirm(`确认回滚到 ${vid}? 当前内容会保存为新版本, 可回滚回来。`)) return;
+  try {
+    await NW.api("POST", `/api/chapter/${BOOK}/${CH}/revert/${vid}`, {by: "wei_chao"});
+    NW.toast("已回滚", "ok");
+    location.reload();
+  } catch (e) { NW.toast("回滚失败: " + e.message, "err"); }
 }
 
 let _pendingFeedback = null;

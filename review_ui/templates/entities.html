@@ -486,7 +486,7 @@ async function deleteEntity(id, name) {
     if (!r.ok || !data.ok) throw new Error(data.error || `HTTP ${r.status}`);
     location.reload();
   } catch (e) {
-    alert("删除失败: " + e.message);
+    NW.toast("删除失败: " + e.message, "err");
   }
 }
 </script>
