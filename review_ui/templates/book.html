@@ -200,21 +200,16 @@ footer {
 </style>
 </head>
 <body>
-<header>
-  <a href="{{ url_for('index') }}" class="back">← 返回</a>
-  <h1>{{ cfg.book_name or book }}</h1>
-  <div class="subtitle">
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">{{ cfg.book_name or book }}</h1>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;">
     <span>📂 {{ book }}</span>
-    <span>🎭 {{ cfg.genre }}</span>
-    <span>👤 {{ cfg.protagonist }}</span>
+    {% if cfg.genre %}<span>🎭 {{ cfg.genre }}</span>{% endif %}
+    {% if cfg.protagonist %}<span>👤 {{ cfg.protagonist }}</span>{% endif %}
     <span>📄 {{ chapters|length }} 章</span>
   </div>
-  <div class="nav-actions">
-    <a href="/notifications/{{ book }}?user={{ cfg.reviewer|default('wei_chao') }}" class="nav-btn" title="通知中心">🔔<span id="notif-badge" style="display:none; background:var(--crit); color:#fff; border-radius:10px; padding:1px 6px; font-size:11px; margin-left:2px;">0</span></a>
-    <a href="/entities/{{ book }}?type=character" class="nav-btn">🧩 实体管理</a>
-    <a href="/dashboard/{{ book }}" class="nav-btn">⚙️ 流水线面板</a>
-  </div>
-</header>
+</div>
 
 <script>
 (async function() {
@@ -272,7 +267,7 @@ footer {
     {% for r in queue %}
     <div class="queue-row">
       <input type="checkbox" class="row-check" name="chapter_ids" value="{{ r.chapter_id }}">
-      <a class="row-body" href="{{ url_for('chapter_page', book=book, ch=r.chapter_id) }}">
+      <a class="row-body" href="/book/{{ book }}/{{ r.chapter_id }}">
         <div class="queue-row-main">
           <span class="ch">{{ r.chapter_id }}</span>
           <span class="severity {{ r.auto_severity }}">{{ r.auto_severity }}</span>
@@ -314,7 +309,7 @@ footer {
           </div>
         {% endif %}
       {% endif %}
-      <a class="chapter-pill" href="{{ url_for('chapter_page', book=book, ch=ch.id) }}">
+      <a class="chapter-pill" href="/book/{{ book }}/{{ ch.id }}">
         <div class="chapter-pill-main">
           <strong>{{ ch.id }}</strong>
           <span class="chapter-title">{{ ch.title|truncate(20) }}</span>
@@ -330,10 +325,10 @@ footer {
   </div>
 </div>
 <footer>
-  <a href="{{ url_for('api_history', book=book) }}" style="color: var(--accent); word-break: break-all;">JSON API: /api/history/{{ book }}</a>
+  <a href="/api/history/{{ book }}" style="color: var(--accent); word-break: break-all;">JSON API: /api/history/{{ book }}</a>
   {% if session.get('auth_user') %}
   <div style="margin-top: 8px; font-size: 11px;">
-    已登录: <strong>{{ session.auth_user }}</strong> · <a href="{{ url_for('logout') }}" style="color: var(--crit);">注销</a>
+    已登录: <strong>{{ session.auth_user }}</strong> · <a href="/logout" style="color: var(--crit);">注销</a>
   </div>
   {% endif %}
 </footer>

@@ -234,12 +234,14 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 </style>
 </head>
 <body>
-<header>
-  <a href="/book/{{ book }}" class="back">← 返回《{{ book }}》</a>
-  <h1 style="margin-top: 8px;">{{ chapter_id }} - 评审详情</h1>
-  <div class="subtitle">📂 {{ book }}</div>
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">📄 {{ chapter_id }}</h1>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
+    《{{ book }}》· 评审详情
+  </div>
   {% if prev_id or next_id %}
-  <nav class="chapter-nav">
+  <nav class="chapter-nav" style="margin-bottom:12px;">
     {% if prev_id %}
       <a href="/book/{{ book }}/{{ prev_id }}" class="nav-btn">← {{ prev_id }}</a>
     {% else %}<span class="nav-btn disabled">← 上一章</span>{% endif %}
@@ -248,7 +250,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
     {% else %}<span class="nav-btn disabled">下一章 →</span>{% endif %}
   </nav>
   {% endif %}
-</header>
+</div>
 
 <div class="container">
 <div class="layout">

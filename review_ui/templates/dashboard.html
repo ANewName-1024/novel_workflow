@@ -125,13 +125,13 @@ label { font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body>
-<header>
-  <a href="/book/{{ book }}" class="back">← 返回评审</a>
-  <h1>⚙️ {{ book }} — 流水线面板</h1>
-  <div class="subtitle">
-    <span>实时进度 / 日志 / Token 用量</span>
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">⚙️ 流水线面板</h1>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
+    实时进度 / 日志 / Token 用量 / 断点恢复
   </div>
-</header>
+</div>
 
 <div class="container">
 

@@ -1,8 +1,23 @@
-{# llm_config.html — LLM provider 配置页面 (v1.3 M3) #}
-{% extends "_layout.html" %}
-{% block title %}LLM 配置 · {{ book_name }}{% endblock %}
-{% block head %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0e1217">
+<title>LLM 配置 · {{ book_name }}</title>
 <style>
+:root {
+  --bg:#0e1217; --panel:#161b22; --panel2:#1c232c; --border:#2a3440;
+  --text:#d6de6; --muted:#7d8a9a; --accent:#4ea3ff;
+  --warn:#ffb454; --crit:#ff6b6b; --ok:#6dd99b; --pending:#ffb454;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
 .llm-provider-card {
   background: var(--panel2);
   border: 1px solid var(--border);
@@ -46,36 +61,35 @@
   background: var(--panel2); color: var(--text); font-size: 13px;
 }
 </style>
-{% endblock %}
-{% block content %}
-<h1 style="margin-top:0;">🤖 LLM 模型配置</h1>
-<p style="color:var(--muted);font-size:14px;">
-  管理 AI provider 设置。修改后新请求自动使用新配置。
-</p>
+</head>
+<body>
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">🤖 LLM 模型配置</h1>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">
+    管理 AI provider 设置。修改后新请求自动使用新配置。
+  </p>
 
-<!-- 全局 provider 状态 -->
-<h2 style="margin-top:24px;">注册的 Provider</h2>
-<div id="providers-list">
-  <p style="color:var(--muted);">加载中…</p>
+  <h2 style="margin-top:24px;">注册的 Provider</h2>
+  <div id="providers-list">
+    <p style="color:var(--muted);">加载中…</p>
+  </div>
+
+  {% if nav.current_book %}
+  <h2 style="margin-top:28px;">📖 {{ nav.current_book_title }} 当前配置</h2>
+  <div class="book-model-row">
+    <label style="min-width:80px;">Provider:</label>
+    <select id="book-provider-select">
+      <option value="">加载中…</option>
+    </select>
+    <label>模型:</label>
+    <input type="text" id="book-model-input" placeholder="留空自动" style="width:240px;">
+    <button class="btn-test" onclick="saveBookConfig()">💾 保存</button>
+    <span id="book-save-msg" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
+  </div>
+  {% endif %}
 </div>
 
-<!-- 当前 book 的模型配置 (快速切换) -->
-{% if nav.current_book %}
-<h2 style="margin-top:28px;">📖 {{ nav.current_book_title }} 当前配置</h2>
-<div class="book-model-row">
-  <label style="min-width:80px;">Provider:</label>
-  <select id="book-provider-select">
-    <option value="">加载中…</option>
-  </select>
-  <label>模型:</label>
-  <input type="text" id="book-model-input" placeholder="留空自动" style="width:240px;">
-  <button class="btn-test" onclick="saveBookConfig()">💾 保存</button>
-  <span id="book-save-msg" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
-</div>
-{% endif %}
-
-{% endblock %}
-{% block scripts %}
 <script>
 // ── 加载 providers ────────────────────────────────────────────────────
 async function loadProviders() {
@@ -155,7 +169,6 @@ async function loadBookConfig() {
     select.innerHTML = _bookProviders.map(p =>
       `<option value="${p}">${p}</option>`
     ).join('');
-    // Load current book config
     const r2 = await fetch('/api/config/{{ nav.current_book }}');
     if (r2.ok) {
       const cfg = await r2.json();
@@ -195,8 +208,8 @@ async function saveBookConfig() {
   setTimeout(() => { msg.textContent = ''; }, 3000);
 }
 
-// ── Init ──────────────────────────────────────────────────────────────
 loadProviders();
 loadBookConfig();
 </script>
-{% endblock %}
+</body>
+</html>

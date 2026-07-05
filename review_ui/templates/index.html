@@ -75,14 +75,15 @@ footer { color: var(--muted); font-size: 12px; padding: 24px; text-align: center
 </style>
 </head>
 <body>
-<header>
-  <h1><span class="icon">📚</span>小说评审台</h1>
-  <div class="subtitle">人工审核 · 章节评审队列 · 历史追溯</div>
-</header>
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;"><span class="icon">📚</span>小说评审台</h1>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">人工审核 · 章节评审队列 · 历史追溯</div>
+</div>
 <div class="container">
   {% if books %}
     {% for b in books %}
-    <a class="book-card" href="{{ url_for('book_page', book=b.name) }}">
+    <a class="book-card" href="/book/{{ b.name }}">
       <div class="book-title">{{ b.title }}</div>
       <div class="book-meta">
         <span>📂 {{ b.name }}</span>

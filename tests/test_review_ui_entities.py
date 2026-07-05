@@ -349,8 +349,9 @@ class TestEntitiesPage:
         assert "灵根品级先天决定".encode("utf-8") in r.data
 
     def test_page_nav_link_added_in_book_html(self, client, auth_disabled):
-        """检查 book.html 加了"实体管理" 链接."""
+        """检查 book.html 加了实体管理链接 (v1.3 M3 navbar 重构后文字简化为'实体')."""
         r = client.get("/book/test_book")
         assert r.status_code == 200
         assert b"/entities/test_book?type=character" in r.data
-        assert "实体管理".encode("utf-8") in r.data
+        # v1.3 M3 navbar 简化: "🔣 实体管理" → "🧩 实体", 链接保留
+        assert "实体".encode("utf-8") in r.data

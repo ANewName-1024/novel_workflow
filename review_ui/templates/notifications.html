@@ -51,12 +51,11 @@
   </style>
 </head>
 <body>
-  <header>
-    <h1>🔔 通知中心 - {{ book }}</h1>
-    <div style="display:flex; gap:8px;">
-      <a href="/book/{{ book }}" class="nav-btn">← 返回</a>
-    </div>
-  </header>
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">🔔 通知中心</h1>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">评论提及 · 评审进度 · 系统消息</div>
+</div>
 
   <div class="container">
     <div class="toolbar">

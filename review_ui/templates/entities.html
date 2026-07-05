@@ -256,10 +256,13 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 </style>
 </head>
 <body>
-<header>
-  <a class="back" href="/book/{{ book }}">← 返回 {{ cfg.book_name or book }}</a>
-  <h1>实体管理</h1>
-</header>
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">🧩 实体管理</h1>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
+    角色 · 事件 · 伏笔 · 世界规则
+  </div>
+</div>
 
 <div class="tabs">
   {% set types = [

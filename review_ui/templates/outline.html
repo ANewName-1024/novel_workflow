@@ -59,6 +59,30 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
 }
+
+/* ── Model switcher panel (v1.3 M5) ──────────────────────────── */
+.model-switcher {
+  display: flex; gap: 8px; align-items: center;
+  padding: 6px 10px; background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 12px; color: var(--muted);
+}
+.model-switcher select, .model-switcher input {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--panel); color: var(--text); font-size: 13px;
+}
+.model-switcher .save-msg {
+  margin-left: 6px; font-size: 12px;
+  transition: color .2s;
+}
+.model-switcher .save-msg.ok { color: var(--ok); }
+.model-switcher .save-msg.err { color: var(--crit); }
+.model-switcher .current-dot {
+  display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--ok);
+  margin-right: 4px; vertical-align: middle;
+}
+}
 .tab {
   padding: 10px 16px;
   color: var(--muted);
@@ -296,18 +320,32 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 </style>
 </head>
 <body>
-<header>
-  <a class="back" href="/book/{{ book }}">← 返回 {{ cfg.book_name or book }}</a>
-  <h1>📖 大纲编辑器 (v1.2 M4)</h1>
-</header>
+{% include "_navbar.html" %}
+<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
+  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">🌳 大纲编辑器</h1>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
+    树状视图 · 拖拽重排 · 版本对比 · AI 助手
+  </div>
+</div>
 
 <div class="toolbar">
   <button class="btn primary" onclick="showCreateVol()">+ 新建卷</button>
   <button class="btn" onclick="showAddNode(null)">+ 在末卷添加章节</button>
   <button class="btn" onclick="showAIModal()" style="background: linear-gradient(135deg, #4ea3ff 0%, #6dd99b 100%); color: #0e1217; border: none; font-weight: 600;">🤖 AI 助手</button>
-  <span style="color: var(--muted); font-size: 12px; margin-left: auto;">
-    💡 拖动 <span style="font-family:monospace">⋮⋮</span> 重排,或用上下移动按钮
+
+  <span style="margin-left: auto;"></span>
+
+  <!-- 模型切换 (v1.3 M5) -->
+  <span class="model-switcher" title="切换本章应用的 LLM provider / model">
+    <span><span class="current-dot" id="model-dot"></span><strong>AI 模型</strong></span>
+    <select id="ms-provider" aria-label="Provider">
+      <option value="">(加载中…)</option>
+    </select>
+    <input type="text" id="ms-model" placeholder="模型 (可选)" size="18" aria-label="Model" />
+    <button class="btn" onclick="saveModelConfig()" style="min-height:30px;padding:4px 12px;">💾 保存</button>
+    <span id="ms-save-msg" class="save-msg"></span>
   </span>
+
 </div>
 
 <div id="content" style="padding: 0 0 40px;">
@@ -818,6 +856,113 @@ document.addEventListener("DOMContentLoaded", () => {
   btn.onclick = showDiff;
   tb.appendChild(btn);
   loadOutline();
+  loadModelConfig();  // v1.3 M5: 模型切换器
+});
+
+// ── Model Switcher (v1.3 M5) ────────────────────────────────────────
+let _msProviders = [];
+
+async function loadModelConfig() {
+  const sel = document.getElementById("ms-provider");
+  const input = document.getElementById("ms-model");
+  const dot = document.getElementById("model-dot");
+  if (!sel) return;
+  try {
+    const r = await fetch("/api/llm/providers");
+    const data = await r.json();
+    if (!data.ok) return;
+    _msProviders = Object.entries(data.providers).map(([name, cfg]) => ({
+      name, model: cfg.model || "", api_base: cfg.api_base || "",
+    }));
+    sel.innerHTML =
+      _msProviders.map(p => `<option value="${p.name}">${p.name}${p.model ? ' (' + p.model + ')' : ''}</option>`).join("")
+      + '<option value="custom">custom...</option>';
+
+    // 当前 book 的设置
+    const r2 = await fetch("/api/config/{{ book }}");
+    if (r2.ok) {
+      const cfg = await r2.json();
+      const cur = cfg.llm_provider || "local";
+      const curModel = cfg.llm_model || "";
+      if (_msProviders.some(p => p.name === cur)) {
+        sel.value = cur;
+      } else {
+        sel.value = "custom";
+      }
+      if (sel.value === "custom") {
+        // 提供一个手动输入 provider 名的输入框
+        if (!document.getElementById("ms-custom-prov")) {
+          const inp = document.createElement("input");
+          inp.type = "text"; inp.id = "ms-custom-prov"; inp.placeholder = "provider 名";
+          inp.size = 12; inp.value = (cur !== "custom" && !_msProviders.some(p => p.name === cur)) ? cur : "";
+          inp.style.cssText = "padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--panel);color:var(--text);font-size:13px;";
+          sel.parentNode.insertBefore(inp, sel.nextSibling);
+        }
+      }
+      input.value = curModel;
+      dot.style.background = "var(--ok)";
+      dot.title = `${cur} · ${curModel || "(default)"}`;
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">加载失败</option>';
+  }
+}
+
+function _getSelectedProvider() {
+  const sel = document.getElementById("ms-provider");
+  if (sel.value === "custom") {
+    const inp = document.getElementById("ms-custom-prov");
+    return inp ? inp.value.trim() : "";
+  }
+  return sel.value;
+}
+
+async function saveModelConfig() {
+  const msg = document.getElementById("ms-save-msg");
+  const input = document.getElementById("ms-model");
+  const dot = document.getElementById("model-dot");
+  const provider = _getSelectedProvider();
+  if (!provider) {
+    msg.textContent = "❌ provider 不能为空";
+    msg.className = "save-msg err";
+    return;
+  }
+  msg.textContent = "⏳ 保存…";
+  msg.className = "save-msg";
+  try {
+    const r = await fetch("/api/config/{{ book }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm_provider: provider,
+        llm_model: input.value.trim(),
+      }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      msg.textContent = "✅ 已保存";
+      msg.className = "save-msg ok";
+      dot.title = `${provider} · ${input.value.trim() || "(default)"}`;
+    } else {
+      msg.textContent = "❌ " + (data.error || "保存失败");
+      msg.className = "save-msg err";
+    }
+  } catch (e) {
+    msg.textContent = "❌ " + e.message;
+    msg.className = "save-msg err";
+  }
+  setTimeout(() => { msg.textContent = ""; }, 3000);
+}
+
+// 切换 select 时若选 custom 显示 provider 名输入框
+document.getElementById("ms-provider").addEventListener("change", (e) => {
+  if (e.target.value === "custom" && !document.getElementById("ms-custom-prov")) {
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.id = "ms-custom-prov"; inp.placeholder = "provider 名";
+    inp.size = 12;
+    inp.style.cssText = "padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--panel);color:var(--text);font-size:13px;";
+    e.target.parentNode.insertBefore(inp, e.target.nextSibling);
+  }
 });
 
 // 点背景关闭 modal
