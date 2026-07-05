@@ -1,0 +1,140 @@
+/* ============================================================================
+ * novel_workflow review_ui — main.css
+ * --------------------------------------------------------------------------
+ * Base styles for all pages. Page-specific styles stay inline in each
+ * template; this file only owns:
+ *   - CSS variables (theme tokens)
+ *   - reset / box-sizing / tap highlight
+ *   - body font / background / color / line-height
+ *   - .container / .page-container (uniform 1400px)
+ *   - common component classes (.btn / .nav-btn / .back / .card / .badge / .empty / .toolbar)
+ *   - mobile breakpoint (@media max-width: 720px)
+ *
+ * If a page needs to override, prefer inline :root in that page's <style>.
+ * ============================================================================ */
+
+:root {
+  --bg: #0e1217;
+  --panel: #161b22;
+  --panel2: #1c232c;
+  --border: #2a3440;
+  --text: #d6dde6;
+  --muted: #7d8a9a;
+  --accent: #4ea3ff;
+  --warn: #ffb454;
+  --crit: #ff6b6b;
+  --ok: #6dd99b;
+  --pending: #ffb454;
+  --edit: #b48cff;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78, 163, 255, 0.15); }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+               "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ── 容器 ───────────────────────────────────────────── */
+.page-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+/* ── 标题 ───────────────────────────────────────────── */
+h1 { margin: 16px 0 4px; font-size: 22px; font-weight: 600; word-break: break-word; }
+h1 .icon { margin-right: 8px; }
+.subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; word-break: break-word; }
+h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px;
+     color: var(--muted); display: flex; align-items: center; gap: 6px; }
+
+/* ── 通用按钮 ───────────────────────────────────────── */
+.btn {
+  background: var(--accent); color: #fff; border: none;
+  padding: 7px 14px; border-radius: 6px;
+  cursor: pointer; font-size: 13px;
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 32px;
+}
+.btn:hover { opacity: 0.85; }
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.5; cursor: notallowed; }
+.btn.secondary {
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn.crit { background: var(--crit); }
+
+.nav-btn {
+  padding: 6px 12px; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  text-decoration: none; font-size: 13px; min-height: 32px;
+  display: inline-flex; align-items: center;
+}
+.nav-btn:hover { background: var(--border); color: var(--text); }
+.nav-btn:active { transform: scale(0.98); }
+.nav-btn.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+.back {
+  color: var(--accent); text-decoration: none; font-size: 14px;
+  display: inline-flex; align-items: center;
+  min-height: 44px; padding: 8px 12px;
+  border-radius: 6px;
+}
+.back:hover { background: var(--panel2); }
+.back:active { background: var(--panel2); }
+
+/* ── 卡片 ───────────────────────────────────────────── */
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;
+}
+.card h2 { margin-bottom: 10px; }
+.card .badge {
+  background: var(--panel2); color: var(--text);
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 500;
+}
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; background: var(--panel2); color: var(--muted);
+}
+.badge.accent { background: var(--accent); color: #fff; }
+.badge.warn { background: var(--warn); color: #000; }
+.badge.crit { background: var(--crit); color: #fff; }
+.badge.ok { background: var(--ok); color: #000; }
+
+/* ── 工具类 ─────────────────────────────────────────── */
+.empty {
+  padding: 40px 20px; text-align: center; color: var(--muted);
+}
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.toolbar .info { color: var(--muted); font-size: 13px; }
+.muted { color: var(--muted); }
+.text-warn { color: var(--warn); }
+.text-crit { color: var(--crit); }
+.text-ok { color: var(--ok); }
+.text-accent { color: var(--accent); }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── 移动端 ─────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .page-container, .container { padding: 14px 12px; }
+  h1 { font-size: 18px; }
+  .subtitle { font-size: 12px; }
+  .nav-btn, .btn { padding: 5px 10px; font-size: 12px; }
+}

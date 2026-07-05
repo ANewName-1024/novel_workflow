@@ -1,0 +1,40 @@
+{# ------------------------------------------------------------------ #}
+{# _base.html — base layout for all novel_workflow pages (M1 refactor) #}
+{#                                                                    #}
+{# 使用方式:                                                            #}
+{#   {% extends "_base.html" %}                                       #}
+{#   {% block title %}xxx{% endblock %}                               #}
+{#   {% block extra_head %}...{% endblock %}                          #}
+{#   {% block content %}...{% endblock %}                             #}
+{#   {% block scripts %}...{% endblock %}                             #}
+{#                                                                    #}
+{# Provided blocks:                                                    #}
+{#   - title:        <title>...</title>                               #}
+{#   - extra_head:   extra <link>/<meta>/<script> in <head>           #}
+{#   - content:      main page content (wrapped in .page-container)   #}
+{#   - scripts:      page-specific <script> at end of <body>          #}
+{#                                                                    #}
+{# Depends on:                                                         #}
+{#   - static/css/main.css (base styles)                              #}
+{#   - templates/_navbar.html (top nav, included once)                #}
+{#   - context_processor injecting `nav` for _navbar.html             #}
+{# ------------------------------------------------------------------ #}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0e1217">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>{% block title %}novel_workflow{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% include "_navbar.html" %}
+  <div class="page-container">
+    {% block content %}{% endblock %}
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

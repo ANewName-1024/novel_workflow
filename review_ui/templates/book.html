@@ -1,77 +1,22 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0e1217">
-<title>{{ cfg.book_name or book }} - 评审</title>
+{% extends "_base.html" %}
+
+{% block title %}{{ cfg.book_name or book }} - 评审{% endblock %}
+
+{% block content %}
 <style>
-:root {
-  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
-  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
-  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
-}
-* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-  background: var(--bg); color: var(--text); line-height: 1.6;
-  -webkit-text-size-adjust: 100%;
-}
-header {
-  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
-  position: sticky; top: 0; z-index: 10;
-  backdrop-filter: blur(8px);
-}
-.back {
-  color: var(--accent); text-decoration: none; font-size: 14px;
-  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
-  border-radius: 6px;
-}
-.back:active { background: var(--panel2); }
-.nav-actions {
-  margin-top: 8px;
-  display: flex;
-  gap: 8px;
-}
-.nav-btn {
-  display: inline-flex;
-  align-items: center;
-  min-height: 36px;
-  padding: 6px 14px;
-  background: var(--panel2);
-  color: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.15s;
-}
-.nav-btn:hover {
-  background: var(--border);
-  border-color: var(--accent);
-}
-.nav-btn:active { background: var(--accent); color: var(--bg); }
-h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
-.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.subtitle span { margin-right: 10px; }
-.container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
-@media (max-width: 600px) {
-  .container { padding: 12px 14px; }
-  header { padding: 12px 14px; }
-  h1 { font-size: 17px; }
-}
+/* ===== book.html 专属样式 (page-specific, 不在 main.css) ===== */
 .section-title {
   font-size: 15px; font-weight: 600; margin: 20px 0 10px;
   display: flex; align-items: center; gap: 8px;
 }
 .section-title .count { color: var(--muted); font-weight: 400; font-size: 13px; }
+.subtitle span { margin-right: 10px; }
+
 .stats-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 10px; margin-bottom: 20px;
 }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
 }
 .stat-card {
@@ -83,6 +28,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .stat-card.pending .value { color: var(--pending); }
 .stat-card.crit .value { color: var(--crit); }
 .stat-card.ok .value { color: var(--ok); }
+
 .queue-table {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   overflow: hidden;
@@ -122,7 +68,6 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 }
 .batch-bar .select-all input { vertical-align: middle; margin-right: 6px; width: 16px; height: 16px; }
 .queue-row:active { background: var(--panel2); }
-.queue-row:last-child { border-bottom: 0; }
 .queue-row-main {
   display: flex; justify-content: space-between; align-items: center;
   gap: 10px; margin-bottom: 6px;
@@ -146,11 +91,12 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .status.pending_review { background: rgba(255,180,84,0.2); color: var(--pending); }
 .status.needs_rewrite { background: rgba(255,107,107,0.2); color: var(--crit); }
 .status.approved { background: rgba(109,217,155,0.2); color: var(--ok); }
+
 .chapter-list {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 8px;
 }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .chapter-list { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
 }
 .chapter-pill {
@@ -166,16 +112,17 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .chapter-pill .status-dot.pending_review { background: var(--pending); }
 .chapter-pill .status-dot.needs_rewrite { background: var(--crit); }
 .chapter-pill .status-dot.approved { background: var(--accent); }
+.chapter-pill .status-dot.human_edited { background: #b48cff; }
+.chapter-pill .status-dot.false_positive { background: var(--muted); }
 .chapter-pill-main { display: flex; align-items: baseline; gap: 8px; justify-content: space-between; }
-.chapter-pill-main strong { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+.chapter-pill-main strong { color: var(--accent); font-size: 13px; }
 .chapter-title { color: var(--muted); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chapter-preview {
-  color: var(--fg); opacity: 0.75; font-size: 12px;
+  color: var(--text); opacity: 0.75; font-size: 12px;
   line-height: 1.4; max-height: 34px; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 .chapter-meta { color: var(--muted); font-size: 11px; display: flex; gap: 8px; }
-/* 跳号提示 */
 .chapter-gap {
   grid-column: 1 / -1;
   padding: 6px 12px;
@@ -186,29 +133,23 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   font-size: 12px;
   text-align: center;
 }
-.chapter-pill .status-dot.human_edited { background: #b48cff; }
-.chapter-pill .status-dot.false_positive { background: var(--muted); }
 .empty-row {
   padding: 24px; text-align: center; color: var(--muted); font-size: 14px;
 }
-footer {
+.page-footer {
   color: var(--muted); font-size: 12px; padding: 24px; text-align: center;
 }
-@media (max-width: 600px) {
-  footer { padding: 16px; font-size: 11px; }
+@media (max-width: 720px) {
+  .page-footer { padding: 16px; font-size: 11px; }
 }
 </style>
-</head>
-<body>
-{% include "_navbar.html" %}
-<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
-  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">{{ cfg.book_name or book }}</h1>
-  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;">
-    <span>📂 {{ book }}</span>
-    {% if cfg.genre %}<span>🎭 {{ cfg.genre }}</span>{% endif %}
-    {% if cfg.protagonist %}<span>👤 {{ cfg.protagonist }}</span>{% endif %}
-    <span>📄 {{ chapters|length }} 章</span>
-  </div>
+
+<h1>{{ cfg.book_name or book }}</h1>
+<div class="subtitle" style="margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;">
+  <span>📂 {{ book }}</span>
+  {% if cfg.genre %}<span>🎭 {{ cfg.genre }}</span>{% endif %}
+  {% if cfg.protagonist %}<span>👤 {{ cfg.protagonist }}</span>{% endif %}
+  <span>📄 {{ chapters|length }} 章</span>
 </div>
 
 <script>
@@ -229,110 +170,110 @@ footer {
 })();
 </script>
 
-<div class="container">
-  <div class="section-title">📊 评审统计</div>
-  <div class="stats-grid">
-    <div class="stat-card pending">
-      <div class="label">待人工审</div>
-      <div class="value">{{ stats.pending_review }}</div>
-    </div>
-    <div class="stat-card crit">
-      <div class="label">需重写</div>
-      <div class="value">{{ stats.needs_rewrite }}</div>
-    </div>
-    <div class="stat-card ok">
-      <div class="label">已批准</div>
-      <div class="value">{{ stats.approved }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">人工编辑</div>
-      <div class="value">{{ stats.human_edited }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">自动通过</div>
-      <div class="value">{{ stats.auto_passed }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">误报</div>
-      <div class="value">{{ stats.false_positive }}</div>
-    </div>
+<div class="section-title">📊 评审统计</div>
+<div class="stats-grid">
+  <div class="stat-card pending">
+    <div class="label">待人工审</div>
+    <div class="value">{{ stats.pending_review }}</div>
   </div>
-
-  <div class="section-title">
-    ⚠ 待审章节 <span class="count">({{ queue|length }})</span>
+  <div class="stat-card crit">
+    <div class="label">需重写</div>
+    <div class="value">{{ stats.needs_rewrite }}</div>
   </div>
-  {% if queue %}
-  <form id="batch-form">
-  <div class="queue-table">
-    {% for r in queue %}
-    <div class="queue-row">
-      <input type="checkbox" class="row-check" name="chapter_ids" value="{{ r.chapter_id }}">
-      <a class="row-body" href="/book/{{ book }}/{{ r.chapter_id }}">
-        <div class="queue-row-main">
-          <span class="ch">{{ r.chapter_id }}</span>
-          <span class="severity {{ r.auto_severity }}">{{ r.auto_severity }}</span>
-        </div>
-        <div class="queue-row-meta">
-          <span>🔍 自检 {{ r.auto_issues_count }} 项</span>
-          <span class="status {{ r.status }}">{{ r.status }}</span>
-          <span>📅 {{ r.history[-1].at[:19] if r.history else '无记录' }}</span>
-        </div>
-      </a>
-    </div>
-    {% endfor %}
+  <div class="stat-card ok">
+    <div class="label">已批准</div>
+    <div class="value">{{ stats.approved }}</div>
   </div>
-  <div class="batch-bar">
-    <label class="select-all"><input type="checkbox" id="select-all"> 全选</label>
-    <div class="count">已选 <strong id="selected-count">0</strong> 章</div>
-    <button type="button" id="batch-approve-btn" disabled>✓ 批量批准</button>
+  <div class="stat-card">
+    <div class="label">人工编辑</div>
+    <div class="value">{{ stats.human_edited }}</div>
   </div>
-  </form>
-  {% else %}
-  <div class="queue-table">
-    <div class="empty-row">✓ 所有章节均已审核或自动通过</div>
+  <div class="stat-card">
+    <div class="label">自动通过</div>
+    <div class="value">{{ stats.auto_passed }}</div>
   </div>
-  {% endif %}
-
-  <div class="section-title">📚 全部章节 <span class="count">({{ chapters|length }})</span></div>
-  <div class="chapter-list">
-    {% set ch_ids = chapters|map(attribute='id')|list %}
-    {% for ch in chapters %}
-      {# 跳号检测: 上一章 ID 数字+1 不等于本章 → 中间有跳号 #}
-      {% set prev_idx = loop.index0 - 1 %}
-      {% if prev_idx >= 0 %}
-        {% set prev_id = ch_ids[prev_idx] %}
-        {% set prev_num = prev_id|replace('ch_','')|int %}
-        {% set cur_num = ch.id|replace('ch_','')|int %}
-        {% if cur_num - prev_num > 1 %}
-          <div class="chapter-gap" title="中间 {{ cur_num - prev_num - 1 }} 章缺失">
-            ⚠️ 跳过 ch_{{'%03d'|format(prev_num + 1)}} ~ ch_{{'%03d'|format(cur_num - 1)}} ( {{ cur_num - prev_num - 1 }} 章 )
-          </div>
-        {% endif %}
-      {% endif %}
-      <a class="chapter-pill" href="/book/{{ book }}/{{ ch.id }}">
-        <div class="chapter-pill-main">
-          <strong>{{ ch.id }}</strong>
-          <span class="chapter-title">{{ ch.title|truncate(20) }}</span>
-        </div>
-        {% if ch.preview %}
-        <div class="chapter-preview">{{ ch.preview }}</div>
-        {% endif %}
-        <div class="chapter-meta">
-          <span>{{ ch.word_count }} 字</span>
-        </div>
-      </a>
-    {% endfor %}
+  <div class="stat-card">
+    <div class="label">误报</div>
+    <div class="value">{{ stats.false_positive }}</div>
   </div>
 </div>
-<footer>
-  <a href="/api/history/{{ book }}" style="color: var(--accent); word-break: break-all;">JSON API: /api/history/{{ book }}</a>
+
+<div class="section-title">
+  ⚠ 待审章节 <span class="count">({{ queue|length }})</span>
+</div>
+{% if queue %}
+<form id="batch-form">
+<div class="queue-table">
+  {% for r in queue %}
+  <div class="queue-row">
+    <input type="checkbox" class="row-check" name="chapter_ids" value="{{ r.chapter_id }}">
+    <a class="row-body" href="/book/{{ book }}/{{ r.chapter_id }}">
+      <div class="queue-row-main">
+        <span class="ch">{{ r.chapter_id }}</span>
+        <span class="severity {{ r.auto_severity }}">{{ r.auto_severity }}</span>
+      </div>
+      <div class="queue-row-meta">
+        <span>🔍 自检 {{ r.auto_issues_count }} 项</span>
+        <span class="status {{ r.status }}">{{ r.status }}</span>
+        <span>📅 {{ r.history[-1].at[:19] if r.history else '无记录' }}</span>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+<div class="batch-bar">
+  <label class="select-all"><input type="checkbox" id="select-all"> 全选</label>
+  <div class="count">已选 <strong id="selected-count">0</strong> 章</div>
+  <button type="button" id="batch-approve-btn" disabled>✓ 批量批准</button>
+</div>
+</form>
+{% else %}
+<div class="queue-table">
+  <div class="empty-row">✓ 所有章节均已审核或自动通过</div>
+</div>
+{% endif %}
+
+<div class="section-title">📚 全部章节 <span class="count">({{ chapters|length }})</span></div>
+<div class="chapter-list">
+  {% set ch_ids = chapters|map(attribute='id')|list %}
+  {% for ch in chapters %}
+    {% set prev_idx = loop.index0 - 1 %}
+    {% if prev_idx >= 0 %}
+      {% set prev_id = ch_ids[prev_idx] %}
+      {% set prev_num = prev_id|replace('ch_','')|int %}
+      {% set cur_num = ch.id|replace('ch_','')|int %}
+      {% if cur_num - prev_num > 1 %}
+        <div class="chapter-gap" title="中间 {{ cur_num - prev_num - 1 }} 章缺失">
+          ⚠️ 跳过 ch_{{'%03d'|format(prev_num + 1)}} ~ ch_{{'%03d'|format(cur_num - 1)}} ( {{ cur_num - prev_num - 1 }} 章 )
+        </div>
+      {% endif %}
+    {% endif %}
+    <a class="chapter-pill" href="/book/{{ book }}/{{ ch.id }}">
+      <div class="chapter-pill-main">
+        <strong>{{ ch.id }}</strong>
+        <span class="chapter-title">{{ ch.title|truncate(20) }}</span>
+      </div>
+      {% if ch.preview %}
+      <div class="chapter-preview">{{ ch.preview }}</div>
+      {% endif %}
+      <div class="chapter-meta">
+        <span>{{ ch.word_count }} 字</span>
+      </div>
+    </a>
+  {% endfor %}
+</div>
+
+<div class="page-footer">
+  <a href="/api/history/{{ book }}" style="word-break: break-all;">JSON API: /api/history/{{ book }}</a>
   {% if session.get('auth_user') %}
   <div style="margin-top: 8px; font-size: 11px;">
     已登录: <strong>{{ session.auth_user }}</strong> · <a href="/logout" style="color: var(--crit);">注销</a>
   </div>
   {% endif %}
-</footer>
+</div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 (function() {
   const checks = document.querySelectorAll('.row-check');
@@ -379,5 +320,4 @@ footer {
   });
 })();
 </script>
-</body>
-</html>
+{% endblock %}
