@@ -1,48 +1,11 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0e1217">
-<title>{{ chapter_id }} - 评审详情</title>
+{% extends "_base.html" %}
+
+{% block title %}{{ chapter_id }} - 评审详情{% endblock %}
+
+{% block content %}
 <style>
-:root {
-  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
-  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
-  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
-  --edit: #b48cff;
-}
-* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-  background: var(--bg); color: var(--text); line-height: 1.7;
-  -webkit-text-size-adjust: 100%;
-}
-header {
-  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
-  position: sticky; top: 0; z-index: 10;
-  backdrop-filter: blur(8px);
-}
-.back {
-  color: var(--accent); text-decoration: none; font-size: 14px;
-  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
-  border-radius: 6px;
-}
-.back:active { background: var(--panel2); }
-h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
-.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; word-break: break-word; }
-.chapter-nav {
-  margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;
-}
-.nav-btn {
-  padding: 6px 12px; background: var(--panel2); color: var(--text);
-  border: 1px solid var(--border); border-radius: 6px;
-  text-decoration: none; font-size: 13px; min-height: 32px;
-  display: inline-flex; align-items: center;
-}
-.nav-btn:active { background: var(--border); }
-.nav-btn.disabled { opacity: 0.4; cursor: not-allowed; }
+/* ===== chapter.html 专属样式 ===== */
+.chapter-nav { margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; }
 .diff-view {
   background: var(--panel2); border-radius: 6px; padding: 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -58,21 +21,15 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .diff-meta-line { display: inline; color: var(--accent); font-weight: 600; }
 .diff-meta { font-size: 12px; font-weight: normal; margin-left: 8px; }
 .diff-meta .diff-del { text-decoration: none; opacity: 0.7; }
-.container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
-@media (max-width: 600px) {
-  .container { padding: 12px 14px; }
-  header { padding: 12px 14px; }
-  h1 { font-size: 17px; }
-}
-.layout {
-  display: grid; grid-template-columns: 1fr 380px; gap: 20px;
-}
+
+.layout { display: grid; grid-template-columns: 1fr 380px; gap: 20px; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; gap: 14px; } }
+
 .panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
   padding: 16px 18px; margin-bottom: 14px;
 }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .panel { padding: 14px 14px; margin-bottom: 12px; border-radius: 8px; }
 }
 .panel h2 {
@@ -82,21 +39,20 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .kv { display: grid; grid-template-columns: 90px 1fr; gap: 8px 12px; font-size: 14px; }
 @media (max-width: 400px) { .kv { grid-template-columns: 80px 1fr; font-size: 13px; } }
 .kv .k { color: var(--muted); }
+
 .chapter-text {
   background: var(--panel2); border-radius: 6px; padding: 16px;
   font-size: 15px; line-height: 1.85; white-space: pre-wrap; word-wrap: break-word;
   max-height: 600px; overflow-y: auto;
   border: 1px solid var(--border);
   -webkit-overflow-scrolling: touch;
+  color: var(--text);
 }
-/* Markdown 标题 加粗 + 变大: "## 第N章..." 透过 pre-wrap 仍以单行起头, 用首字符 # 计数 */
-.chapter-text { color: var(--fg); }
-.chapter-text { counter-reset: chap-h; }
-/* 不依赖 JS: # 字开头颜色加重. 简单点 — 给首行额外间距 */
 .chapter-text::first-line { font-weight: 600; }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .chapter-text { font-size: 15px; padding: 14px; max-height: 70vh; }
 }
+
 .severity {
   display: inline-block; padding: 3px 10px; border-radius: 4px;
   font-size: 13px; font-weight: 600;
@@ -113,6 +69,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .status.human_edited { background: rgba(180,140,255,0.2); color: var(--edit); }
 .status.auto_passed { background: rgba(109,217,155,0.15); color: var(--muted); }
 .status.false_positive { background: var(--panel2); color: var(--muted); }
+
 .issue {
   background: var(--panel2); border-left: 3px solid var(--warn);
   padding: 10px 12px; margin-bottom: 8px; border-radius: 0 4px 4px 0;
@@ -125,6 +82,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   font-size: 13px; color: var(--muted); font-style: italic;
   border: 1px solid var(--border); word-break: break-word;
 }
+
 .history-item {
   font-size: 13px; padding: 8px 0; border-bottom: 1px dashed var(--border);
   word-break: break-word;
@@ -142,6 +100,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   color: var(--muted); font-size: 12px; margin-top: 4px;
   padding-left: 8px; border-left: 2px solid var(--border);
 }
+
 .action-btn {
   display: block; width: 100%; padding: 12px 16px; margin-bottom: 8px;
   border: 1px solid var(--border); border-radius: 6px;
@@ -157,7 +116,6 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .action-btn.warn:hover { background: #ff5252; }
 .action-btn.edit { background: var(--edit); color: white; border-color: var(--edit); font-weight: 600; }
 .action-btn.edit:hover { background: #a679ff; }
-/* 误报 = 正向 (告诉 AI 别误判) — 绿色区分于 拒退的红色 */
 .action-btn.fp { background: var(--ok); color: #0e1217; border-color: var(--ok); font-weight: 600; }
 .action-btn.fp:hover { background: #5fc98a; }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -169,9 +127,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   border-radius: 4px; padding: 10px; font-size: 14px;
   font-family: inherit; resize: vertical;
 }
-.action-form textarea:focus {
-  outline: none; border-color: var(--accent);
-}
+.action-form textarea:focus { outline: none; border-color: var(--accent); }
 .action-form textarea#edit-text {
   min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
@@ -181,6 +137,7 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 }
 .action-form .checkbox-label { display: flex; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
 .action-form .checkbox-label input { cursor: pointer; }
+
 #toast {
   position: fixed; top: 16px; left: 16px; right: 16px;
   background: var(--ok); color: #0e1217;
@@ -188,14 +145,14 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   display: none; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 #toast.err { background: var(--crit); color: white; }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .action-btn { font-size: 15px; padding: 14px 16px; min-height: 52px; }
-  .action-form textarea { font-size: 16px; } /* iOS no-zoom */
+  .action-form textarea { font-size: 16px; }
   .kv { font-size: 13px; }
-  h2 { font-size: 13px !important; }
+  .panel h2 { font-size: 13px !important; }
 }
 
-/* M3: 版本历史样式 */
+/* 版本历史样式 */
 .version-row {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 12px; border-bottom: 1px solid var(--border);
@@ -232,27 +189,21 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
   white-space: pre-wrap; font-size: 12px;
 }
 </style>
-</head>
-<body>
-{% include "_navbar.html" %}
-<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
-  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">📄 {{ chapter_id }}</h1>
-  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
-    《{{ book }}》· 评审详情
-  </div>
-  {% if prev_id or next_id %}
-  <nav class="chapter-nav" style="margin-bottom:12px;">
-    {% if prev_id %}
-      <a href="/book/{{ book }}/{{ prev_id }}" class="nav-btn">← {{ prev_id }}</a>
-    {% else %}<span class="nav-btn disabled">← 上一章</span>{% endif %}
-    {% if next_id %}
-      <a href="/book/{{ book }}/{{ next_id }}" class="nav-btn">{{ next_id }} →</a>
-    {% else %}<span class="nav-btn disabled">下一章 →</span>{% endif %}
-  </nav>
-  {% endif %}
-</div>
 
-<div class="container">
+<h1>📄 {{ chapter_id }}</h1>
+<div class="subtitle" style="margin-bottom:12px;">《{{ book }}》· 评审详情</div>
+
+{% if prev_id or next_id %}
+<nav class="chapter-nav">
+  {% if prev_id %}
+    <a href="/book/{{ book }}/{{ prev_id }}" class="nav-btn">← {{ prev_id }}</a>
+  {% else %}<span class="nav-btn disabled">← 上一章</span>{% endif %}
+  {% if next_id %}
+    <a href="/book/{{ book }}/{{ next_id }}" class="nav-btn">{{ next_id }} →</a>
+  {% else %}<span class="nav-btn disabled">下一章 →</span>{% endif %}
+</nav>
+{% endif %}
+
 <div class="layout">
   <div>
     <div class="panel">
@@ -425,11 +376,15 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
     </div>
   </div>
 </div>
-</div>
 
 <div id="toast"></div>
+{% endblock %}
 
+{% block scripts %}
 <script>
+const BOOK = "{{ book }}";
+const CH = "{{ chapter_id }}";
+
 function toast(msg, err) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -437,6 +392,7 @@ function toast(msg, err) {
   t.style.display = 'block';
   setTimeout(() => t.style.display = 'none', 2500);
 }
+
 async function doAction(action, chapter) {
   let body = {};
   let url = `{{ request.script_root }}/api/${action}/{{ book }}/${chapter}`;
@@ -456,9 +412,9 @@ async function doAction(action, chapter) {
     if (!notes) { toast('请填写误报说明', true); return; }
     body = { reviewer: 'wei_chao', notes };
   }
-  // Disable button + show pending state
-  event.target.disabled = true;
-  event.target.textContent = '⏳ 处理中...';
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ 处理中...';
   try {
     const r = await fetch(url, {
       method: 'POST',
@@ -475,16 +431,14 @@ async function doAction(action, chapter) {
     setTimeout(() => location.reload(), 1200);
   } catch (e) {
     toast('✗ 失败: ' + (e.message || e), true);
-    event.target.disabled = false;
-    event.target.textContent = event.target.dataset.origText || event.target.textContent;
+    btn.disabled = false;
+    btn.textContent = btn.dataset.origText || btn.textContent;
   }
 }
-// Save original button text for restoration
 document.querySelectorAll('.action-btn').forEach(btn => {
   btn.dataset.origText = btn.textContent;
 });
 
-// ── v1.3 M4: entity-diff panel ──────────────────────────────────────
 async function loadEntityDiff() {
   const loading = document.getElementById("entity-diff-loading");
   const content = document.getElementById("entity-diff-content");
@@ -505,15 +459,10 @@ function renderEntityDiff(diff, summary) {
   const s = summary;
   const e = diff.entities || {};
 
-  const icon = (n) => n > 0 ? `<span style="color:var(--ok)">+${n}</span>`
-                  : n < 0 ? `<span style="color:var(--crit)">${n}</span>`
-                  : `<span style="color:var(--muted)">0</span>`;
-
   const section = (label, icon_s, added, updated, removed, resolved, type) => {
     const extras = resolved !== undefined
       ? `<span class="diff-meta" style="margin-left:8px;">收:<span style="color:var(--warn)">${resolved}</span></span>` : "";
     const updated_s = updated !== undefined ? `<span class="diff-meta" style="margin-left:8px;">变:<span style="color:var(--pending)">${updated}</span></span>` : "";
-    const rows = [];
     const entity_list = e[type] || {};
 
     const render_items = (key, cls) => {
@@ -556,10 +505,8 @@ function renderEntityDiff(diff, summary) {
   `;
 }
 
-// Load on page ready
 loadEntityDiff();
 
-// ── v1.3 M4: check for interrupted pipeline ───────────────────────────
 async function checkInterrupted() {
   try {
     const r = await fetch(`/api/pipeline/${BOOK}/interruptions`);
@@ -612,12 +559,8 @@ async function resumePipeline() {
   }
 }
 
-// M3: 版本历史 JS
-const BOOK = "{{ book }}";
-const CH = "{{ chapter_id }}";
-
-// Check for interruptions on page load (delayed a bit for other scripts to init)
 setTimeout(checkInterrupted, 500);
+
 let viewingVid = null;
 
 async function viewVersion(vid) {
@@ -654,7 +597,6 @@ async function revertTo(vid) {
   location.reload();
 }
 
-// ── v1.3 M4: apply-feedback ────────────────────────────────────────────
 let _pendingFeedback = null;
 
 async function applyFeedback() {
@@ -697,19 +639,18 @@ async function confirmApplyFeedback() {
       body: JSON.stringify({dry_run: false}),
     });
     const data = await r.json();
-    if (!r.ok || !data.ok) {
+    if (data.ok) {
+      toast("✓ 修订已应用");
+      setTimeout(() => location.reload(), 1200);
+    } else {
       toast(data.error || "应用失败", true);
-      return;
+      btn.disabled = false;
+      btn.textContent = "🔄 应用评审反馈自动修订";
     }
-    toast(`✓ 修订已保存 (v${data.new_version}, ${data.diff_lines} 行改动)`);
-    document.getElementById("feedback-preview").style.display = "none";
-    setTimeout(() => location.reload(), 1500);
   } catch(e) {
     toast("网络错误: " + (e.message||e), true);
-  } finally {
     btn.disabled = false;
   }
 }
 </script>
-</body>
-</html>
+{% endblock %}

@@ -1,47 +1,17 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0e1217">
-<title>全项目进度总览 - novel_workflow</title>
-<style>
-:root {
-  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
-  --text: #d6dee6; --muted: #7d8a9a; --accent: #4ea3ff;
-  --idle: #7d8a9a; --running: #4ea3ff; --done: #6dd99b;
-  --failed: #ff6b6b; --cancelled: #ffb454; --pending: #ffb454;
-}
-* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-  background: var(--bg); color: var(--text); line-height: 1.6;
-}
-header {
-  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
-  position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px);
-}
-.back { color: var(--accent); text-decoration: none; font-size: 14px;
-  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 6px; }
-.back:active { background: var(--panel2); }
-h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
-.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-@media (max-width: 600px) {
-  .container { padding: 12px 14px; }
-  header { padding: 12px 14px; }
-  h1 { font-size: 17px; }
-}
+{% extends "_base.html" %}
 
-/* ── 汇总统计条 ───────────────────────────── */
+{% block title %}全项目进度总览 - novel_workflow{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ===== overview.html 专属样式 (含 :root 扩展) ===== */
+:root {
+  --idle: #7d8a9a; --running: #4ea3ff; --done: #6dd99b;
+  --failed: #ff6b6b; --cancelled: #ffb454;
+}
 .summary {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px; margin-bottom: 20px;
-}
-.stat-card {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 14px 16px;
 }
 .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .stat-value { font-size: 24px; font-weight: 600; margin-top: 4px; color: var(--text); }
@@ -49,21 +19,20 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
 .stat-value.done { color: var(--done); }
 .stat-value.failed { color: var(--failed); }
 
-/* ── 项目卡片网格 ─────────────────────────── */
 .grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px;
 }
-.card {
+.project-card {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 8px; padding: 14px 16px;
   transition: border-color 0.2s, transform 0.1s;
   text-decoration: none; color: var(--text); display: block;
   cursor: pointer;
 }
-.card:hover { border-color: var(--accent); transform: translateY(-1px); }
-.card.running { border-color: var(--running); }
-.card.failed { border-color: var(--failed); }
+.project-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.project-card.running { border-color: var(--running); }
+.project-card.failed { border-color: var(--failed); }
 
 .card-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -78,16 +47,11 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
   padding: 2px 6px; border-radius: 4px; margin-left: 8px; flex-shrink: 0;
 }
 
-.badge {
-  display: inline-block; padding: 3px 10px; border-radius: 12px;
-  font-size: 11px; font-weight: 500; margin-bottom: 10px;
-}
 .badge.idle { background: rgba(125,138,154,0.2); color: var(--idle); }
 .badge.running { background: rgba(78,163,255,0.2); color: var(--running); }
 .badge.done { background: rgba(109,217,155,0.2); color: var(--done); }
 .badge.failed { background: rgba(255,107,107,0.2); color: var(--failed); }
 .badge.cancelled { background: rgba(255,180,84,0.2); color: var(--cancelled); }
-.badge.pending { background: rgba(255,180,84,0.2); color: var(--pending); }
 
 .progress-line {
   font-size: 12px; color: var(--muted); margin-bottom: 6px;
@@ -107,20 +71,6 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
 }
 .meta-item { display: inline-flex; align-items: center; gap: 3px; }
 
-/* ── 空状态 ────────────────────────────── */
-.empty {
-  text-align: center; padding: 60px 20px; color: var(--muted);
-}
-.empty h2 { color: var(--text); margin-bottom: 8px; }
-
-/* ── 错误条 ────────────────────────────── */
-.err {
-  background: rgba(255,107,107,0.15); border: 1px solid var(--failed);
-  border-radius: 6px; padding: 10px 14px; margin-bottom: 16px;
-  color: var(--failed); font-size: 13px;
-}
-
-/* ── SSE 状态指示 ────────────────────────── */
 .live-dot {
   display: inline-block; width: 8px; height: 8px; border-radius: 50%;
   background: var(--done); margin-right: 6px;
@@ -131,49 +81,52 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+.err-box {
+  background: rgba(255,107,107,0.15); border: 1px solid var(--failed);
+  border-radius: 6px; padding: 10px 14px; margin-bottom: 16px;
+  color: var(--failed); font-size: 13px;
+}
 </style>
-</head>
-<body>
-{% include "_navbar.html" %}
-<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
-  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">📊 全项目进度总览 <span id="liveDot" class="live-dot"></span><span id="liveLabel" style="font-size:11px;color:var(--muted);font-weight:normal;vertical-align:middle;">实时</span></h1>
-  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">所有书籍的流水线状态一览 · 自动每 3 秒刷新</div>
+{% endblock %}
+
+{% block content %}
+<h1>
+  📊 全项目进度总览
+  <span id="liveDot" class="live-dot"></span>
+  <span id="liveLabel" style="font-size:11px;color:var(--muted);font-weight:normal;vertical-align:middle;">实时</span>
+</h1>
+<div class="subtitle">所有书籍的流水线状态一览 · 自动每 3 秒刷新</div>
+
+<div id="errBox" class="err-box" style="display:none;"></div>
+
+<div class="summary">
+  <div class="card stat-card">
+    <div class="stat-label">书籍总数</div>
+    <div class="stat-value" id="statTotal">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">运行中</div>
+    <div class="stat-value running" id="statRunning">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">已完成</div>
+    <div class="stat-value done" id="statDone">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">失败</div>
+    <div class="stat-value failed" id="statFailed">—</div>
+  </div>
 </div>
 
-<div class="container">
-
-  <div id="errBox" class="err" style="display:none;"></div>
-
-  <!-- 汇总统计 -->
-  <div class="summary" id="summary">
-    <div class="stat-card">
-      <div class="stat-label">书籍总数</div>
-      <div class="stat-value" id="statTotal">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">运行中</div>
-      <div class="stat-value running" id="statRunning">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">已完成</div>
-      <div class="stat-value done" id="statDone">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">失败</div>
-      <div class="stat-value failed" id="statFailed">—</div>
-    </div>
+<div class="grid" id="grid">
+  <div class="empty" id="emptyState" style="display:none;">
+    <h2>暂无项目</h2>
+    <p>请先在首页创建书籍项目</p>
   </div>
-
-  <!-- 项目卡片网格 -->
-  <div class="grid" id="grid">
-    <div class="empty" id="emptyState" style="display:none;">
-      <h2>暂无项目</h2>
-      <p>请先在首页创建书籍项目</p>
-    </div>
-  </div>
-
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 const $ = (id) => document.getElementById(id);
 const grid = $("grid");
@@ -181,17 +134,11 @@ const errBox = $("errBox");
 const liveDot = $("liveDot");
 const liveLabel = $("liveLabel");
 
-// 状态徽章 class 映射
 const STATUS_LABEL = {
-  idle: "空闲",
-  running: "运行中",
-  done: "已完成",
-  failed: "失败",
-  cancelled: "已取消",
-  pending: "等待中",
+  idle: "空闲", running: "运行中", done: "已完成",
+  failed: "失败", cancelled: "已取消", pending: "等待中",
 };
 
-// 状态徽章颜色
 const STATUS_CLASS = {
   idle: "idle", running: "running", done: "done",
   failed: "failed", cancelled: "cancelled", pending: "pending",
@@ -205,18 +152,12 @@ function escapeHtml(s) {
 
 function fmtTs(ts) {
   if (!ts) return "—";
-  // 支持 Unix timestamp (数字, 秒) 或 ISO string
   let ms;
-  if (typeof ts === "number") {
-    ms = ts * 1000;
-  } else {
-    ms = Date.parse(ts);
-  }
+  if (typeof ts === "number") { ms = ts * 1000; }
+  else { ms = Date.parse(ts); }
   if (isNaN(ms)) return "—";
   const d = new Date(ms);
-  const nowSec = Date.now() / 1000;
-  const tsSec = ms / 1000;
-  const diff = nowSec - tsSec;
+  const diff = (Date.now() / 1000) - (ms / 1000);
   if (diff < 60) return `${Math.floor(diff)}s 前`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m 前`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h 前`;
@@ -241,7 +182,7 @@ function renderCard(p) {
   }
 
   return `
-    <a class="card ${statusClass}" href="/dashboard/${encodeURIComponent(p.name)}">
+    <a class="project-card ${statusClass}" href="/dashboard/${encodeURIComponent(p.name)}">
       <div class="card-head">
         <div class="card-title">${escapeHtml(p.title)}</div>
         ${p.genre ? `<span class="card-genre">${escapeHtml(p.genre)}</span>` : ""}
@@ -283,14 +224,8 @@ function render(data) {
   grid.innerHTML = projects.map(renderCard).join("");
 }
 
-function showError(msg) {
-  errBox.textContent = msg;
-  errBox.style.display = "block";
-}
-
-function clearError() {
-  errBox.style.display = "none";
-}
+function showError(msg) { errBox.textContent = msg; errBox.style.display = "block"; }
+function clearError() { errBox.style.display = "none"; }
 
 async function fetchOverview() {
   try {
@@ -305,50 +240,35 @@ async function fetchOverview() {
   }
 }
 
-// SSE 实时刷新 (v1.3 M1)
 let es = null;
 function connectSSE() {
   if (es) es.close();
   es = new EventSource("/api/overview/stream", { withCredentials: true });
-
   es.onopen = () => {
     liveDot.classList.remove("disconnected");
     liveLabel.textContent = "实时";
   };
-
   es.onmessage = (ev) => {
     try {
       const data = JSON.parse(ev.data);
-      if (data.error) {
-        showError("SSE: " + data.error);
-        return;
-      }
-      // 构造 projects 形状 → 复用 render()
+      if (data.error) { showError("SSE: " + data.error); return; }
       const projects = Object.keys(data.states || {}).map(name => {
         const st = data.states[name] || null;
         return {
           name, title: name,
-          pipeline: st ? {
-            status: st.status, stage: st.stage, ch: st.ch,
-          } : null,
+          pipeline: st ? { status: st.status, stage: st.stage, ch: st.ch } : null,
         };
       });
-      // SSE 是轻量状态 (不带 total_chapters), 不重渲染整体, 只更新卡片徽章
       updateStatusOnly(projects);
-    } catch (e) {
-      console.warn("SSE parse error:", e);
-    }
+    } catch (e) { console.warn("SSE parse error:", e); }
   };
-
   es.onerror = () => {
     liveDot.classList.add("disconnected");
     liveLabel.textContent = "连接断开";
-    // EventSource 自动重连, 这里只标状态
   };
 }
 
 function updateStatusOnly(projects) {
-  // 只更新运行中 / 失败状态的卡片 (不重渲染整体)
   let running = 0, done = 0, failed = 0;
   for (const p of projects) {
     const st = (p.pipeline && p.pipeline.status) || "idle";
@@ -361,13 +281,8 @@ function updateStatusOnly(projects) {
   $("statFailed").textContent = failed;
 }
 
-// 首次加载 + 启动 SSE
 fetchOverview();
 connectSSE();
-
-// 兜底: 每 30s 整页 refresh (防止 SSE 长时间断连)
 setInterval(fetchOverview, 30000);
 </script>
-
-</body>
-</html>
+{% endblock %}

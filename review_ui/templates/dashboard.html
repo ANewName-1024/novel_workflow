@@ -1,49 +1,11 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0e1217">
-<title>{{ book }} - 流水线面板</title>
+{% extends "_base.html" %}
+
+{% block title %}{{ book }} - 流水线面板{% endblock %}
+
+{% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-:root {
-  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
-  --text: #d6de6; --muted: #7d8a9a; --accent: #4ea3ff;
-  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b; --pending: #ffb454;
-}
-* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-  background: var(--bg); color: var(--text); line-height: 1.6;
-  -webkit-text-size-adjust: 100%;
-}
-header {
-  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
-  position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px);
-}
-.back { color: var(--accent); text-decoration: none; font-size: 14px;
-  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 6px; }
-.back:active { background: var(--panel2); }
-h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word; }
-.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
-@media (max-width: 600px) {
-  .container { padding: 12px 14px; }
-  header { padding: 12px 14px; }
-  h1 { font-size: 17px; }
-}
-
-/* ── 通用卡片 ────────────────────────────────────────────── */
-.card {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;
-}
-.card h2 {
-  font-size: 14px; font-weight: 600; margin: 0 0 10px;
-  color: var(--muted); display: flex; align-items: center; gap: 6px;
-}
+/* ===== dashboard.html 专属样式 ===== */
 .card h2 .badge {
   background: var(--panel2); color: var(--text); padding: 2px 8px;
   border-radius: 4px; font-size: 11px; font-weight: 500;
@@ -54,7 +16,6 @@ h1 { margin: 8px 0 0; font-size: 20px; font-weight: 600; word-break: break-word;
 .badge.cancelled { color: var(--warn); }
 .badge.idle { color: var(--muted); }
 
-/* ── 控制面板 ────────────────────────────────────────────── */
 .control-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .control-row .status-text { flex: 1; color: var(--muted); font-size: 13px; min-width: 200px; }
 .btn {
@@ -75,9 +36,7 @@ input[type="number"] {
   border: 1px solid var(--border); border-radius: 4px;
   color: var(--text); font-size: 13px;
 }
-label { font-size: 12px; color: var(--muted); }
 
-/* ── 进度条 ────────────────────────────────────────────── */
 .stages { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .stage {
   padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px;
@@ -90,11 +49,9 @@ label { font-size: 12px; color: var(--muted); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 .stage-arrow { color: var(--muted); }
 
-/* ── Token 图表 ────────────────────────────────────────────── */
 .chart-wrap { position: relative; height: 200px; }
 .metrics-summary { color: var(--muted); font-size: 12px; margin-top: 8px; }
 
-/* ── 实时日志 ────────────────────────────────────────────── */
 .log-controls { display: flex; gap: 8px; margin-bottom: 8px; }
 .log {
   background: #0a0d12; border: 1px solid var(--border); border-radius: 4px;
@@ -107,13 +64,11 @@ label { font-size: 12px; color: var(--muted); }
 .log .line.error { color: var(--crit); }
 .log .line.warn { color: var(--warn); }
 
-/* ── 状态详情 ────────────────────────────────────────────── */
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .detail-cell { background: var(--panel2); padding: 8px 10px; border-radius: 4px; }
 .detail-cell .label { color: var(--muted); font-size: 11px; }
 .detail-cell .value { font-size: 14px; font-weight: 600; margin-top: 2px; word-break: break-all; }
 
-/* ── 错误/提示 ────────────────────────────────────────────── */
 .toast {
   position: fixed; top: 20px; right: 20px; padding: 10px 16px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
@@ -123,17 +78,13 @@ label { font-size: 12px; color: var(--muted); }
 .toast.success { border-color: var(--ok); color: var(--ok); }
 .toast.error { border-color: var(--crit); color: var(--crit); }
 </style>
-</head>
-<body>
-{% include "_navbar.html" %}
-<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
-  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">⚙️ 流水线面板</h1>
-  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
-    实时进度 / 日志 / Token 用量 / 断点恢复
-  </div>
-</div>
+{% endblock %}
 
-<div class="container">
+{% block content %}
+<h1>⚙️ 流水线面板</h1>
+<div class="subtitle">实时进度 / 日志 / Token 用量 / 断点恢复</div>
+
+<div class="container" style="padding-left:0;padding-right:0;">
 
   <!-- ── 1. 控制面板 ── -->
   <div class="card">
@@ -148,7 +99,7 @@ label { font-size: 12px; color: var(--muted); }
     </div>
   </div>
 
-  <!-- ── 2. 流水线状态详情 ── -->
+  <!-- ── 2. 状态详情 ── -->
   <div class="card">
     <h2>📊 状态详情</h2>
     <div id="detailGrid" class="detail-grid">
@@ -161,7 +112,7 @@ label { font-size: 12px; color: var(--muted); }
     </div>
   </div>
 
-  <!-- ── 3. 进度条 (6 阶段) ── -->
+  <!-- ── 3. 进度条 ── -->
   <div class="card">
     <h2>🎯 流水线进度</h2>
     <div class="stages" id="stagesBar">
@@ -182,7 +133,7 @@ label { font-size: 12px; color: var(--muted); }
     <div id="stageHint" style="margin-top:8px;color:var(--muted);font-size:12px;">未运行</div>
   </div>
 
-  <!-- ── 3b. Pipeline 阶段控制 (M5) ── -->
+  <!-- ── 3b. Pipeline 阶段控制 ── -->
   <div class="card">
     <h2>🎛 Pipeline 阶段控制 (M5) <span id="m5Status" class="badge idle">未加载</span></h2>
     <div class="control-row">
@@ -206,7 +157,7 @@ label { font-size: 12px; color: var(--muted); }
     <div id="m5Detail" style="margin-top:8px;color:var(--muted);font-size:12px;">选择章节后点击"刷新"加载 checkpoint</div>
   </div>
 
-  <!-- ── 4. Token 用量图 ── -->
+  <!-- ── 4. Token 用量 ── -->
   <div class="card">
     <h2>📈 Token 用量 (近 7 天)</h2>
     <div class="chart-wrap"><canvas id="metricsChart"></canvas></div>
@@ -226,7 +177,9 @@ label { font-size: 12px; color: var(--muted); }
   </div>
 
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 const BOOK = {{ book|tojson }};
 const API = {
@@ -237,67 +190,43 @@ const API = {
   status: () => fetch(`/api/pipeline/status/${encodeURIComponent(BOOK)}`).then(r => r.json()),
   logs: (tail) => fetch(`/api/pipeline/logs/${encodeURIComponent(BOOK)}?tail=${tail}`).then(r => r.json()),
   metrics: (range) => fetch(`/api/pipeline/metrics/${encodeURIComponent(BOOK)}?range=${range}`).then(r => r.json()),
-  // M5 v2 endpoints
   checkpoints: (ch) => fetch(`/api/pipeline/checkpoints/${encodeURIComponent(BOOK)}?ch=${ch}`).then(r => r.json()),
   skip: (ch, stage, reason) => fetch(`/api/pipeline/skip/${encodeURIComponent(BOOK)}`, {
     method: 'POST', body: new URLSearchParams({ch, stage, reason: reason || ''})
   }).then(r => r.json()),
-  rerun: (ch, fromStage) => fetch(`/api/pipeline/rerun/${encodeURIComponent(BOOK)}`, {
-    method: 'POST', body: new URLSearchParams({ch, from_stage: fromStage})
+  rerun: (ch, stage) => fetch(`/api/pipeline/rerun/${encodeURIComponent(BOOK)}`, {
+    method: 'POST', body: new URLSearchParams({ch, stage})
   }).then(r => r.json()),
   reset: (ch) => fetch(`/api/pipeline/reset/${encodeURIComponent(BOOK)}`, {
     method: 'POST', body: new URLSearchParams({ch})
   }).then(r => r.json()),
 };
 
-const STAGE_ORDER = ['context', 'writing', 'extract', 'summary', 'state', 'self_check', 'done'];
-
-// ── toast ──────────────────────────────────────────────────────────────
-function toast(msg, type = 'success') {
+function toast(msg, type) {
   const el = document.createElement('div');
-  el.className = `toast ${type}`;
+  el.className = 'toast ' + (type || 'success');
   el.textContent = msg;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+  setTimeout(() => el.remove(), 3000);
 }
 
-// ── 状态 / 进度条渲染 ──────────────────────────────────────────────────
 function renderStatus(state) {
   const badge = document.getElementById('statusBadge');
-  const text = document.getElementById('statusText');
-  const startBtn = document.getElementById('startBtn');
-  const cancelBtn = document.getElementById('cancelBtn');
-  const dPid = document.getElementById('dPid');
-  const dCh = document.getElementById('dCh');
-  const dStage = document.getElementById('dStage');
-  const dStart = document.getElementById('dStart');
-  const dEnd = document.getElementById('dEnd');
-  const dExit = document.getElementById('dExit');
-
   if (!state) {
     badge.className = 'badge idle'; badge.textContent = 'idle';
-    text.textContent = '没有流水线记录 (从未启动)';
-    startBtn.disabled = false; cancelBtn.disabled = true;
-    dPid.textContent = dCh.textContent = dStage.textContent = dStart.textContent = dEnd.textContent = dExit.textContent = '—';
-    setStagesProgress(null);
-    return;
-  }
-
-  badge.className = `badge ${state.status}`; badge.textContent = state.status;
-  if (state.status === 'running') {
-    text.textContent = `运行中 (PID ${state.pid}) — 阶段: ${state.current_stage || '?'}`;
-    startBtn.disabled = true; cancelBtn.disabled = false;
+    document.getElementById('statusText').textContent = '未运行';
   } else {
-    text.textContent = `上次: ${state.status} (${state.ended_at || '?'})`;
-    startBtn.disabled = false; cancelBtn.disabled = true;
+    badge.className = 'badge ' + state.status; badge.textContent = state.status;
+    document.getElementById('statusText').textContent =
+      `PID ${state.pid || '—'} · 阶段 ${state.current_stage || '—'} · ${state.status}`;
   }
-  dPid.textContent = state.pid || '—';
-  dCh.textContent = state.current_chapter || '—';
-  dStage.textContent = state.current_stage || '—';
-  dStart.textContent = state.started_at || '—';
-  dEnd.textContent = state.ended_at || '—';
-  dExit.textContent = state.exit_code ?? '—';
-
+  document.getElementById('dPid').textContent = state && state.pid || '—';
+  document.getElementById('dCh').textContent = state && state.ch || '—';
+  document.getElementById('dStage').textContent = state && state.current_stage || '—';
+  document.getElementById('dStart').textContent = state && state.started_at || '—';
+  document.getElementById('dEnd').textContent = state && state.ended_at || '—';
+  document.getElementById('dExit').textContent = state && state.exit_code != null ? state.exit_code : '—';
+  document.getElementById('cancelBtn').disabled = !(state && state.status === 'running');
   setStagesProgress(state);
 }
 
@@ -328,7 +257,6 @@ function setStagesProgress(state) {
   }
 }
 
-// ── 日志视图 ────────────────────────────────────────────────────────────
 const LOG_MAX = 500;
 let logLines = [];
 
@@ -345,7 +273,6 @@ function appendLog(text) {
 }
 
 function formatLogLine(line) {
-  // escape HTML
   const esc = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   if (line.includes('[PIPELINE]')) return `<span class="line pipeline">${esc}</span>`;
   if (line.includes('⚠') || line.includes('Error') || line.includes('Traceback')) return `<span class="line warn">${esc}</span>`;
@@ -361,26 +288,21 @@ async function loadInitialLogs() {
   if (data.lines.length) el.scrollTop = el.scrollHeight;
 }
 
-// ── SSE ─────────────────────────────────────────────────────────────────
 let evtSource = null;
 function startSSE() {
   if (evtSource) evtSource.close();
   evtSource = new EventSource(`/api/pipeline/logs/${encodeURIComponent(BOOK)}/stream`);
   evtSource.onmessage = (e) => appendLog(e.data);
   evtSource.addEventListener('end', () => {
-    evtSource.close();
-    evtSource = null;
-    refreshStatus();
+    evtSource.close(); evtSource = null; refreshStatus();
   });
-  evtSource.addEventListener('error', (e) => {
-    // 1.1 简单处理: 错误时关闭, 5s 后重连
+  evtSource.addEventListener('error', () => {
     if (evtSource) evtSource.close();
     evtSource = null;
     setTimeout(() => { if (document.getElementById('statusBadge').textContent === 'running') startSSE(); }, 5000);
   });
 }
 
-// ── Chart.js ────────────────────────────────────────────────────────────
 let metricsChart = null;
 async function loadMetrics() {
   const data = await API.metrics('7d');
@@ -400,7 +322,7 @@ async function loadMetrics() {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: {legend: {labels: {color: '#d6de6'}}},
+        plugins: {legend: {labels: {color: '#d6dde6'}}},
         scales: {
           x: {ticks: {color: '#7d8a9a'}, grid: {color: '#2a3440'}},
           y: {ticks: {color: '#7d8a9a'}, grid: {color: '#2a3440'}, beginAtZero: true},
@@ -417,18 +339,15 @@ async function loadMetrics() {
     `总: input ${data.total_in.toLocaleString()} / output ${data.total_out.toLocaleString()} / ${data.calls} 次调用`;
 }
 
-// ── 控制 ────────────────────────────────────────────────────────────────
 async function refreshStatus() {
   const data = await API.status();
   renderStatus(data.state);
-  // 如果刚转 running, 启动 SSE
   if (data.state && data.state.status === 'running' && !evtSource) {
     appendLog('\n[SSE] 流水线开始, 接管日志流…\n');
     startSSE();
   } else if (data.state && data.state.status !== 'running' && evtSource) {
     evtSource.close(); evtSource = null;
   }
-  // 刷新 token 图表
   loadMetrics();
 }
 
@@ -437,12 +356,8 @@ document.getElementById('startBtn').onclick = async () => {
   const autoRw = document.getElementById('autoRewriteChk').checked;
   const r = await API.start(ch, autoRw);
   const data = await r.json();
-  if (data.ok) {
-    toast('已触发 ch' + ch);
-    await refreshStatus();
-  } else {
-    toast('启动失败: ' + (data.error || JSON.stringify(data)), 'error');
-  }
+  if (data.ok) { toast('已触发 ch' + ch); await refreshStatus(); }
+  else { toast('启动失败: ' + (data.error || JSON.stringify(data)), 'error'); }
 };
 
 document.getElementById('cancelBtn').onclick = async () => {
@@ -465,7 +380,6 @@ document.getElementById('logClearBtn').onclick = () => {
   document.getElementById('logCount').textContent = '0 行';
 };
 
-// ── M5: Pipeline 阶段控制 ─────────────────────────────────────
 const STAGE_LABEL = {PENDING:'○', RUNNING:'⟳', DONE:'✓', FAILED:'⚠', SKIPPED:'⊘'};
 
 function renderM5(view) {
@@ -476,7 +390,6 @@ function renderM5(view) {
     detail.textContent = '选择章节后点击"刷新"加载 checkpoint';
     return;
   }
-  // 顶部 summary
   const failed = view.failed_stage;
   const cur = view.current_stage;
   if (view.is_complete) {
@@ -488,7 +401,6 @@ function renderM5(view) {
   } else {
     badge.className = 'badge idle'; badge.textContent = 'idle';
   }
-  // 7 stage 状态行
   const rows = view.stages.map(s => {
     const lab = STAGE_LABEL[s.status] || '?';
     const err = s.error ? ` <span style="color:var(--crit)">(${s.error.slice(0,40)})</span>` : '';
@@ -499,49 +411,42 @@ function renderM5(view) {
   detail.innerHTML = rows;
 }
 
-async function refreshM5() {
-  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
-  const data = await API.checkpoints(ch);
-  if (data.ok) {
-    renderM5(data);
-  } else {
-    document.getElementById('m5Detail').textContent = '加载失败: ' + (data.error || JSON.stringify(data));
-  }
+async function m5Refresh() {
+  const ch = document.getElementById('m5Ch').value;
+  const view = await API.checkpoints(ch);
+  renderM5(view);
 }
 
-document.getElementById('m5RefreshBtn').onclick = refreshM5;
+document.getElementById('m5RefreshBtn').onclick = m5Refresh;
 document.getElementById('m5SkipBtn').onclick = async () => {
-  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
+  const ch = document.getElementById('m5Ch').value;
   const stage = document.getElementById('m5Stage').value;
-  const reason = prompt(`Skip stage [${stage}] of ch ${ch}? 输入原因 (可空):`, 'manual skip');
-  if (reason === null) return;  // 用户取消
+  const reason = prompt(`跳过 ch${ch} ${stage} 的原因?`);
+  if (reason === null) return;
   const data = await API.skip(ch, stage, reason);
-  if (data.ok) { toast(`✓ Skipped ${stage} → ${data.new_state}`); await refreshM5(); }
-  else toast('Skip 失败: ' + (data.error || JSON.stringify(data)), 'error');
+  if (data.ok) { toast('已 skip'); await m5Refresh(); }
+  else { toast('skip 失败: ' + (data.error || ''), 'error'); }
 };
 document.getElementById('m5RerunBtn').onclick = async () => {
-  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
-  const fromStage = document.getElementById('m5Stage').value;
-  if (!confirm(`Rerun ch ${ch} from [${fromStage}]? 上游 DONE 会保留, 下游全 PENDING, 然后启动新 subprocess.`)) return;
-  const data = await API.rerun(ch, fromStage);
-  if (data.ok) { toast(`✓ Rerun started from ${fromStage} (PID ${data.state?.pid})`); await refreshM5(); }
-  else toast('Rerun 失败: ' + (data.error || JSON.stringify(data)), 'error');
+  const ch = document.getElementById('m5Ch').value;
+  const stage = document.getElementById('m5Stage').value;
+  if (!confirm(`确认从 ch${ch} ${stage} 重跑?`)) return;
+  const data = await API.rerun(ch, stage);
+  if (data.ok) { toast('已触发 rerun'); await m5Refresh(); }
+  else { toast('rerun 失败: ' + (data.error || ''), 'error'); }
 };
 document.getElementById('m5ResetBtn').onclick = async () => {
-  const ch = parseInt(document.getElementById('m5Ch').value, 10) || 1;
-  if (!confirm(`Reset ch ${ch}? 全部 stage 回 PENDING, checkpoint 清空, 但 v1 进程不自动取消.`)) return;
+  const ch = document.getElementById('m5Ch').value;
+  if (!confirm(`⚠ 重置 ch${ch} 的 checkpoint? 不可恢复!`)) return;
   const data = await API.reset(ch);
-  if (data.ok) { toast('✓ Reset'); await refreshM5(); }
-  else toast('Reset 失败: ' + (data.error || JSON.stringify(data)), 'error');
+  if (data.ok) { toast('已 reset'); await m5Refresh(); }
+  else { toast('reset 失败: ' + (data.error || ''), 'error'); }
 };
 
-// ── 启动 ────────────────────────────────────────────────────────────────
-(async function init() {
+(async () => {
   await loadInitialLogs();
   await refreshStatus();
-  // 5s 轮询 status (SSE 接管 log 后, status 仍要更新)
   setInterval(refreshStatus, 5000);
 })();
 </script>
-</body>
-</html>
+{% endblock %}

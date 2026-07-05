@@ -1,66 +1,33 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0e1217">
-<title>{{ cfg.book_name or book }} - 大纲编辑器</title>
-<style>
-:root {
-  --bg: #0e1217; --panel: #161b22; --panel2: #1c232c; --border: #2a3440;
-  --text: #d6dde6; --muted: #7d8a9a; --accent: #4ea3ff;
-  --warn: #ffb454; --crit: #ff6b6b; --ok: #6dd99b;
-}
-* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(78,163,255,0.15); }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-  background: var(--bg); color: var(--text); line-height: 1.6;
-  -webkit-text-size-adjust: 100%;
-}
-header {
-  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
-  position: sticky; top: 0; z-index: 10;
-}
-.back {
-  color: var(--accent); text-decoration: none; font-size: 14px;
-  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px;
-  border-radius: 6px;
-}
-.back:hover { background: var(--panel2); }
-h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
+{% extends "_base.html" %}
 
+{% block title %}{{ cfg.book_name or book }} - 大纲编辑器{% endblock %}
+
+{% block content %}
+<style>
+/* ===== outline.html 专属样式 ===== */
 .toolbar {
   padding: 14px 20px;
   display: flex; gap: 8px; align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
+  margin: 0 -20px 0 -20px;
 }
-.btn {
+.toolbar .btn {
   display: inline-flex; align-items: center;
   min-height: 36px; padding: 6px 14px;
   background: var(--panel2); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px;
   text-decoration: none; font-size: 13px; cursor: pointer;
-  transition: all 0.15s;
-  font-family: inherit;
+  transition: all 0.15s; font-family: inherit;
 }
-.btn:hover { background: var(--border); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-.btn.primary:hover { filter: brightness(1.1); }
-.btn.danger { color: var(--crit); border-color: var(--crit); }
-.btn.danger:hover { background: var(--crit); color: var(--bg); }
+.toolbar .btn:hover { background: var(--border); }
+.toolbar .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.toolbar .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.toolbar .btn.primary:hover { filter: brightness(1.1); }
+.toolbar .btn.danger { color: var(--crit); border-color: var(--crit); }
+.toolbar .btn.danger:hover { background: var(--crit); color: var(--bg); }
 
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin: 16px 20px 0;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-}
-
-/* ── Model switcher panel (v1.3 M5) ──────────────────────────── */
+/* Model switcher */
 .model-switcher {
   display: flex; gap: 8px; align-items: center;
   padding: 6px 10px; background: var(--panel2);
@@ -71,10 +38,7 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
   background: var(--panel); color: var(--text); font-size: 13px;
 }
-.model-switcher .save-msg {
-  margin-left: 6px; font-size: 12px;
-  transition: color .2s;
-}
+.model-switcher .save-msg { margin-left: 6px; font-size: 12px; transition: color .2s; }
 .model-switcher .save-msg.ok { color: var(--ok); }
 .model-switcher .save-msg.err { color: var(--crit); }
 .model-switcher .current-dot {
@@ -82,6 +46,13 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   border-radius: 50%; background: var(--ok);
   margin-right: 4px; vertical-align: middle;
 }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
 }
 .tab {
   padding: 10px 16px;
@@ -99,13 +70,10 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   border-left: none; border-right: none; border-top: none;
   font-family: inherit;
 }
-.tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 .vol-section {
-  margin: 16px 20px;
+  margin: 16px 0;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -117,24 +85,11 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: 12px;
 }
-.vol-header .vol-title {
-  flex: 1;
-  font-size: 16px;
-  font-weight: 600;
-}
-.vol-header .vol-summary {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 2px;
-}
-.vol-actions {
-  display: flex; gap: 4px;
-}
+.vol-header .vol-title { flex: 1; font-size: 16px; font-weight: 600; }
+.vol-header .vol-summary { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.vol-actions { display: flex; gap: 4px; }
 
-.node-list {
-  list-style: none;
-  margin: 0; padding: 0;
-}
+.node-list { list-style: none; margin: 0; padding: 0; }
 .node-list:empty::after {
   content: "(空卷 - 添加首个章节)";
   display: block;
@@ -160,14 +115,7 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 .node:last-child { border-bottom: none; }
 .node:active { cursor: grabbing; }
 .node.dragging { opacity: 0.4; }
-
-.node .grip {
-  color: var(--muted);
-  font-size: 14px;
-  cursor: grab;
-  width: 18px;
-  flex-shrink: 0;
-}
+.node .grip { color: var(--muted); font-size: 14px; cursor: grab; width: 18px; flex-shrink: 0; }
 .node .node-info { flex: 1; min-width: 0; }
 .node .node-id {
   font-size: 11px; color: var(--muted);
@@ -181,20 +129,20 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.node .node-meta {
-  font-size: 11px; color: var(--muted);
-  margin-top: 2px;
-}
-.node-actions {
-  display: flex; gap: 4px;
-  flex-shrink: 0;
-}
+.node .node-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.node-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .node-actions .btn {
   min-height: 32px; padding: 4px 10px; font-size: 12px;
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; font-family: inherit;
 }
+.node-actions .btn:hover { background: var(--border); }
+.node-actions .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.node-actions .btn.danger { color: var(--crit); border-color: var(--crit); }
 
 .empty-section {
-  margin: 40px 20px;
+  margin: 40px 0;
   padding: 40px 20px;
   text-align: center;
   color: var(--muted);
@@ -204,14 +152,12 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 }
 .empty-section .hint { font-size: 13px; margin-top: 8px; }
 
-/* Modal (same as entities.html) */
 .modal-bg {
   display: none;
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.6);
   z-index: 100;
-  align-items: center;
-  justify-content: center;
+  align-items: center; justify-content: center;
   padding: 20px;
 }
 .modal-bg.show { display: flex; }
@@ -228,8 +174,7 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 .modal h2 { margin: 0 0 16px; font-size: 18px; }
 .field { margin-bottom: 12px; }
 .field label {
-  display: block;
-  font-size: 12px; color: var(--muted);
+  display: block; font-size: 12px; color: var(--muted);
   margin-bottom: 4px; font-weight: 500;
 }
 .field input, .field textarea, .field select {
@@ -243,9 +188,7 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 .field input:focus, .field textarea:focus, .field select:focus {
   outline: none; border-color: var(--accent);
 }
-.list-item-row {
-  display: flex; gap: 6px; margin-bottom: 6px;
-}
+.list-item-row { display: flex; gap: 6px; margin-bottom: 6px; }
 .list-item-row input { flex: 1; }
 .list-item-row button {
   padding: 4px 8px; font-size: 12px;
@@ -260,10 +203,7 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   background: none; border: none; padding: 0;
   font-family: inherit;
 }
-.modal-actions {
-  display: flex; gap: 8px; margin-top: 16px;
-  justify-content: flex-end;
-}
+.modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
 .error {
   background: rgba(255,107,107,0.15);
   color: var(--crit);
@@ -273,28 +213,22 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 }
 .error.show { display: block; }
 
-/* Diff panel */
 .diff-panel {
-  margin: 16px 20px;
+  margin: 16px 0;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px;
 }
-.diff-panel h3 {
-  margin: 0 0 12px; font-size: 14px;
-}
+.diff-panel h3 { margin: 0 0 12px; font-size: 14px; }
 .diff-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 6px 0;
-  font-size: 12px;
-  color: var(--muted);
+  padding: 6px 0; font-size: 12px; color: var(--muted);
 }
 .diff-row .badge {
   display: inline-block;
   padding: 2px 8px; border-radius: 4px;
-  background: var(--panel2);
-  font-size: 11px;
+  background: var(--panel2); font-size: 11px;
 }
 .diff-row .badge.added { background: rgba(109,217,155,0.2); color: var(--ok); }
 .diff-row .badge.removed { background: rgba(255,107,107,0.2); color: var(--crit); }
@@ -311,22 +245,16 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .toolbar { flex-wrap: wrap; }
-  .btn { font-size: 12px; padding: 6px 10px; }
+  .toolbar .btn { font-size: 12px; padding: 6px 10px; }
   .node { padding: 8px 12px; }
   .node-actions .btn { padding: 4px 6px; font-size: 11px; }
 }
 </style>
-</head>
-<body>
-{% include "_navbar.html" %}
-<div style="max-width:1400px;margin:0 auto;padding:0 20px;">
-  <h1 style="margin:16px 0 4px;font-size:22px;font-weight:600;">🌳 大纲编辑器</h1>
-  <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
-    树状视图 · 拖拽重排 · 版本对比 · AI 助手
-  </div>
-</div>
+
+<h1>🌳 大纲编辑器</h1>
+<div class="subtitle" style="margin-bottom:12px;">树状视图 · 拖拽重排 · 版本对比 · AI 助手</div>
 
 <div class="toolbar">
   <button class="btn primary" onclick="showCreateVol()">+ 新建卷</button>
@@ -335,7 +263,6 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
 
   <span style="margin-left: auto;"></span>
 
-  <!-- 模型切换 (v1.3 M5) -->
   <span class="model-switcher" title="切换本章应用的 LLM provider / model">
     <span><span class="current-dot" id="model-dot"></span><strong>AI 模型</strong></span>
     <select id="ms-provider" aria-label="Provider">
@@ -345,10 +272,9 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
     <button class="btn" onclick="saveModelConfig()" style="min-height:30px;padding:4px 12px;">💾 保存</button>
     <span id="ms-save-msg" class="save-msg"></span>
   </span>
-
 </div>
 
-<div id="content" style="padding: 0 0 40px;">
+<div id="content">
   <div class="empty-section" id="loading">
     <div class="spinner"></div>
     <div class="hint">加载大纲...</div>
@@ -418,19 +344,17 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   </div>
 </div>
 
-<!-- AI 助手 Modal (v1.3 M2) -->
+<!-- AI 助手 Modal -->
 <div class="modal-bg" id="modal-ai">
   <div class="modal" style="max-width: 720px;">
     <h2>🤖 AI 助手 <span style="font-size: 12px; color: var(--muted); font-weight: normal;">(本地 Qwen3.6-35B)</span></h2>
     <div class="error" id="modal-ai-error"></div>
 
-    <!-- Tab 切换 -->
     <div style="display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
       <button class="btn" id="ai-tab-suggest" onclick="switchAITab('suggest')" style="border-radius: 4px 4px 0 0; border-bottom: 2px solid var(--accent); color: var(--accent);">💡 建议下一章</button>
       <button class="btn" id="ai-tab-expand" onclick="switchAITab('expand')" style="border-radius: 4px 4px 0 0; color: var(--muted);">📝 展开章节</button>
     </div>
 
-    <!-- Tab 1: 建议下一章 -->
     <div id="ai-pane-suggest">
       <p style="color: var(--muted); font-size: 12px; margin-top: 0;">
         根据当前大纲和章节进度, AI 会生成 3 个候选章节方向。
@@ -450,7 +374,6 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
       <div id="ai-suggest-result" style="margin-top: 16px;"></div>
     </div>
 
-    <!-- Tab 2: 展开章节 -->
     <div id="ai-pane-expand" style="display: none;">
       <p style="color: var(--muted); font-size: 12px; margin-top: 0;">
         输入章节标题和简介, AI 会展开为完整的 key_events + foreshadowing。
@@ -472,18 +395,17 @@ h1 { margin: 12px 0 0; font-size: 22px; font-weight: 600; }
   </div>
 </div>
 
-<!-- Diff panel (隐藏直到用户点击"查看历史") -->
 <div class="diff-panel" id="diff-panel" style="display: none;">
   <h3>📜 版本对比</h3>
   <div id="diff-content"></div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 const BOOK = {{ book | tojson }};
-let OUTLINE = null;  // 当前大纲 (volumes + chapters)
-let VERSIONS = [];   // 版本列表 (暂不通过前端接口加载 — 留接口位)
-
-// ── API helpers ────────────────────────────────────────────────────────────
+let OUTLINE = null;
+let VERSIONS = [];
 
 async function api(method, path, body = null) {
   const opts = { method, headers: {"Content-Type": "application/json"} };
@@ -498,20 +420,23 @@ async function api(method, path, body = null) {
   return txt ? JSON.parse(txt) : null;
 }
 
-// ── Load outline ───────────────────────────────────────────────────────────
-
 async function loadOutline() {
   try {
     OUTLINE = await api("GET", `/api/outline/${BOOK}`);
-    try {
-      VERSIONS = await api("GET", `/api/outline/${BOOK}/versions`);
-    } catch { VERSIONS = []; }
+    try { VERSIONS = await api("GET", `/api/outline/${BOOK}/versions`); }
+    catch { VERSIONS = []; }
   } catch (e) {
     document.getElementById("content").innerHTML =
       `<div class="empty-section">加载失败: ${e.message}</div>`;
     return;
   }
   render();
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
 }
 
 function render() {
@@ -524,7 +449,6 @@ function render() {
       </div>`;
     return;
   }
-  // Build per-vol node list
   const volToNodes = {};
   for (const v of OUTLINE.volumes) volToNodes[v.id] = [];
   for (const ch of OUTLINE.chapters) {
@@ -573,10 +497,7 @@ function render() {
   attachDragHandlers();
 }
 
-// ── Drag & drop ────────────────────────────────────────────────────────────
-
 let dragSrcId = null;
-
 function attachDragHandlers() {
   document.querySelectorAll(".node").forEach(node => {
     node.addEventListener("dragstart", e => {
@@ -596,24 +517,16 @@ function attachDragHandlers() {
       e.dataTransfer.dropEffect = "move";
       list.classList.add("drop-target");
     });
-    list.addEventListener("dragleave", () => {
-      list.classList.remove("drop-target");
-    });
+    list.addEventListener("dragleave", () => list.classList.remove("drop-target"));
     list.addEventListener("drop", async e => {
       e.preventDefault();
       list.classList.remove("drop-target");
       const chId = e.dataTransfer.getData("text/plain");
       if (!chId || chId === dragSrcId) return;
       const targetVol = list.dataset.vol;
-      // 计算插入位置 (鼠标 Y 最近的 sibling)
       const after = getDragAfterElement(list, e.clientY);
       const siblings = Array.from(list.querySelectorAll(".node"));
-      let pos = siblings.length; // 默认 append
-      if (after == null) {
-        pos = siblings.length;
-      } else {
-        pos = siblings.indexOf(after);
-      }
+      const pos = after == null ? siblings.length : siblings.indexOf(after);
       await reorderNode(chId, targetVol, pos);
     });
   });
@@ -642,13 +555,9 @@ async function reorderNode(chId, newVol, newPos) {
   }
 }
 
-// ── Move up/down (按钮降级路径) ──────────────────────────────────────────────
-
 async function moveNode(chId, currentVol, newPos) {
   await reorderNode(chId, currentVol, newPos);
 }
-
-// ── Modal: 章节节点 ──────────────────────────────────────────────────────────
 
 function showCreateVol() {
   document.getElementById("vol-title").value = "";
@@ -763,14 +672,13 @@ async function submitNode(e) {
     } else {
       await api("POST", `/api/outline/${BOOK}/node`, {
         parent_vol: data.vol,
-        position: 999,  // append to vol
+        position: 999,
         title: data.title,
         summary: data.summary,
         pov: data.pov,
         key_events: data.key_events,
         foreshadow: data.foreshadow,
       });
-      data.vol = null;  // already used in POST
     }
     closeModal("modal-node");
     await loadOutline();
@@ -798,21 +706,11 @@ function closeModal(id) {
   document.getElementById(id).classList.remove("show");
 }
 
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
-}
-
-// ── Diff panel (显示版本对比) ────────────────────────────────────────────────
-// 在 toolbar 增加"查看历史"按钮将触发
-
 async function showDiff() {
   if (VERSIONS.length < 2) {
     alert("至少需要 2 个版本才能对比 — 当前 " + VERSIONS.length + " 个");
     return;
   }
-  // 默认对比最新两个
   const v1 = VERSIONS[VERSIONS.length - 1].version_id;
   const v2 = VERSIONS[0].version_id;
   try {
@@ -845,10 +743,7 @@ function renderDiff(d, v1, v2) {
   document.getElementById("diff-panel").style.display = "block";
 }
 
-// ── Boot ────────────────────────────────────────────────────────────────────
-
 document.addEventListener("DOMContentLoaded", () => {
-  // 添加"查看历史"按钮
   const tb = document.querySelector(".toolbar");
   const btn = document.createElement("button");
   btn.className = "btn";
@@ -856,12 +751,10 @@ document.addEventListener("DOMContentLoaded", () => {
   btn.onclick = showDiff;
   tb.appendChild(btn);
   loadOutline();
-  loadModelConfig();  // v1.3 M5: 模型切换器
+  loadModelConfig();
 });
 
-// ── Model Switcher (v1.3 M5) ────────────────────────────────────────
 let _msProviders = [];
-
 async function loadModelConfig() {
   const sel = document.getElementById("ms-provider");
   const input = document.getElementById("ms-model");
@@ -877,8 +770,6 @@ async function loadModelConfig() {
     sel.innerHTML =
       _msProviders.map(p => `<option value="${p.name}">${p.name}${p.model ? ' (' + p.model + ')' : ''}</option>`).join("")
       + '<option value="custom">custom...</option>';
-
-    // 当前 book 的设置
     const r2 = await fetch("/api/config/{{ book }}");
     if (r2.ok) {
       const cfg = await r2.json();
@@ -890,7 +781,6 @@ async function loadModelConfig() {
         sel.value = "custom";
       }
       if (sel.value === "custom") {
-        // 提供一个手动输入 provider 名的输入框
         if (!document.getElementById("ms-custom-prov")) {
           const inp = document.createElement("input");
           inp.type = "text"; inp.id = "ms-custom-prov"; inp.placeholder = "provider 名";
@@ -954,7 +844,6 @@ async function saveModelConfig() {
   setTimeout(() => { msg.textContent = ""; }, 3000);
 }
 
-// 切换 select 时若选 custom 显示 provider 名输入框
 document.getElementById("ms-provider").addEventListener("change", (e) => {
   if (e.target.value === "custom" && !document.getElementById("ms-custom-prov")) {
     const inp = document.createElement("input");
@@ -965,7 +854,6 @@ document.getElementById("ms-provider").addEventListener("change", (e) => {
   }
 });
 
-// 点背景关闭 modal
 document.getElementById("modal-node").addEventListener("click", e => {
   if (e.target.id === "modal-node") closeModal("modal-node");
 });
@@ -973,7 +861,6 @@ document.getElementById("modal-vol").addEventListener("click", e => {
   if (e.target.id === "modal-vol") closeModal("modal-vol");
 });
 
-// ── AI 助手 (v1.3 M2) ──────────────────────────────────────────────
 function showAIModal() {
   document.getElementById("modal-ai").classList.add("show");
   switchAITab("suggest");
@@ -1027,41 +914,48 @@ function renderAISuggestion(ch, idx) {
   return `
     <div style="background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-        <span style="background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">候选 ${idx + 1}</span>
-        <strong>${escapeHtml(ch.title || "(无标题)")}</strong>
+        <strong style="color: var(--accent);">#${idx + 1}</strong>
+        <span style="flex: 1; font-weight: 500;">${escapeHtml(ch.title || "")}</span>
       </div>
-      <div style="font-size: 13px; color: var(--muted); margin-bottom: 8px;">${escapeHtml(ch.summary || "")}</div>
-      ${ch.pov ? `<div style="font-size: 12px; margin-bottom: 4px;">📷 POV: ${escapeHtml(ch.pov)}</div>` : ""}
-      ${ch.key_events && ch.key_events.length ? `<div style="font-size: 12px; margin-bottom: 4px;">🎯 关键事件: ${ch.key_events.map(escapeHtml).join(" → ")}</div>` : ""}
-      ${ch.foreshadow ? `<div style="font-size: 12px; margin-bottom: 8px;">🔮 伏笔: ${escapeHtml(ch.foreshadow)}</div>` : ""}
-      <button class="btn primary" style="font-size: 12px; padding: 4px 10px;" onclick='adoptSuggestion(${JSON.stringify(ch).replace(/'/g, "\\'")})'>采纳并创建</button>
+      <div style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
+        ${ch.pov ? `📍 POV: ${escapeHtml(ch.pov)} · ` : ""}
+        ${ch.vol ? `卷: ${escapeHtml(ch.vol)}` : ""}
+      </div>
+      ${ch.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${escapeHtml(ch.summary)}</div>` : ""}
+      ${ch.key_events && ch.key_events.length ? `<div style="font-size: 12px; color: var(--muted);">📌 ${ch.key_events.map(escapeHtml).join(" · ")}</div>` : ""}
+      ${ch.foreshadow && ch.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn);">🌱 ${ch.foreshadow.map(escapeHtml).join(" · ")}</div>` : ""}
+      <div style="margin-top: 8px; display: flex; gap: 6px;">
+        <button class="btn primary" style="font-size: 12px; padding: 4px 10px;" onclick='acceptAISuggestion(${JSON.stringify(ch).replace(/'/g, "&#39;")})'>✓ 加入大纲</button>
+      </div>
     </div>
   `;
 }
 
-function adoptSuggestion(ch) {
-  // 填充到新建章节 modal
-  showAddNode(null);
-  setTimeout(() => {
-    document.getElementById("node-title").value = ch.title || "";
-    document.getElementById("node-summary").value = ch.summary || "";
-    if (ch.pov) document.getElementById("node-pov").value = ch.pov;
-    if (ch.key_events) populateKeyEvents(ch.key_events);
-    if (ch.foreshadow) populateForeshadow(ch.foreshadow);
-    closeModal("modal-ai");
-  }, 100);
+async function acceptAISuggestion(ch) {
+  if (!confirm(`加入章节 "${ch.title}" 到大纲?`)) return;
+  try {
+    await api("POST", `/api/outline/${BOOK}/node`, {
+      parent_vol: ch.vol || (OUTLINE.volumes[0] && OUTLINE.volumes[0].id) || null,
+      position: 999,
+      title: ch.title,
+      summary: ch.summary,
+      pov: ch.pov,
+      key_events: ch.key_events || [],
+      foreshadow: ch.foreshadow || [],
+    });
+    await loadOutline();
+  } catch (e) {
+    alert("加入失败: " + e.message);
+  }
 }
 
 async function runAIExpand() {
   clearAIError();
   const title = document.getElementById("ai-expand-title").value.trim();
   const summary = document.getElementById("ai-expand-summary").value.trim();
-  if (!title || !summary) {
-    showAIError("标题和简介都必须填写");
-    return;
-  }
+  if (!title) { showAIError("请填写章节标题"); return; }
   const resultEl = document.getElementById("ai-expand-result");
-  resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 生成中, 请稍候 (~5-30秒)...</div>';
+  resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 展开中...</div>';
   try {
     const r = await fetch("/api/outline/{{ book }}/ai-expand", {
       method: "POST",
@@ -1073,32 +967,36 @@ async function runAIExpand() {
     if (!data.ok) throw new Error(data.error || "请求失败");
     resultEl.innerHTML = `
       <div style="background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
-        <div style="font-size: 12px; color: var(--muted); margin-bottom: 6px;">🎯 关键事件 (${(data.key_events||[]).length})</div>
-        <ul style="margin: 0 0 12px 20px; padding: 0;">
-          ${(data.key_events||[]).map(e => `<li style="font-size: 13px; margin-bottom: 4px;">${escapeHtml(e)}</li>`).join("")}
-        </ul>
-        ${data.foreshadow ? `<div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">🔮 伏笔</div><div style="font-size: 13px; margin-bottom: 12px;">${escapeHtml(data.foreshadow)}</div>` : ""}
-        ${data.pov_notes ? `<div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">📷 POV 补充</div><div style="font-size: 13px; margin-bottom: 12px;">${escapeHtml(data.pov_notes)}</div>` : ""}
-        ${data.notes ? `<div style="font-size: 11px; color: var(--muted); padding-top: 8px; border-top: 1px solid var(--border);">💭 ${escapeHtml(data.notes)}</div>` : ""}
+        <div style="font-weight: 500; margin-bottom: 8px;">${escapeHtml(title)}</div>
+        ${data.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${escapeHtml(data.summary)}</div>` : ""}
+        ${data.key_events && data.key_events.length ? `<div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">📌 关键事件:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.key_events.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : ""}
+        ${data.foreshadow && data.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn); margin-bottom: 4px;">🌱 伏笔:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.foreshadow.map(f => `<li>${escapeHtml(f)}</li>`).join("")}</ul>` : ""}
+        <div style="margin-top: 8px;">
+          <button class="btn primary" style="font-size: 12px; padding: 4px 10px;" onclick='acceptAIExpanded(${JSON.stringify({title, summary: data.summary || summary, key_events: data.key_events || [], foreshadow: data.foreshadow || []}).replace(/'/g, "&#39;")})'>✓ 加入大纲</button>
+        </div>
       </div>
     `;
   } catch (e) {
     resultEl.innerHTML = "";
-    showAIError("生成失败: " + e.message);
+    showAIError("展开失败: " + e.message);
   }
 }
 
-function populateKeyEvents(events) {
-  // 查找 key_events list-item-rows 容器, 替换内容
-  // 简化: 仅填第一个, 其他手动添加
-  const container = document.querySelector("#modal-node .list-item-row");
-  if (!container) return;
-  // TODO: 完整实现 (需要查看现有 modal 结构)
-}
-
-function populateForeshadow(text) {
-  // TODO: 类似处理
+async function acceptAIExpanded(data) {
+  try {
+    await api("POST", `/api/outline/${BOOK}/node`, {
+      parent_vol: OUTLINE.volumes[0] && OUTLINE.volumes[0].id,
+      position: 999,
+      title: data.title,
+      summary: data.summary,
+      key_events: data.key_events,
+      foreshadow: data.foreshadow,
+    });
+    closeModal("modal-ai");
+    await loadOutline();
+  } catch (e) {
+    alert("加入失败: " + e.message);
+  }
 }
 </script>
-</body>
-</html>
+{% endblock %}
