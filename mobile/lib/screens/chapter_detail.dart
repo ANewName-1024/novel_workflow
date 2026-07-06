@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/chapter.dart';
 import '../services/api.dart';
+import '../services/logger.dart';
 
 class ChapterDetailScreen extends StatefulWidget {
   final String bookName;
@@ -19,6 +20,10 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
   Chapter? _detail;
   bool _loading = true;
   String? _error;
+  bool _editing = false;
+  final TextEditingController _editCtrl = TextEditingController();
+  ChapterDiff? _diffData;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -26,15 +31,60 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _editCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
       final ch = await novelApi.getChapter(widget.bookName, widget.chapter.id);
       if (!mounted) return;
-      setState(() { _detail = ch; _loading = false; });
+      setState(() { _detail = ch; _editCtrl.text = ch.content ?? ''; _loading = false; });
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _loadDiff() async {
+    try {
+      final diff = await novelApi.getDiff(widget.bookName, widget.chapter.id);
+      if (!mounted) return;
+      setState(() => _diffData = diff);
+    } catch (e) {
+      appLogger.warn('diff load', ctx: {'err': e.toString()});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Diff 加载失败: $e')));
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final data = await novelApi.editChapter(
+        widget.bookName, widget.chapter.id, _editCtrl.text,
+        notes: 'mobile edit',
+      );
+      if (!mounted) return;
+      final applied = data['applied'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(applied ? '已保存并应用 ✅' : '已保存评论，待应用'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      setState(() { _editing = false; });
+      _load();
+      _loadDiff();
+    } catch (e) {
+      appLogger.error('edit save', ctx: {'err': e.toString()});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -48,9 +98,7 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('操作失败: $e')));
     }
   }
 
@@ -64,9 +112,7 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('操作失败: $e')));
     }
   }
 
@@ -79,9 +125,7 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('触发失败: $e'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('触发失败: $e')));
     }
   }
 
@@ -89,9 +133,43 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
   Widget build(BuildContext context) {
     final title = _detail?.title ?? widget.chapter.title;
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          if (!_editing && _detail != null)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: '编辑',
+              onPressed: () => setState(() => _editing = true),
+            ),
+          if (_editing)
+            IconButton(
+              icon: _saving
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.save),
+              tooltip: '保存 (apply=true)',
+              onPressed: _saving ? null : _save,
+            ),
+          if (_editing)
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: '取消编辑',
+              onPressed: _saving ? null : () {
+                setState(() {
+                  _editing = false;
+                  _editCtrl.text = _detail?.content ?? '';
+                });
+              },
+            ),
+          IconButton(
+            icon: const Icon(Icons.difference),
+            tooltip: '查看 Diff',
+            onPressed: _loadDiff,
+          ),
+        ],
+      ),
       body: _buildBody(),
-      floatingActionButton: Row(
+      floatingActionButton: _editing ? null : Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           FloatingActionButton.small(
@@ -138,6 +216,54 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
       );
     }
 
+    if (_editing) return _buildEditor();
+
+    return Column(
+      children: [
+        if (_diffData != null) _buildDiffView(_diffData!),
+        Expanded(child: _buildReadOnly()),
+      ],
+    );
+  }
+
+  Widget _buildEditor() {
+    final wc = _countWords(_editCtrl.text);
+    final chars = _editCtrl.text.length;
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('编辑模式', style: Theme.of(context).textTheme.titleMedium),
+              Text('字符: $chars  字数: $wc',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: TextField(
+              controller: _editCtrl,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              style: const TextStyle(fontSize: 14, height: 1.7),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.grey.withValues(alpha: 0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                hintText: '在这里编辑章节...',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnly() {
     final content = _detail?.content ?? '(无内容)';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -172,5 +298,70 @@ class _ChapterDetailScreenState extends State<ChapterDetailScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildDiffView(ChapterDiff diff) {
+    if (!diff.hasDiff) {
+      return Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(children: [
+          const Icon(Icons.check_circle_outline, color: Colors.green),
+          const SizedBox(width: 8),
+          const Text('当前章节无 diff（已应用最新版本）'),
+        ]),
+      );
+    }
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.difference, color: Colors.orange, size: 18),
+              const SizedBox(width: 6),
+              Text('${diff.entries.length} 处变更',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...diff.entries.take(20).map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: e.isInsert ? Colors.green.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${e.isInsert ? "+" : "-"}${e.text.length > 80 ? "${e.text.substring(0, 80)}..." : e.text}',
+                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                  ),
+                ),
+              )),
+          if (diff.entries.length > 20)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('... +${diff.entries.length - 20} 行 (已折叠)',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  int _countWords(String s) {
+    final clean = s.replaceAll(RegExp(r'\s'), '').replaceAll(RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9]'), '');
+    return clean.length;
   }
 }

@@ -111,10 +111,6 @@ class NovelApi {
     await _post('/api/reject/$book/$ch');
   }
 
-  Future<void> editChapter(String book, String ch, String content) async {
-    await _post('/api/edit/$book/$ch', body: {'content': content});
-  }
-
   // === Stats ===
   Future<BookStats> getStats(String book) async {
     final data = await _get('/api/stats/$book') as Map<String, dynamic>;
@@ -125,6 +121,31 @@ class NovelApi {
   Future<Outline> getOutline(String book) async {
     final data = await _get('/api/outline/$book') as Map<String, dynamic>;
     return Outline.fromJson(data);
+  }
+
+  Future<List<dynamic>> aiSuggestOutline(String book, {int count = 3, int? nextNum}) async {
+    final data = await _post('/api/outline/$book/ai-suggest',
+        body: {'count': count, if (nextNum != null) 'next_num': nextNum});
+    return (data['chapters'] as List<dynamic>?) ?? [];
+  }
+
+  Future<Map<String, dynamic>> aiExpandOutline(String book, {required String title, required String summary}) async {
+    final data = await _post('/api/outline/$book/ai-expand',
+        body: {'title': title, 'summary': summary});
+    return (data as Map<String, dynamic>);
+  }
+
+  Future<void> saveOutlineNode(String book, String chapterId, Map<String, dynamic> patch) async {
+    await _post('/api/outline/$book/node/$chapterId',
+        body: patch);
+  }
+
+  Future<void> addOutlineNode(String book, Map<String, dynamic> node) async {
+    await _post('/api/outline/$book/node', body: node);
+  }
+
+  Future<void> deleteOutlineNode(String book, String chapterId) async {
+    await _post('/api/outline/$book/node/$chapterId/delete', body: {'id': chapterId});
   }
 
   // === Pipeline ===
@@ -139,6 +160,48 @@ class NovelApi {
     return runs
         .map((e) => PipelineHistory.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  // === LLM Config ===
+  Future<Map<String, dynamic>> listLLMProviders() async {
+    final data = await _get('/api/llm/providers') as Map<String, dynamic>;
+    return data;
+  }
+
+  Future<Map<String, dynamic>> llmHealthCheck({String? provider, String? model, String? book}) async {
+    final data = await _post('/api/llm/health',
+        body: {
+          if (provider != null) 'provider': provider,
+          if (model != null) 'model': model,
+          if (book != null) 'book': book,
+        });
+    return (data as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> getBookConfig(String book) async {
+    final data = await _get('/api/config/$book') as Map<String, dynamic>;
+    return data;
+  }
+
+  Future<void> saveBookConfig(String book, Map<String, dynamic> patch) async {
+    await _post('/api/config/$book', body: patch);
+  }
+
+  // === Chapter edit + diff ===
+  Future<Map<String, dynamic>> editChapter(String book, String ch, String content, {String? notes, bool apply = true}) async {
+    final data = await _post('/api/edit/$book/$ch',
+        body: {'text': content, if (notes != null) 'notes': notes, 'apply': apply});
+    return data as Map<String, dynamic>;
+  }
+
+  Future<dynamic> getChapterRaw(String book, String ch) async {
+    final url = '$_baseUrl/api/chapter/$book/$ch';
+    final r = await http.get(Uri.parse(url),
+        headers: {'Accept': 'text/plain', 'X-Client-Version': 'apk-1.0.0'});
+    if (r.statusCode >= 400) {
+      throw Exception('HTTP ${r.statusCode}: ${r.body}');
+    }
+    return r.body;
   }
 
   void dispose() {

@@ -33,25 +33,32 @@ class Chapter {
   }
 }
 
-class ChapterDiff {
-  final String left;
-  final String right;
-  final int linesAdded;
-  final int linesRemoved;
+/// One line in the diff output (legacy harness).
+class DiffEntry {
+  final String text;
+  final bool isInsert;
 
-  ChapterDiff({
-    required this.left,
-    required this.right,
-    this.linesAdded = 0,
-    this.linesRemoved = 0,
-  });
+  DiffEntry({required this.text, required this.isInsert});
+
+  factory DiffEntry.fromJson(Map<String, dynamic> json) {
+    final t = json['text'] ?? json['line'] ?? '';
+    final kind = (json['type'] ?? json['op'] ?? json['kind'] ?? '').toString();
+    final isInsert = kind == '+' || kind == 'insert' || kind == 'add';
+    return DiffEntry(text: t.toString(), isInsert: isInsert);
+  }
+}
+
+/// Backend returns `{diff:[], has_diff:false, stats:null}` for /api/diff/<book>/<ch>.
+class ChapterDiff {
+  final List<DiffEntry> entries;
+  final bool hasDiff;
+
+  ChapterDiff({required this.entries, required this.hasDiff});
 
   factory ChapterDiff.fromJson(Map<String, dynamic> json) {
-    return ChapterDiff(
-      left: json['left'] ?? '',
-      right: json['right'] ?? '',
-      linesAdded: json['lines_added'] ?? 0,
-      linesRemoved: json['lines_removed'] ?? 0,
-    );
+    final raw = (json['diff'] as List<dynamic>?) ?? const [];
+    final entries = raw.map((e) => DiffEntry.fromJson(e as Map<String, dynamic>)).toList();
+    final has = json['has_diff'] == true || entries.isNotEmpty;
+    return ChapterDiff(entries: entries, hasDiff: has);
   }
 }

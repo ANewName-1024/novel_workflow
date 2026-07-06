@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api.dart';
 import '../services/logger.dart';
 import 'debug.dart';
+import 'llm_config.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -65,6 +66,22 @@ class SettingsScreen extends StatelessWidget {
                       style: TextStyle(fontSize: 11, color: Colors.grey)),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // LLM config button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LLMConfigScreen()),
+                );
+              },
+              icon: const Icon(Icons.psychology),
+              label: const Text('LLM 配置'),
             ),
           ),
           const SizedBox(height: 24),
