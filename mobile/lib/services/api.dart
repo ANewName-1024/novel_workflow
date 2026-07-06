@@ -5,10 +5,11 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/outline.dart';
 import '../models/stats.dart';
+import 'logger.dart';
 
 class NovelApi {
+  static const _defaultBase = 'http://8.137.116.121:9080';
   static const _keyBaseUrl = 'novel_base_url';
-  static const _defaultBase = 'http://localhost:5000';
 
   String _baseUrl = _defaultBase;
   http.Client? _client;
@@ -19,34 +20,39 @@ class NovelApi {
     _client = http.Client();
   }
 
-  String get baseUrl => _baseUrl;
+  String get baseUrl => '$_defaultBase';
 
   Future<void> setBaseUrl(String url) async {
-    _baseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyBaseUrl, _baseUrl);
+    // Ignore â€?server URL is fixed for this version
   }
 
   Future<Map<String, dynamic>> _get(String path) async {
-    final r = await http.get(Uri.parse('$_baseUrl$path'),
-        headers: {'Accept': 'application/json'});
+    final url = '$_baseUrl$path';
+    final r = await http.get(Uri.parse(url),
+        headers: {'Accept': 'application/json', 'X-Client-Version': 'apk-1.0.0'});
     if (r.statusCode >= 400) {
+      appLogger.logHttpError(url, r.statusCode, r.body);
       throw Exception('HTTP ${r.statusCode}: ${r.body}');
     }
+    appLogger.debug('GET $url â†?${r.statusCode}');
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> _post(String path,
       {Map<String, dynamic>? body}) async {
-    final r = await http.post(Uri.parse('$_baseUrl$path'),
+    final url = '$_baseUrl$path';
+    final r = await http.post(Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-Client-Version': 'apk-1.0.0',
         },
         body: body != null ? jsonEncode(body) : null);
     if (r.statusCode >= 400) {
+      appLogger.logHttpError(url, r.statusCode, r.body);
       throw Exception('HTTP ${r.statusCode}: ${r.body}');
     }
+    appLogger.debug('POST $url â†?${r.statusCode}');
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 

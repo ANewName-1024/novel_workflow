@@ -49,6 +49,14 @@ app = Flask(
 # pytest 跟 importlib 加载方式都能解析 (修复 v1.1.2 引入的 namespace package regression).
 from .dashboard import dashboard_bp  # noqa: E402
 app.register_blueprint(dashboard_bp)
+
+# v1.3 M5: APK 日志 + 远程调试端点
+try:
+    from .app_log import app_log_bp  # noqa: E402
+    app.register_blueprint(app_log_bp)
+except Exception as _e:
+    import sys
+    print(f"[warn] app_log blueprint not registered: {_e}", file=sys.stderr)
 # session secret for login cookies. Use env, fallback to stable dev key.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-in-prod")
 

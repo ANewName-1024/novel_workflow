@@ -1,72 +1,111 @@
 import 'package:flutter/material.dart';
 import '../services/api.dart';
+import '../services/logger.dart';
+import 'debug.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
-
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  late TextEditingController _urlController;
-
-  @override
-  void initState() {
-    super.initState();
-    _urlController = TextEditingController(text: novelApi.baseUrl);
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final url = _urlController.text.trim();
-    if (url.isEmpty) return;
-    await novelApi.setBaseUrl(url);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存'), backgroundColor: Colors.green),
-    );
-    Navigator.pop(context);
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('服务器地址', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _urlController,
-              decoration: const InputDecoration(
-                hintText: 'http://your-server:5000',
-                border: OutlineInputBorder(),
+        children: [
+          // Server info card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('服务器', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.cloud, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SelectableText(novelApi.baseUrl,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('地址已固定，如需修改请重新打包',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
               ),
-              keyboardType: TextInputType.url,
-              autofocus: false,
             ),
-            const SizedBox(height: 8),
-            Text(
-              '服务端运行 review_ui 后在此填入完整 URL',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+
+          // Device info card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('设备', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.phone_android, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SelectableText(appLogger.deviceId,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('此 ID 用于服务器端日志追踪',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _save,
-              icon: const Icon(Icons.save),
-              label: const Text('保存'),
+          ),
+          const SizedBox(height: 24),
+
+          // Debug button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DebugScreen()),
+                );
+              },
+              icon: const Icon(Icons.bug_report),
+              label: const Text('调试面板'),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await appLogger.flushNow();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('日志已上传到服务器')),
+                );
+              },
+              icon: const Icon(Icons.cloud_upload),
+              label: const Text('上传日志'),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 8),
+          Center(
+            child: Text('小说工作流 v1.0.0',
+                style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+          ),
+        ],
       ),
     );
   }

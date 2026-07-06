@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'models/book.dart';
 import 'services/api.dart';
+import 'services/logger.dart';
 import 'screens/book_detail.dart';
 import 'screens/settings.dart';
 
@@ -8,6 +9,8 @@ import 'screens/settings.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await novelApi.init();
+  await appLogger.init();
+  appLogger.info('App started');
   runApp(const NovelApp());
 }
 
@@ -16,6 +19,14 @@ class NovelApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Global error handler
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      appLogger.reportCrash(
+        details.exceptionAsString(),
+        details.stack?.toString() ?? '',
+      );
+    };
     return MaterialApp(
       title: '小说工作流',
       debugShowCheckedModeBanner: false,
