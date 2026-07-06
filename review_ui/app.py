@@ -541,13 +541,21 @@ def api_llm_providers():
     """GET /api/llm/providers — 列所有 provider 配置 (不暴露完整 key)."""
     from lib import llm_providers as lp
     providers = {}
-    for name, cfg in sorted(lp.BUILTIN_PROVIDERS.items()):
+    # Use merged config (BUILTIN + user-defined from config.yaml)
+    merged = lp._merge_user_providers()
+    for name, cfg in sorted(merged.items()):
         providers[name] = {
-            "model": cfg.get("model", ""),
+            "model": cfg.get("default_model", ""),
             "api_base": cfg.get("api_base", ""),
             "api_key_configured": bool(cfg.get("api_key")),
+            "models": cfg.get("models", []),
         }
-    return jsonify({"ok": True, "providers": providers, "current_model": os.environ.get("MODEL", "")})
+    return jsonify({
+        "ok": True,
+        "providers": providers,
+        "default_provider": os.environ.get("DEFAULT_PROVIDER", "local"),
+        "current_model": os.environ.get("MODEL", ""),
+    })
 
 
 @app.route("/api/llm/health", methods=["POST"])

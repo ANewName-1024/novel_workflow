@@ -14,11 +14,8 @@ class _LLMConfigScreenState extends State<LLMConfigScreen> {
   static const _keyProvider = 'llm_provider';
   static const _keyModel = 'llm_model';
   static const _keyApiKey = 'llm_api_key';
-  static const _keyDefaultProvider = 'llm_default_provider';
-
   Map<String, dynamic> _providers = {};
   String? _currentProvider;
-  String? _currentModel;
   String? _defaultProvider;
 
   final TextEditingController _modelCtrl = TextEditingController();
@@ -45,11 +42,18 @@ class _LLMConfigScreenState extends State<LLMConfigScreen> {
       final data = await novelApi.listLLMProviders();
       final prefs = await SharedPreferences.getInstance();
       setState(() {
-        _providers = data;
-        _currentProvider = prefs.getString(_keyProvider) ?? data['current_model'] as String? ?? '';
-        _currentModel = prefs.getString(_keyModel) ?? data['default_provider'] as String? ?? '';
+        _providers = data['providers'] is Map ? Map<String, dynamic>.from(data['providers']) : <String, dynamic>{};
         _defaultProvider = data['default_provider'] as String?;
-        _modelCtrl.text = _currentModel ?? '';
+        _currentProvider = prefs.getString(_keyProvider) ?? _defaultProvider;
+        // model 优先取当前 provider 的默认 model
+        String? initialModel = prefs.getString(_keyModel);
+        if (initialModel == null && _currentProvider != null) {
+          final prov = _providers[_currentProvider];
+          if (prov is Map && prov['model'] != null) {
+            initialModel = prov['model'].toString();
+          }
+        }
+        _modelCtrl.text = initialModel ?? '';
         _loading = false;
       });
     } catch (e) {
@@ -151,7 +155,7 @@ class _LLMConfigScreenState extends State<LLMConfigScreen> {
             final selected = _currentProvider == name;
             final testing = _testingProvider == name;
             return Card(
-              color: selected ? Theme.of(context).colorScheme.primary.withOpacity(0.1) : null,
+              color: selected ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1) : null,
               child: ListTile(
                 title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Column(
