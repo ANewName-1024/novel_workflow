@@ -402,12 +402,13 @@
 {% endblock %}
 
 {% block scripts %}
+{% raw %}
 <script>
-const BOOK = {{ book | tojson }};
+const BOOK = window.BOOK;
 let OUTLINE = null;
 let VERSIONS = [];
 
-async function api(method, path, body = null) {
+async function NW.api(method, path, body = null) {
   const opts = { method, headers: {"Content-Type": "application/json"} };
   if (body !== null) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);
@@ -422,8 +423,8 @@ async function api(method, path, body = null) {
 
 async function loadOutline() {
   try {
-    OUTLINE = await api("GET", `/api/outline/${BOOK}`);
-    try { VERSIONS = await api("GET", `/api/outline/${BOOK}/versions`); }
+    OUTLINE = await NW.api("GET", `/api/outline/${BOOK}`);
+    try { VERSIONS = await NW.api("GET", `/api/outline/${BOOK}/versions`); }
     catch { VERSIONS = []; }
   } catch (e) {
     document.getElementById("content").innerHTML =
@@ -433,7 +434,7 @@ async function loadOutline() {
   render();
 }
 
-function escapeHtml(s) {
+function NW.escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[c]));
@@ -457,40 +458,40 @@ function render() {
   c.innerHTML = OUTLINE.volumes.map(vol => {
     const nodes = volToNodes[vol.id];
     const nodesHtml = nodes.map((n, idx) => `
-      <li class="node" draggable="true" data-ch-id="${escapeHtml(n.id)}" data-vol="${escapeHtml(vol.id)}" data-pos="${idx}">
+      <li class="node" draggable="true" data-ch-id="${NW.escapeHtml(n.id)}" data-vol="${NW.escapeHtml(vol.id)}" data-pos="${idx}">
         <span class="grip">⋮⋮</span>
         <div class="node-info">
           <div>
-            <span class="node-id">${escapeHtml(n.id)}</span>
-            <span class="node-title">${escapeHtml(n.title || "(未命名)")}</span>
+            <span class="node-id">${NW.escapeHtml(n.id)}</span>
+            <span class="node-title">${NW.escapeHtml(n.title || "(未命名)")}</span>
           </div>
           <div class="node-meta">
-            ${escapeHtml(n.pov || "")}
+            ${NW.escapeHtml(n.pov || "")}
             ${n.key_events && n.key_events.length ? ` · ${n.key_events.length} 事件` : ""}
             ${n.foreshadow && n.foreshadow.length ? ` · ${n.foreshadow.length} 伏笔` : ""}
           </div>
         </div>
         <div class="node-actions">
-          <button class="btn" onclick="moveNode('${escapeHtml(n.id)}', '${escapeHtml(vol.id)}', ${idx - 1})" ${idx === 0 ? "disabled" : ""}>↑</button>
-          <button class="btn" onclick="moveNode('${escapeHtml(n.id)}', '${escapeHtml(vol.id)}', ${idx + 2})" ${idx === nodes.length - 1 ? "disabled" : ""}>↓</button>
+          <button class="btn" onclick="moveNode('${NW.escapeHtml(n.id)}', '${NW.escapeHtml(vol.id)}', ${idx - 1})" ${idx === 0 ? "disabled" : ""}>↑</button>
+          <button class="btn" onclick="moveNode('${NW.escapeHtml(n.id)}', '${NW.escapeHtml(vol.id)}', ${idx + 2})" ${idx === nodes.length - 1 ? "disabled" : ""}>↓</button>
           <button class="btn" onclick="showEditNode(${JSON.stringify(n).replace(/"/g, '&quot;')})">编辑</button>
-          <button class="btn danger" onclick="deleteNode('${escapeHtml(n.id)}', '${escapeHtml(n.title)}')">删</button>
+          <button class="btn danger" onclick="deleteNode('${NW.escapeHtml(n.id)}', '${NW.escapeHtml(n.title)}')">删</button>
         </div>
       </li>
     `).join("");
     return `
-      <div class="vol-section" data-vol="${escapeHtml(vol.id)}">
+      <div class="vol-section" data-vol="${NW.escapeHtml(vol.id)}">
         <div class="vol-header">
           <div style="flex: 1;">
-            <div class="vol-title">${escapeHtml(vol.title)}</div>
-            <div class="vol-summary">${escapeHtml(vol.summary || "")} · ${nodes.length} 章</div>
+            <div class="vol-title">${NW.escapeHtml(vol.title)}</div>
+            <div class="vol-summary">${NW.escapeHtml(vol.summary || "")} · ${nodes.length} 章</div>
           </div>
           <div class="vol-actions">
-            <button class="btn" onclick="showAddNode('${escapeHtml(vol.id)}')">+ 章节</button>
-            <button class="btn danger" onclick="deleteVolume('${escapeHtml(vol.id)}', '${escapeHtml(vol.title)}')">删卷</button>
+            <button class="btn" onclick="showAddNode('${NW.escapeHtml(vol.id)}')">+ 章节</button>
+            <button class="btn danger" onclick="deleteVolume('${NW.escapeHtml(vol.id)}', '${NW.escapeHtml(vol.title)}')">删卷</button>
           </div>
         </div>
-        <ul class="node-list" data-vol="${escapeHtml(vol.id)}">${nodesHtml}</ul>
+        <ul class="node-list" data-vol="${NW.escapeHtml(vol.id)}">${nodesHtml}</ul>
       </div>
     `;
   }).join("");
@@ -547,11 +548,11 @@ function getDragAfterElement(container, y) {
 
 async function reorderNode(chId, newVol, newPos) {
   try {
-    await api("POST", `/api/outline/${BOOK}/reorder`,
+    await NW.api("POST", `/api/outline/${BOOK}/reorder`,
               {moves: [{ch_id: chId, new_vol: newVol, new_position: newPos}]});
     await loadOutline();
   } catch (e) {
-    alert("移动失败: " + e.message);
+    NW.toast("移动失败: " + e.message);
   }
 }
 
@@ -569,7 +570,7 @@ function showCreateVol() {
 async function submitVol(e) {
   e.preventDefault();
   try {
-    await api("POST", `/api/outline/${BOOK}/volumes`, {
+    await NW.api("POST", `/api/outline/${BOOK}/volumes`, {
       title: document.getElementById("vol-title").value.trim(),
       summary: document.getElementById("vol-summary").value,
     });
@@ -583,13 +584,13 @@ async function submitVol(e) {
 }
 
 async function deleteVolume(volId, title) {
-  if (!confirm(`确认删除卷 "${title}"?\n它的章节会归并到第一个剩余卷。`)) return;
+  if (!NW.confirm(`确认删除卷 "${title}"?\n它的章节会归并到第一个剩余卷。`)) return;
   try {
-    const r = await api("DELETE", `/api/outline/${BOOK}/volumes/${volId}`);
-    if (!confirm(`已重新分配 ${r.reassigned} 章节到默认卷,确定继续吗?`)) return;
+    const r = await NW.api("DELETE", `/api/outline/${BOOK}/volumes/${volId}`);
+    if (!NW.confirm(`已重新分配 ${r.reassigned} 章节到默认卷,确定继续吗?`)) return;
     await loadOutline();
   } catch (e) {
-    alert("删除失败: " + e.message);
+    NW.toast("删除失败: " + e.message);
   }
 }
 
@@ -622,10 +623,10 @@ function showEditNode(node) {
 function populateVolSelect(selectedVol) {
   const sel = document.getElementById("node-vol");
   sel.innerHTML = OUTLINE.volumes.map(v =>
-    `<option value="${escapeHtml(v.id)}" ${v.id === selectedVol ? "selected" : ""}>${escapeHtml(v.title)}</option>`
+    `<option value="${NW.escapeHtml(v.id)}" ${v.id === selectedVol ? "selected" : ""}>${NW.escapeHtml(v.title)}</option>`
   ).join("");
   if (selectedVol && !OUTLINE.volumes.some(v => v.id === selectedVol)) {
-    sel.innerHTML += `<option value="" selected>(孤儿: ${escapeHtml(selectedVol)})</option>`;
+    sel.innerHTML += `<option value="" selected>(孤儿: ${NW.escapeHtml(selectedVol)})</option>`;
   }
 }
 
@@ -640,7 +641,7 @@ function addListItem(containerId, value = "") {
   const row = document.createElement("div");
   row.className = "list-item-row";
   row.innerHTML = `
-    <input type="text" value="${escapeHtml(value)}" />
+    <input type="text" value="${NW.escapeHtml(value)}" />
     <button type="button" onclick="this.parentElement.remove()">×</button>
   `;
   c.appendChild(row);
@@ -668,9 +669,9 @@ async function submitNode(e) {
   submitBtn.textContent = "保存中...";
   try {
     if (origId) {
-      await api("PUT", `/api/outline/${BOOK}/node/${encodeURIComponent(origId)}`, data);
+      await NW.api("PUT", `/api/outline/${BOOK}/node/${encodeURIComponent(origId)}`, data);
     } else {
-      await api("POST", `/api/outline/${BOOK}/node`, {
+      await NW.api("POST", `/api/outline/${BOOK}/node`, {
         parent_vol: data.vol,
         position: 999,
         title: data.title,
@@ -693,12 +694,12 @@ async function submitNode(e) {
 }
 
 async function deleteNode(chId, title) {
-  if (!confirm(`确认删除章节 "${title || chId}"?`)) return;
+  if (!NW.confirm(`确认删除章节 "${title || chId}"?`)) return;
   try {
-    await api("DELETE", `/api/outline/${BOOK}/node/${encodeURIComponent(chId)}`);
+    await NW.api("DELETE", `/api/outline/${BOOK}/node/${encodeURIComponent(chId)}`);
     await loadOutline();
   } catch (e) {
-    alert("删除失败: " + e.message);
+    NW.toast("删除失败: " + e.message);
   }
 }
 
@@ -708,37 +709,37 @@ function closeModal(id) {
 
 async function showDiff() {
   if (VERSIONS.length < 2) {
-    alert("至少需要 2 个版本才能对比 — 当前 " + VERSIONS.length + " 个");
+    NW.toast("至少需要 2 个版本才能对比 — 当前 " + VERSIONS.length + " 个");
     return;
   }
   const v1 = VERSIONS[VERSIONS.length - 1].version_id;
   const v2 = VERSIONS[0].version_id;
   try {
-    const diff = await api("GET", `/api/outline/${BOOK}/diff?v1=${v1}&v2=${v2}`);
+    const diff = await NW.api("GET", `/api/outline/${BOOK}/diff?v1=${v1}&v2=${v2}`);
     renderDiff(diff, v1, v2);
   } catch (e) {
-    alert("加载 diff 失败: " + e.message);
+    NW.toast("加载 diff 失败: " + e.message);
   }
 }
 
 function renderDiff(d, v1, v2) {
   const rows = [];
   for (const id of d.chapters_added || [])
-    rows.push(`<div class="diff-row">章节 ${escapeHtml(id)} <span class="badge added">新增</span></div>`);
+    rows.push(`<div class="diff-row">章节 ${NW.escapeHtml(id)} <span class="badge added">新增</span></div>`);
   for (const id of d.chapters_removed || [])
-    rows.push(`<div class="diff-row">章节 ${escapeHtml(id)} <span class="badge removed">删除</span></div>`);
+    rows.push(`<div class="diff-row">章节 ${NW.escapeHtml(id)} <span class="badge removed">删除</span></div>`);
   for (const m of d.chapters_moved || [])
-    rows.push(`<div class="diff-row">章节 ${escapeHtml(m.ch_id)} <span class="badge moved">移动</span> ${escapeHtml(m.from_vol)}#${m.from_pos} → ${escapeHtml(m.to_vol)}#${m.to_pos}</div>`);
+    rows.push(`<div class="diff-row">章节 ${NW.escapeHtml(m.ch_id)} <span class="badge moved">移动</span> ${NW.escapeHtml(m.from_vol)}#${m.from_pos} → ${NW.escapeHtml(m.to_vol)}#${m.to_pos}</div>`);
   for (const e of d.chapters_edited || [])
-    rows.push(`<div class="diff-row">章节 ${escapeHtml(e.ch_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
+    rows.push(`<div class="diff-row">章节 ${NW.escapeHtml(e.ch_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
   for (const id of d.volumes_added || [])
-    rows.push(`<div class="diff-row">卷 ${escapeHtml(id)} <span class="badge added">新增</span></div>`);
+    rows.push(`<div class="diff-row">卷 ${NW.escapeHtml(id)} <span class="badge added">新增</span></div>`);
   for (const id of d.volumes_removed || [])
-    rows.push(`<div class="diff-row">卷 ${escapeHtml(id)} <span class="badge removed">删除</span></div>`);
+    rows.push(`<div class="diff-row">卷 ${NW.escapeHtml(id)} <span class="badge removed">删除</span></div>`);
   for (const e of d.volumes_edited || [])
-    rows.push(`<div class="diff-row">卷 ${escapeHtml(e.vol_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
+    rows.push(`<div class="diff-row">卷 ${NW.escapeHtml(e.vol_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
   document.getElementById("diff-content").innerHTML =
-    `<div class="diff-row">对比: ${escapeHtml(v2)} (新) ↔ ${escapeHtml(v1)} (旧)</div>` +
+    `<div class="diff-row">对比: ${NW.escapeHtml(v2)} (新) ↔ ${NW.escapeHtml(v1)} (旧)</div>` +
     (rows.length ? rows.join("") : `<div class="diff-row">无差异</div>`);
   document.getElementById("diff-panel").style.display = "block";
 }
@@ -770,7 +771,7 @@ async function loadModelConfig() {
     sel.innerHTML =
       _msProviders.map(p => `<option value="${p.name}">${p.name}${p.model ? ' (' + p.model + ')' : ''}</option>`).join("")
       + '<option value="custom">custom...</option>';
-    const r2 = await fetch("/api/config/{{ book }}");
+    const r2 = await fetch("/api/config/${BOOK}");
     if (r2.ok) {
       const cfg = await r2.json();
       const cur = cfg.llm_provider || "local";
@@ -820,7 +821,7 @@ async function saveModelConfig() {
   msg.textContent = "⏳ 保存…";
   msg.className = "save-msg";
   try {
-    const r = await fetch("/api/config/{{ book }}", {
+    const r = await fetch("/api/config/${BOOK}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -891,7 +892,7 @@ async function runAISuggest() {
   const resultEl = document.getElementById("ai-suggest-result");
   resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 生成中, 请稍候 (~5-30秒)...</div>';
   try {
-    const r = await fetch("/api/outline/{{ book }}/ai-suggest", {
+    const r = await fetch("/api/outline/${BOOK}/ai-suggest", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       credentials: "same-origin",
@@ -903,7 +904,7 @@ async function runAISuggest() {
       throw new Error("AI 未生成有效建议: " + (data.reasoning || "(空)"));
     }
     resultEl.innerHTML = data.chapters.map((ch, i) => renderAISuggestion(ch, i)).join("") +
-      (data.reasoning ? `<div style="margin-top: 12px; padding: 10px; background: var(--panel2); border-radius: 4px; font-size: 12px; color: var(--muted);">💭 ${escapeHtml(data.reasoning)}</div>` : "");
+      (data.reasoning ? `<div style="margin-top: 12px; padding: 10px; background: var(--panel2); border-radius: 4px; font-size: 12px; color: var(--muted);">💭 ${NW.escapeHtml(data.reasoning)}</div>` : "");
   } catch (e) {
     resultEl.innerHTML = "";
     showAIError("生成失败: " + e.message);
@@ -915,13 +916,13 @@ function renderAISuggestion(ch, idx) {
     <div style="background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
         <strong style="color: var(--accent);">#${idx + 1}</strong>
-        <span style="flex: 1; font-weight: 500;">${escapeHtml(ch.title || "")}</span>
+        <span style="flex: 1; font-weight: 500;">${NW.escapeHtml(ch.title || "")}</span>
       </div>
       <div style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">
-        ${ch.pov ? `📍 POV: ${escapeHtml(ch.pov)} · ` : ""}
-        ${ch.vol ? `卷: ${escapeHtml(ch.vol)}` : ""}
+        ${ch.pov ? `📍 POV: ${NW.escapeHtml(ch.pov)} · ` : ""}
+        ${ch.vol ? `卷: ${NW.escapeHtml(ch.vol)}` : ""}
       </div>
-      ${ch.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${escapeHtml(ch.summary)}</div>` : ""}
+      ${ch.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${NW.escapeHtml(ch.summary)}</div>` : ""}
       ${ch.key_events && ch.key_events.length ? `<div style="font-size: 12px; color: var(--muted);">📌 ${ch.key_events.map(escapeHtml).join(" · ")}</div>` : ""}
       ${ch.foreshadow && ch.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn);">🌱 ${ch.foreshadow.map(escapeHtml).join(" · ")}</div>` : ""}
       <div style="margin-top: 8px; display: flex; gap: 6px;">
@@ -932,9 +933,9 @@ function renderAISuggestion(ch, idx) {
 }
 
 async function acceptAISuggestion(ch) {
-  if (!confirm(`加入章节 "${ch.title}" 到大纲?`)) return;
+  if (!NW.confirm(`加入章节 "${ch.title}" 到大纲?`)) return;
   try {
-    await api("POST", `/api/outline/${BOOK}/node`, {
+    await NW.api("POST", `/api/outline/${BOOK}/node`, {
       parent_vol: ch.vol || (OUTLINE.volumes[0] && OUTLINE.volumes[0].id) || null,
       position: 999,
       title: ch.title,
@@ -945,7 +946,7 @@ async function acceptAISuggestion(ch) {
     });
     await loadOutline();
   } catch (e) {
-    alert("加入失败: " + e.message);
+    NW.toast("加入失败: " + e.message);
   }
 }
 
@@ -957,7 +958,7 @@ async function runAIExpand() {
   const resultEl = document.getElementById("ai-expand-result");
   resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 展开中...</div>';
   try {
-    const r = await fetch("/api/outline/{{ book }}/ai-expand", {
+    const r = await fetch("/api/outline/${BOOK}/ai-expand", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       credentials: "same-origin",
@@ -967,10 +968,10 @@ async function runAIExpand() {
     if (!data.ok) throw new Error(data.error || "请求失败");
     resultEl.innerHTML = `
       <div style="background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
-        <div style="font-weight: 500; margin-bottom: 8px;">${escapeHtml(title)}</div>
-        ${data.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${escapeHtml(data.summary)}</div>` : ""}
-        ${data.key_events && data.key_events.length ? `<div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">📌 关键事件:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.key_events.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : ""}
-        ${data.foreshadow && data.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn); margin-bottom: 4px;">🌱 伏笔:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.foreshadow.map(f => `<li>${escapeHtml(f)}</li>`).join("")}</ul>` : ""}
+        <div style="font-weight: 500; margin-bottom: 8px;">${NW.escapeHtml(title)}</div>
+        ${data.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${NW.escapeHtml(data.summary)}</div>` : ""}
+        ${data.key_events && data.key_events.length ? `<div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">📌 关键事件:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.key_events.map(e => `<li>${NW.escapeHtml(e)}</li>`).join("")}</ul>` : ""}
+        ${data.foreshadow && data.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn); margin-bottom: 4px;">🌱 伏笔:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.foreshadow.map(f => `<li>${NW.escapeHtml(f)}</li>`).join("")}</ul>` : ""}
         <div style="margin-top: 8px;">
           <button class="btn primary" style="font-size: 12px; padding: 4px 10px;" onclick='acceptAIExpanded(${JSON.stringify({title, summary: data.summary || summary, key_events: data.key_events || [], foreshadow: data.foreshadow || []}).replace(/'/g, "&#39;")})'>✓ 加入大纲</button>
         </div>
@@ -984,7 +985,7 @@ async function runAIExpand() {
 
 async function acceptAIExpanded(data) {
   try {
-    await api("POST", `/api/outline/${BOOK}/node`, {
+    await NW.api("POST", `/api/outline/${BOOK}/node`, {
       parent_vol: OUTLINE.volumes[0] && OUTLINE.volumes[0].id,
       position: 999,
       title: data.title,
@@ -995,8 +996,9 @@ async function acceptAIExpanded(data) {
     closeModal("modal-ai");
     await loadOutline();
   } catch (e) {
-    alert("加入失败: " + e.message);
+    NW.toast("加入失败: " + e.message);
   }
 }
+{% endraw %}
 </script>
 {% endblock %}

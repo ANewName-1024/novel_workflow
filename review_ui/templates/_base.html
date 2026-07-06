@@ -35,6 +35,8 @@
   <div class="page-container">
     {% block content %}{% endblock %}
   </div>
+  {% if book is defined and book %}<script>window.BOOK = {{ book|tojson }};</script>{% endif %}
+  {% if chapter is defined and chapter %}<script>window.CHAPTER = {{ chapter|tojson }};</script>{% endif %}
   {% block scripts %}{% endblock %}
   <script src="/static/js/common.js"></script>
 </body>
