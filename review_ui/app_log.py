@@ -38,6 +38,22 @@ def _safe_json():
     try:
         return request.get_json(force=True, silent=False)
     except Exception as e:
+        # v1.3 M5: capture raw body for debugging bad client JSON
+        try:
+            raw = request.get_data(as_text=True)[:500]
+            _buffer.append({
+                "id": "bad-json-" + str(time.time()),
+                "ts": time.time(),
+                "level": "error",
+                "device_id": "server",
+                "device_model": "",
+                "app_version": "",
+                "msg": f"BAD_JSON: {e}",
+                "stack": "",
+                "context": {"raw": raw, "content_type": request.headers.get("Content-Type", "")},
+            })
+        except Exception:
+            pass
         abort(400, description=f"Invalid JSON: {e}")
 
 

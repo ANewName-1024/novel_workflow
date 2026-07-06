@@ -1,34 +1,31 @@
 class BookStats {
-  final int totalChapters;
-  final int approvedChapters;
-  final int pendingChapters;
-  final int rejectedChapters;
-  final int totalWords;
-  final double avgChapterWords;
-  final int pipelineRuns;
-  final int pipelineFails;
+  final int total;
+  final int approved;
+  final int autoPassed;
+  final int falsePositive;
+  final int humanEdited;
+  final int needsRewrite;
+  final int pendingReview;
 
   BookStats({
-    this.totalChapters = 0,
-    this.approvedChapters = 0,
-    this.pendingChapters = 0,
-    this.rejectedChapters = 0,
-    this.totalWords = 0,
-    this.avgChapterWords = 0,
-    this.pipelineRuns = 0,
-    this.pipelineFails = 0,
+    this.total = 0,
+    this.approved = 0,
+    this.autoPassed = 0,
+    this.falsePositive = 0,
+    this.humanEdited = 0,
+    this.needsRewrite = 0,
+    this.pendingReview = 0,
   });
 
   factory BookStats.fromJson(Map<String, dynamic> json) {
     return BookStats(
-      totalChapters: json['total_chapters'] ?? 0,
-      approvedChapters: json['approved_chapters'] ?? 0,
-      pendingChapters: json['pending_chapters'] ?? 0,
-      rejectedChapters: json['rejected_chapters'] ?? 0,
-      totalWords: json['total_words'] ?? 0,
-      avgChapterWords: (json['avg_chapter_words'] ?? 0).toDouble(),
-      pipelineRuns: json['pipeline_runs'] ?? 0,
-      pipelineFails: json['pipeline_fails'] ?? 0,
+      total: json['total'] ?? 0,
+      approved: json['approved'] ?? 0,
+      autoPassed: json['auto_passed'] ?? 0,
+      falsePositive: json['false_positive'] ?? 0,
+      humanEdited: json['human_edited'] ?? 0,
+      needsRewrite: json['needs_rewrite'] ?? 0,
+      pendingReview: json['pending_review'] ?? 0,
     );
   }
 }
