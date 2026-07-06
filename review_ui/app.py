@@ -1379,7 +1379,7 @@ def api_outline_diff(book):
 @app.route("/api/outline/<book>/ai-suggest", methods=["POST"])
 def api_outline_ai_suggest(book):
     """POST /api/outline/<book>/ai-suggest
-    body: {count?: 3, next_num?: N}
+    body: {count?: 3, next_num?: N, llm_provider?: str, llm_model?: str}
     Returns: {chapters: [{title, summary, pov, key_events, foreshadow}], reasoning: str}"""
     _ensure_book(book)
     body = request.get_json(silent=True) or {}
@@ -1389,6 +1389,15 @@ def api_outline_ai_suggest(book):
     cfg = storage.read_json(book, "config.json") or {}
     book_title = cfg.get("book_name", book)
     genre = cfg.get("genre", "")
+
+    # 前端传的 llm_provider/llm_model 优先，写入 config.json 供后续使用
+    llm_provider = body.get("llm_provider", "")
+    llm_model = body.get("llm_model", "")
+    if llm_provider:
+        cfg["llm_provider"] = llm_provider
+        if llm_model:
+            cfg["llm_model"] = llm_model
+        storage.write_json(book, "config.json", cfg)
 
     o = oe.load_outline_or_empty(book)
     existing_count = len(o.get("chapters", []))
@@ -1405,6 +1414,7 @@ def api_outline_ai_suggest(book):
         outline_text=outline_text,
         next_num=next_num,
         count=count,
+        book=book,
     )
     return jsonify({"ok": True, **result})
 
@@ -1412,7 +1422,7 @@ def api_outline_ai_suggest(book):
 @app.route("/api/outline/<book>/ai-expand", methods=["POST"])
 def api_outline_ai_expand(book):
     """POST /api/outline/<book>/ai-expand
-    body: {title: str, summary: str}
+    body: {title: str, summary: str, llm_provider?: str, llm_model?: str}
     Returns: {key_events: [...], foreshadow: str, pov_notes: str}"""
     _ensure_book(book)
     body = request.get_json(silent=True) or {}
@@ -1427,12 +1437,22 @@ def api_outline_ai_expand(book):
     book_title = cfg.get("book_name", book)
     genre = cfg.get("genre", "")
 
+    # 前端传的 llm_provider/llm_model 优先
+    llm_provider = body.get("llm_provider", "")
+    llm_model = body.get("llm_model", "")
+    if llm_provider:
+        cfg["llm_provider"] = llm_provider
+        if llm_model:
+            cfg["llm_model"] = llm_model
+        storage.write_json(book, "config.json", cfg)
+
     from lib import outline_ai as oai
     result = oai.expand_chapter(
         book_title=book_title,
         genre=genre,
         title=title,
         summary=summary,
+        book=book,
     )
     return jsonify({"ok": True, **result})
 

@@ -123,15 +123,23 @@ class NovelApi {
     return Outline.fromJson(data);
   }
 
-  Future<List<dynamic>> aiSuggestOutline(String book, {int count = 3, int? nextNum}) async {
+  Future<List<dynamic>> aiSuggestOutline(String book, {int count = 3,
+      int? nextNum, String? provider, String? model}) async {
+    final body = <String, dynamic>{'count': count};
+    if (nextNum != null) body['next_num'] = nextNum;
+    if (provider != null) body['llm_provider'] = provider;
+    if (model != null) body['llm_model'] = model;
     final data = await _post('/api/outline/$book/ai-suggest',
-        body: {'count': count, if (nextNum != null) 'next_num': nextNum});
+        body: body);
     return (data['chapters'] as List<dynamic>?) ?? [];
   }
 
-  Future<Map<String, dynamic>> aiExpandOutline(String book, {required String title, required String summary}) async {
+  Future<Map<String, dynamic>> aiExpandOutline(String book, {required String title, required String summary, String? provider, String? model}) async {
+    final body = <String, dynamic>{'title': title, 'summary': summary};
+    if (provider != null) body['llm_provider'] = provider;
+    if (model != null) body['llm_model'] = model;
     final data = await _post('/api/outline/$book/ai-expand',
-        body: {'title': title, 'summary': summary});
+        body: body);
     return (data as Map<String, dynamic>);
   }
 

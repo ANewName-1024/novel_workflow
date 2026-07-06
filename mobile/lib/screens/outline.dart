@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/outline.dart';
 import '../services/api.dart';
 import '../services/logger.dart';
@@ -36,10 +37,23 @@ class _OutlineScreenState extends State<OutlineScreen> {
     }
   }
 
+  Future<String?> _savedLlmProvider() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('llm_provider');
+  }
+
+  Future<String?> _savedLlmModel() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('llm_model');
+  }
+
   Future<void> _aiSuggest({int count = 3}) async {
     setState(() => _aiBusy = true);
     try {
-      final list = await novelApi.aiSuggestOutline(widget.bookName, count: count);
+      final provider = await _savedLlmProvider();
+      final model = await _savedLlmModel();
+      final list = await novelApi.aiSuggestOutline(widget.bookName,
+          count: count, provider: provider, model: model);
       if (!mounted) return;
       if (list.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -126,7 +140,10 @@ class _OutlineScreenState extends State<OutlineScreen> {
     }
     setState(() => _aiBusy = true);
     try {
-      final result = await novelApi.aiExpandOutline(widget.bookName, title: title, summary: summary);
+      final provider = await _savedLlmProvider();
+      final model = await _savedLlmModel();
+      final result = await novelApi.aiExpandOutline(widget.bookName,
+          title: title, summary: summary, provider: provider, model: model);
       if (!mounted) return;
       _showExpansionDialog(result, title: title, summary: summary);
     } catch (e) {
