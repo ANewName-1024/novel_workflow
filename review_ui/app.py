@@ -218,7 +218,7 @@ def logout():
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 def _list_books() -> list[str]:
-    """List all novel projects. Use storage.PROJECTS_ROOT so tests can monkeypatch."""
+    """List all novel projects (folder names)."""
     proj_dir = Path(storage.PROJECTS_ROOT)
     if not proj_dir.exists():
         return []
@@ -227,6 +227,18 @@ def _list_books() -> list[str]:
         if p.is_dir() and (p / "config.json").exists():
             out.append(p.name)
     return out
+
+
+def _list_chapters(book: str) -> list[str]:
+    """List chapter files for a book (by folder name)."""
+    proj_dir = Path(storage.PROJECTS_ROOT)
+    book_dir = proj_dir / book
+    if not book_dir.exists():
+        return []
+    return sorted(
+        f.stem for f in book_dir.iterdir()
+        if f.suffix in (".txt", ".md") and not f.name.startswith(".")
+    )
 
 def _ensure_book(book: str) -> None:
     if not storage.project_exists(book):
@@ -440,7 +452,31 @@ def _diff_stats(text1: str, text2: str) -> dict:
 
 @app.route("/api/projects")
 def api_projects():
-    return jsonify(_list_books())
+    """返回书项目列表 (SQLite 优先, 文件后备)."""
+    try:
+        from lib import db as dbmod
+        proj_list = dbmod.list_projects_with_stats(storage.ROOT)
+        projects = {}
+        for p in proj_list:
+            projects[p["id"]] = {
+                "display_name": p["display_name"],
+                "total_chapters": p["total_chapters"],
+                "pending_reviews": p["pending_reviews"],
+                "approved": p["approved"],
+                "rejected": p["rejected"],
+            }
+        return jsonify({"ok": True, "projects": projects})
+    except Exception as exc:
+        # Fallback: 传统文件夹扫描
+        names = _list_books()
+        projects = {}
+        for name in names:
+            cfg = storage.read_json(name, "config.json") or {}
+            projects[name] = {
+                "display_name": cfg.get("book_name", name),
+                "total_chapters": len(_list_chapters(name)),
+            }
+        return jsonify({"ok": True, "projects": projects})
 
 @app.route("/api/queue/<book>")
 def api_queue(book):
@@ -1480,6 +1516,22 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+
+    # Auto-init + migrate to SQLite (v1.3 M6)
+    try:
+        from lib import db as _dbmod
+        _dbmod.init_db(storage.ROOT)
+        # Auto-scan projects (idempotent)
+        for _pid in _list_books():
+            _cfg = storage.read_json(_pid, "config.json") or {}
+            _book_name = _cfg.get("book_name", _pid)
+            _dbmod.upsert_project(storage.ROOT, _pid, _book_name, _cfg)
+            # Force chapter meta sync
+            storage.list_chapters(_pid)
+        print(f"   SQLite: {_dbmod.stats(storage.ROOT)}")
+    except Exception as _e:
+        print(f"   [warn] SQLite init skipped: {_e}")
+
     print(f"🟢 Novel Review UI on http://{args.host}:{args.port}")
     print(f"   projects: {len(_list_books())} book(s)")
     app.run(host=args.host, port=args.port, debug=args.debug, use_reloader=False)

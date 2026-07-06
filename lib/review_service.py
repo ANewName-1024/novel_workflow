@@ -1,6 +1,8 @@
 """
 Chapter review service: state machine + audit trail for manual review.
 
+v1.3 M6: dual-write to SQLite (lib.db). File kept for git diff + fallback.
+
 Workflow:
   1. After each chapter write, an auto-review record is created based on
      self-check severity.
@@ -64,7 +66,7 @@ def edited_path(book: str, chapter_id: str) -> Path:
 def audit_log_path(book: str) -> Path:
     return review_dir(book) / "audit.log"
 
-# ── CRUD on review records ────────────────────────────────────────────────
+# ── CRUD on review records (SQLite + file dual-write) ─────────────────────
 
 def _empty_record(chapter_id: str) -> dict:
     return {
@@ -72,7 +74,7 @@ def _empty_record(chapter_id: str) -> dict:
         "status": REVIEW_STATUS["AUTO_PASSED"],
         "auto_severity": None,
         "auto_issues_count": 0,
-        "auto_result": None,           # raw self-check JSON
+        "auto_result": None,
         "reviewer": None,
         "reviewer_notes": None,
         "reviewed_at": None,
@@ -82,6 +84,14 @@ def _empty_record(chapter_id: str) -> dict:
     }
 
 def get_review(book: str, chapter_id: str) -> dict | None:
+    """Read review. SQLite first, .review.json fallback."""
+    try:
+        from . import db as _dbmod
+        r = _dbmod.get_review(storage.ROOT, book, chapter_id)
+        if r:
+            return r
+    except Exception:
+        pass
     p = review_path(book, chapter_id)
     if not p.exists():
         return None
@@ -91,10 +101,28 @@ def get_review(book: str, chapter_id: str) -> dict | None:
         return None
 
 def save_review(book: str, record: dict) -> None:
+    """Save review. Dual-write: file (for git) + SQLite (for fast query)."""
     record["updated_at"] = datetime.datetime.now().isoformat()
-    review_path(book, record["chapter_id"]).write_text(
+    chapter_id = record.get("chapter_id", "")
+    # File write
+    review_path(book, chapter_id).write_text(
         json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    # SQLite write
+    try:
+        from . import db as _dbmod
+        _dbmod.upsert_review(
+            storage.ROOT, book, chapter_id,
+            status=record.get("status", "pending_review"),
+            auto_severity=record.get("auto_severity"),
+            auto_issues_count=record.get("auto_issues_count", 0),
+            auto_result=record.get("auto_result"),
+            reviewer=record.get("reviewer"),
+            reviewer_notes=record.get("reviewer_notes"),
+            v2_chars=record.get("v2_chars", 0),
+        )
+    except Exception:
+        pass
 
 def append_audit(book: str, chapter_id: str, action: str, by: str, notes: str = "") -> None:
     """Append a line to audit.log."""
@@ -109,10 +137,7 @@ def append_audit(book: str, chapter_id: str, action: str, by: str, notes: str = 
 # ── transitions ────────────────────────────────────────────────────────────
 
 def auto_flag(book: str, chapter_id: str, self_check_result: dict, by: str = "AI") -> dict:
-    """
-    Called by chapter.py post-write pipeline after self-check.
-    Initializes or updates the review record based on auto-flag.
-    """
+    """Called by chapter.py post-write pipeline after self-check."""
     sev = self_check_result.get("severity", "unknown")
     issues_count = sum(
         len(self_check_result.get(k, []))
@@ -130,7 +155,6 @@ def auto_flag(book: str, chapter_id: str, self_check_result: dict, by: str = "AI
     record["status"]          = new_status
     record.setdefault("created_at", datetime.datetime.now().isoformat())
 
-    # Append history event (only if status changed or first time)
     record["history"].append({
         "at":    datetime.datetime.now().isoformat(timespec="seconds"),
         "action": "auto_flagged",
@@ -159,7 +183,6 @@ def approve(book: str, chapter_id: str, reviewer: str, notes: str = "") -> dict:
     })
     save_review(book, record)
     append_audit(book, chapter_id, "approved", reviewer, notes)
-    # Sync progress (L51 fix 2026-07-01: review path must update progress too)
     try:
         num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
         storage.mark_chapter_completed(book, chapter_id, num)
@@ -201,7 +224,6 @@ def edit(book: str, chapter_id: str, reviewer: str, new_text: str, notes: str = 
     save_review(book, record)
     append_audit(book, chapter_id, "human_edited", reviewer,
                  notes=f"chars={len(new_text)} {notes}")
-    # Sync progress (L51 fix)
     try:
         num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
         storage.mark_chapter_completed(book, chapter_id, num)
@@ -223,27 +245,15 @@ def mark_false_positive(book: str, chapter_id: str, reviewer: str, notes: str) -
     })
     save_review(book, record)
     append_audit(book, chapter_id, "false_positive", reviewer, notes)
-    # Sync progress (L51 fix)
-    try:
-        num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
-        storage.mark_chapter_completed(book, chapter_id, num)
-    except Exception:
-        pass
     return record
 
 def apply_edit_to_chapter(book: str, chapter_id: str) -> bool:
-    """
-    Replace chapters/<chapter_id>.md with reviews/<chapter_id>.v2.md
-    (after human approval). Re-extracts memory etc. via chapter.write_chapter?
-    Actually we keep it minimal — just file swap.
-    Returns True if applied.
-    """
+    """Replace chapters/<chapter_id>.md with reviews/<chapter_id>.v2.md (after approval)."""
     src = edited_path(book, chapter_id)
     if not src.exists():
         return False
     dst = storage.chapters_dir(book) / f"{chapter_id}.md"
     dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-    # Sync progress (L51 fix)
     try:
         num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
         storage.mark_chapter_completed(book, chapter_id, num)
@@ -251,25 +261,37 @@ def apply_edit_to_chapter(book: str, chapter_id: str) -> bool:
         pass
     return True
 
-# ── queries ────────────────────────────────────────────────────────────────
+# ── queries (SQLite first, file fallback) ──────────────────────────────────
 
 def get_review_queue(book: str) -> list[dict]:
-    """
-    Return all chapters with status in (pending_review, needs_rewrite).
-    Sorted by chapter_id (chronological).
-    """
+    """Return all chapters with status pending_review or needs_rewrite. SQLite first."""
+    try:
+        from . import db as _dbmod
+        rows = _dbmod.list_reviews(storage.ROOT, book, status="pending_review")
+        rows2 = _dbmod.list_reviews(storage.ROOT, book, status="needs_rewrite")
+        out = rows + rows2
+        if out:
+            return sorted(out, key=lambda r: r.get("ch_id", ""))
+    except Exception:
+        pass
     out = []
     for p in sorted(review_dir(book).glob("ch_*.review.json")):
         try:
             r = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
-        if r.get("status") in (REVIEW_STATUS["PENDING_REVIEW"], REVIEW_STATUS["NEEDS_REWRITE"]):
+        s = r.get("status")
+        if s in ("pending_review", "needs_rewrite"):
             out.append(r)
     return out
 
 def get_review_stats(book: str) -> dict:
-    """Aggregate counts across all review records."""
+    """Aggregate counts. SQLite first, file fallback."""
+    try:
+        from . import db as _dbmod
+        return _dbmod.review_stats(storage.ROOT, book)
+    except Exception:
+        pass
     counts = {v: 0 for v in REVIEW_STATUS.values()}
     counts["total"] = 0
     for p in review_dir(book).glob("ch_*.review.json"):
@@ -321,7 +343,6 @@ def format_review_record(book: str, record: dict, include_chapter: bool = False,
     for ev in record.get("history", []):
         lines.append(f"    [{ev.get('at','')}] {ev.get('action','?')} by {ev.get('by','?')}")
 
-    # Show auto-flagged issues
     ar = record.get("auto_result") or {}
     flagged = []
     for key, label in (

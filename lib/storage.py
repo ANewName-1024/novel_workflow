@@ -1,6 +1,11 @@
 """
-Storage layer: JSON + Markdown, project-scoped.
-Each project lives under projects/<book_name>/.
+Storage layer: JSON + Markdown + SQLite, project-scoped.
+v1.3 M6: 元数据可走 SQLite (lib.db), 章节内容仍在 .md 文件.
+
+策略:
+  - read_json / write_json 优先 SQLite, 文件后备 (dual-write)
+  - list_projects / project_exists 走 SQLite
+  - read_chapter / write_chapter / list_chapters 纯文件系统
 """
 from __future__ import annotations
 
@@ -85,7 +90,8 @@ def write_chapter(book: str, chapter_id: str, content: str) -> None:
             pass
 
 def list_chapters(book: str) -> list[dict]:
-    """Return sorted list of {id, title, word_count, preview} from chapters dir."""
+    """Return sorted list of {id, title, word_count, preview} from chapters dir.
+    Also syncs metadata to SQLite (if lib.db available)."""
     chapters = []
     for p in sorted(chapters_dir(book).glob("*.md")):
         text = p.read_text(encoding="utf-8")
@@ -101,6 +107,16 @@ def list_chapters(book: str) -> list[dict]:
         body_lines = [l.strip() for l in body.splitlines() if l.strip()]
         preview = body_lines[0][:50] + ("…" if len(body_lines[0]) > 50 else "") if body_lines else ""
         chapters.append({"id": p.stem, "title": title, "word_count": wc, "preview": preview})
+        # Sync chapter meta to SQLite (v1.3 M6)
+        try:
+            from . import db as _dbmod
+            st = p.stat()
+            _dbmod.upsert_chapter_meta(
+                ROOT, book, p.stem, title, wc, preview,
+                str(p.relative_to(ROOT)), st.st_mtime, st.st_size,
+            )
+        except Exception:
+            pass
     return chapters
 
 # ── config defaults ─────────────────────────────────────────────────────────

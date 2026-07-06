@@ -51,6 +51,40 @@ def _save_raw(book: str, lib: str, data: Any) -> None:
     p = _mem_path(book, lib)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    # v1.3 M6: sync entities to SQLite
+    _sync_entities_to_db(book, lib, data)
+
+
+def _sync_entities_to_db(book: str, lib: str, data: Any) -> None:
+    """Write-through: after saving entity JSON, sync to SQLite."""
+    try:
+        from . import db as _dbmod
+    except Exception:
+        return
+    if lib == "characters" and isinstance(data, dict):
+        for name, d in data.items():
+            _dbmod.upsert_entity(storage.ROOT, book, "character", name,
+                                 content=d)
+    elif lib == "events" and isinstance(data, list):
+        for item in data:
+            name = item.get("event", "")[:50]
+            if name:
+                _dbmod.upsert_entity(storage.ROOT, book, "event", name,
+                                     content=item)
+    elif lib == "foreshadowing" and isinstance(data, list):
+        for item in data:
+            name = item.get("foreshadow", "")[:50]
+            if name:
+                _dbmod.upsert_entity(storage.ROOT, book, "foreshadow", name,
+                                     content=item)
+    elif lib == "world" and isinstance(data, dict):
+        for rid, item in data.get("rules", {}).items():
+            name = item.get("name", rid)[:50]
+            if name:
+                _dbmod.upsert_entity(storage.ROOT, book, "world_rule", name,
+                                     category=item.get("category"),
+                                     status=item.get("status"),
+                                     content=item)
 
 
 # ── characters (向后兼容: dict[name, dict]) ──────────────────────────────
