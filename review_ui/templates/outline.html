@@ -713,13 +713,13 @@ function renderDiff(d, v1, v2) {
   for (const m of d.chapters_moved || [])
     rows.push(`<div class="diff-row">章节 ${NW.escapeHtml(m.ch_id)} <span class="badge moved">移动</span> ${NW.escapeHtml(m.from_vol)}#${m.from_pos} → ${NW.escapeHtml(m.to_vol)}#${m.to_pos}</div>`);
   for (const e of d.chapters_edited || [])
-    rows.push(`<div class="diff-row">章节 ${NW.escapeHtml(e.ch_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
+    rows.push(`<div class="diff-row">章节 ${NW.escapeHtml(e.ch_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(NW.escapeHtml).join(", ")}</div>`);
   for (const id of d.volumes_added || [])
     rows.push(`<div class="diff-row">卷 ${NW.escapeHtml(id)} <span class="badge added">新增</span></div>`);
   for (const id of d.volumes_removed || [])
     rows.push(`<div class="diff-row">卷 ${NW.escapeHtml(id)} <span class="badge removed">删除</span></div>`);
   for (const e of d.volumes_edited || [])
-    rows.push(`<div class="diff-row">卷 ${NW.escapeHtml(e.vol_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(escapeHtml).join(", ")}</div>`);
+    rows.push(`<div class="diff-row">卷 ${NW.escapeHtml(e.vol_id)} <span class="badge edited">编辑</span> 字段: ${(e.fields_changed||[]).map(NW.escapeHtml).join(", ")}</div>`);
   document.getElementById("diff-content").innerHTML =
     `<div class="diff-row">对比: ${NW.escapeHtml(v2)} (新) ↔ ${NW.escapeHtml(v1)} (旧)</div>` +
     (rows.length ? rows.join("") : `<div class="diff-row">无差异</div>`);
@@ -856,8 +856,8 @@ function renderAISuggestion(ch, idx) {
         ${ch.vol ? `卷: ${NW.escapeHtml(ch.vol)}` : ""}
       </div>
       ${ch.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${NW.escapeHtml(ch.summary)}</div>` : ""}
-      ${ch.key_events && ch.key_events.length ? `<div style="font-size: 12px; color: var(--muted);">📌 ${ch.key_events.map(escapeHtml).join(" · ")}</div>` : ""}
-      ${ch.foreshadow && ch.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn);">🌱 ${ch.foreshadow.map(escapeHtml).join(" · ")}</div>` : ""}
+      ${ch.key_events && ch.key_events.length ? `<div style="font-size: 12px; color: var(--muted);">📌 ${ch.key_events.map(NW.escapeHtml).join(" · ")}</div>` : ""}
+      ${ch.foreshadow && ch.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn);">🌱 ${ch.foreshadow.map(NW.escapeHtml).join(" · ")}</div>` : ""}
       <div style="margin-top: 8px; display: flex; gap: 6px;">
         <button class="btn primary" style="font-size: 12px; padding: 4px 10px;" onclick='acceptAISuggestion(${JSON.stringify(ch).replace(/'/g, "&#39;")})'>✓ 加入大纲</button>
       </div>

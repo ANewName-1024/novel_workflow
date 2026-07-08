@@ -400,16 +400,16 @@ async function doAction(action, chapter) {
     body = { reviewer: 'wei_chao', notes: '通过 Web UI 批准' };
   } else if (action === 'reject') {
     const reason = document.getElementById('reject-reason').value.trim();
-    if (!reason) { toast('请填写拒退原因', true); return; }
+    if (!reason) { NW.toast('请填写拒退原因', true); return; }
     body = { reviewer: 'wei_chao', reason };
   } else if (action === 'edit') {
     const text = document.getElementById('edit-text').value.trim();
-    if (!text) { toast('请粘贴新版本正文', true); return; }
+    if (!text) { NW.toast('请粘贴新版本正文', true); return; }
     const apply = document.getElementById('edit-apply').checked;
     body = { reviewer: 'wei_chao', text, apply, notes: 'Web UI 编辑' };
   } else if (action === 'false-positive') {
     const notes = document.getElementById('fp-notes').value.trim();
-    if (!notes) { toast('请填写误报说明', true); return; }
+    if (!notes) { NW.toast('请填写误报说明', true); return; }
     body = { reviewer: 'wei_chao', notes };
   }
   const btn = event.target;
@@ -427,10 +427,10 @@ async function doAction(action, chapter) {
       throw new Error(err.message || err.description || err.error || ('HTTP ' + r.status));
     }
     const data = await r.json();
-    toast(`✓ ${action} 成功 (${data.status})`);
+    NW.toast(`✓ ${action} 成功 (${data.status})`);
     setTimeout(() => location.reload(), 1200);
   } catch (e) {
-    toast('✗ 失败: ' + (e.message || e), true);
+    NW.toast('✗ 失败: ' + (e.message || e), true);
     btn.disabled = false;
     btn.textContent = btn.dataset.origText || btn.textContent;
   }
@@ -609,7 +609,7 @@ async function applyFeedback() {
     });
     const data = await r.json();
     if (!r.ok || !data.ok) {
-      toast(data.error || "AI 修订失败", true);
+      NW.toast(data.error || "AI 修订失败", true);
       return;
     }
     _pendingFeedback = data;
@@ -619,7 +619,7 @@ async function applyFeedback() {
     preview.style.display = "block";
     btn.textContent = "🔄 修订预览已生成 — 确认或取消";
   } catch(e) {
-    toast("网络错误: " + (e.message||e), true);
+    NW.toast("网络错误: " + (e.message||e), true);
   } finally {
     btn.disabled = false;
   }
@@ -638,15 +638,15 @@ async function confirmApplyFeedback() {
     });
     const data = await r.json();
     if (data.ok) {
-      toast("✓ 修订已应用");
+      NW.toast("✓ 修订已应用");
       setTimeout(() => location.reload(), 1200);
     } else {
-      toast(data.error || "应用失败", true);
+      NW.toast(data.error || "应用失败", true);
       btn.disabled = false;
       btn.textContent = "🔄 应用评审反馈自动修订";
     }
   } catch(e) {
-    toast("网络错误: " + (e.message||e), true);
+    NW.toast("网络错误: " + (e.message||e), true);
     btn.disabled = false;
   }
 }

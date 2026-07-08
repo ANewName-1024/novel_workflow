@@ -477,7 +477,7 @@ async function submitForm(e) {
 }
 
 async function deleteEntity(id, name) {
-  if (!confirm(`确定删除 "${name}"?`)) return;
+  if (!NW.confirm(`确定删除 "${name}"?`)) return;
   try {
     const r = await fetch(`/api/entities/${BOOK}/${ACTIVE_TYPE}/${encodeURIComponent(id)}`, {
       method: "DELETE",

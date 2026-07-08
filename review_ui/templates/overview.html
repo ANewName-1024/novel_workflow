@@ -176,16 +176,16 @@ function renderCard(p) {
 
   let stageInfo = "";
   if (status === "running" && pipe.stage) {
-    stageInfo = `<div class="progress-line"><span>章节 ${pipe.ch || cur} · ${escapeHtml(pipe.stage)}</span></div>`;
+    stageInfo = `<div class="progress-line"><span>章节 ${pipe.ch || cur} · ${NW.escapeHtml(pipe.stage)}</span></div>`;
   } else if (status === "failed") {
-    stageInfo = `<div class="progress-line"><span>${escapeHtml(pipe.stage || "")}</span></div>`;
+    stageInfo = `<div class="progress-line"><span>${NW.escapeHtml(pipe.stage || "")}</span></div>`;
   }
 
   return `
     <a class="project-card ${statusClass}" href="/dashboard/${encodeURIComponent(p.name)}">
       <div class="card-head">
-        <div class="card-title">${escapeHtml(p.title)}</div>
-        ${p.genre ? `<span class="card-genre">${escapeHtml(p.genre)}</span>` : ""}
+        <div class="card-title">${NW.escapeHtml(p.title)}</div>
+        ${p.genre ? `<span class="card-genre">${NW.escapeHtml(p.genre)}</span>` : ""}
       </div>
       <span class="badge ${statusClass}">${statusLabel}</span>
       ${stageInfo}

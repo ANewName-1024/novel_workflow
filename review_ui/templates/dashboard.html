@@ -356,20 +356,20 @@ document.getElementById('startBtn').onclick = async () => {
   const autoRw = document.getElementById('autoRewriteChk').checked;
   const r = await API.start(ch, autoRw);
   const data = await r.json();
-  if (data.ok) { toast('已触发 ch' + ch); await refreshStatus(); }
-  else { toast('启动失败: ' + (data.error || JSON.stringify(data)), 'error'); }
+  if (data.ok) { NW.toast('已触发 ch' + ch); await refreshStatus(); }
+  else { NW.toast('启动失败: ' + (data.error || JSON.stringify(data)), 'error'); }
 };
 
 document.getElementById('cancelBtn').onclick = async () => {
-  if (!confirm('确认取消当前流水线?')) return;
+  if (!NW.confirm('确认取消当前流水线?')) return;
   const r = await API.cancel();
   const data = await r.json();
   if (data.ok) {
-    toast('已取消');
+    NW.toast('已取消');
     if (evtSource) { evtSource.close(); evtSource = null; }
     await refreshStatus();
   } else {
-    toast('取消失败: ' + (data.error || JSON.stringify(data)), 'error');
+    NW.toast('取消失败: ' + (data.error || JSON.stringify(data)), 'error');
   }
 };
 
@@ -424,23 +424,23 @@ document.getElementById('m5SkipBtn').onclick = async () => {
   const reason = prompt(`跳过 ch${ch} ${stage} 的原因?`);
   if (reason === null) return;
   const data = await API.skip(ch, stage, reason);
-  if (data.ok) { toast('已 skip'); await m5Refresh(); }
-  else { toast('skip 失败: ' + (data.error || ''), 'error'); }
+  if (data.ok) { NW.toast('已 skip'); await m5Refresh(); }
+  else { NW.toast('skip 失败: ' + (data.error || ''), 'error'); }
 };
 document.getElementById('m5RerunBtn').onclick = async () => {
   const ch = document.getElementById('m5Ch').value;
   const stage = document.getElementById('m5Stage').value;
-  if (!confirm(`确认从 ch${ch} ${stage} 重跑?`)) return;
+  if (!NW.confirm(`确认从 ch${ch} ${stage} 重跑?`)) return;
   const data = await API.rerun(ch, stage);
-  if (data.ok) { toast('已触发 rerun'); await m5Refresh(); }
-  else { toast('rerun 失败: ' + (data.error || ''), 'error'); }
+  if (data.ok) { NW.toast('已触发 rerun'); await m5Refresh(); }
+  else { NW.toast('rerun 失败: ' + (data.error || ''), 'error'); }
 };
 document.getElementById('m5ResetBtn').onclick = async () => {
   const ch = document.getElementById('m5Ch').value;
-  if (!confirm(`⚠ 重置 ch${ch} 的 checkpoint? 不可恢复!`)) return;
+  if (!NW.confirm(`⚠ 重置 ch${ch} 的 checkpoint? 不可恢复!`)) return;
   const data = await API.reset(ch);
-  if (data.ok) { toast('已 reset'); await m5Refresh(); }
-  else { toast('reset 失败: ' + (data.error || ''), 'error'); }
+  if (data.ok) { NW.toast('已 reset'); await m5Refresh(); }
+  else { NW.toast('reset 失败: ' + (data.error || ''), 'error'); }
 };
 
 (async () => {
