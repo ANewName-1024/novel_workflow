@@ -408,19 +408,6 @@ const BOOK = window.BOOK;
 let OUTLINE = null;
 let VERSIONS = [];
 
-async function NW.api(method, path, body = null) {
-  const opts = { method, headers: {"Content-Type": "application/json"} };
-  if (body !== null) opts.body = JSON.stringify(body);
-  const r = await fetch(path, opts);
-  const txt = await r.text();
-  if (!r.ok) {
-    let msg = txt;
-    try { msg = JSON.parse(txt).message || msg; } catch {}
-    throw new Error(`${r.status}: ${msg}`);
-  }
-  return txt ? JSON.parse(txt) : null;
-}
-
 async function loadOutline() {
   try {
     OUTLINE = await NW.api("GET", `/api/outline/${BOOK}`);
@@ -429,15 +416,17 @@ async function loadOutline() {
   } catch (e) {
     document.getElementById("content").innerHTML =
       `<div class="empty-section">加载失败: ${e.message}</div>`;
+    console.error("[loadOutline]", e);
     return;
   }
-  render();
-}
-
-function NW.escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
+  try {
+    render();
+  } catch (e) {
+    document.getElementById("content").innerHTML =
+      `<div class="empty-section"><div style="color:var(--crit);">⚠ 渲染失败: ${e.message}</div>` +
+      `<pre style="text-align:left;font-size:11px;color:var(--muted);margin-top:12px;white-space:pre-wrap;">${e.stack || ''}</pre></div>`;
+    console.error("[render]", e);
+  }
 }
 
 function render() {
@@ -745,12 +734,27 @@ function renderDiff(d, v1, v2) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  // 把 JS 错误也显示到 content 区，避免白屏或一直加载
+  window.addEventListener("error", (e) => {
+    const c = document.getElementById("content");
+    if (c) c.innerHTML =
+      `<div class="empty-section"><div style="color:var(--crit);font-weight:600;">⚠ 页面错误: ${e.message}</div>` +
+      `<div style="color:var(--muted);font-size:12px;margin-top:8px;">at ${e.filename}:${e.lineno}:${e.colno}</div></div>`;
+    console.error("[outline]", e.message, e.filename, e.lineno);
+  });
   const tb = document.querySelector(".toolbar");
   const btn = document.createElement("button");
   btn.className = "btn";
   btn.textContent = "📜 版本对比";
   btn.onclick = showDiff;
   tb.appendChild(btn);
+  // 错误也不应该静默吞 fetch 失败
+  window.addEventListener("unhandledrejection", (e) => {
+    const c = document.getElementById("content");
+    if (c) c.innerHTML =
+      `<div class="empty-section"><div style="color:var(--crit);font-weight:600;">⚠ 加载失败: ${e.reason?.message || e.reason}</div></div>`;
+    console.error("[outline:promise]", e.reason);
+  });
   loadOutline();
   loadModelConfig();
 });

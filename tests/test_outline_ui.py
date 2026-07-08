@@ -64,6 +64,31 @@ class TestPages:
         assert "大纲编辑器" in r.data.decode("utf-8", errors="replace")
         assert "test_book" in r.data.decode("utf-8", errors="replace")
 
+    def test_outline_html_no_illegal_function_dot_syntax(self):
+        """Regression: outline.html 不能含 `async function NW.api(...)` 这种语法错误.
+        NW.api/NW.escapeHtml 必须在 common.js 里集中定义.
+        (Bug: M2 refactor 引入了重复定义 + 语法错误,导致整个页面 JS 不执行,一直加载中.)"""
+        from pathlib import Path
+        outline = (Path(__file__).resolve().parent.parent
+                   / "review_ui" / "templates" / "outline.html").read_text(encoding="utf-8")
+        # 不允许出现 "async function NW." 或 "function NW." 这种错误语法
+        assert "async function NW." not in outline, \
+            "outline.html 包含 'async function NW.api()' 等违法 JS 语法,请改用 'NW.api = ...'"
+        assert "function NW.escapeHtml(" not in outline, \
+            "outline.html 包含 'function NW.escapeHtml()' 重复定义,请删除 (common.js 已定义)"
+        assert "function NW.api(" not in outline, \
+            "outline.html 包含 'function NW.api()' 重复定义,请删除 (common.js 已定义)"
+
+    def test_outline_page_has_load_outline_call(self, client, auth_disabled, two_vol_book):
+        """Regression: 页面必须调用 loadOutline() 才会渲染."""
+        r = client.get("/outline/test_book")
+        assert r.status_code == 200
+        assert b"loadOutline()" in r.data
+
+    def test_outline_page_handles_book_with_no_chapters(self, client, auth_disabled, tmp_projects_root):
+        storage.init_project("empty_book", {"book_name": "empty_book"})
+        r = client.get("/outline/empty_book")
+
     def test_outline_page_handles_book_with_no_chapters(self, client, auth_disabled, tmp_projects_root):
         storage.init_project("empty_book", {"book_name": "empty_book"})
         r = client.get("/outline/empty_book")
