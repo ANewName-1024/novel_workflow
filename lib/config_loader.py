@@ -94,6 +94,8 @@ def get_config(reload: bool = False) -> dict[str, Any]:
     顺序: config.yaml > config.yaml.example > 内置默认值.
     """
     global _cached
+    # First call: load .env into os.environ so ${VAR} placeholders can resolve.
+    _load_dotenv()
     if _cached is not None and not reload:
         return _cached
 

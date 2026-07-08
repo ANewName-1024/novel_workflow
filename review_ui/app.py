@@ -579,7 +579,7 @@ def api_llm_health_check():
     if not pcfg:
         return jsonify({"ok": False, "error": f"未知 provider: {provider}"}), 400
 
-    model = model or pcfg.get("model", "")
+    model = model or pcfg.get("model") or pcfg.get("default_model", "")
     api_base = pcfg.get("api_base", "")
     api_key = pcfg.get("api_key", "")
 
