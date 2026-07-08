@@ -263,7 +263,7 @@
 
   <span style="margin-left: auto;"></span>
 
-  <a href="/book/${BOOK}" class="btn" style="min-height:30px;padding:4px 12px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="设置 AI 模型及其他书籍属性">⚙ 书属性</a>
+  <a href="/book/{{ book }}" class="btn" style="min-height:30px;padding:4px 12px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="设置 AI 模型及其他书籍属性">⚙ 书属性</a>
   <span id="model-status" class="model-status" title="当前 AI 模型书属性设置"></span>
 </div>
 
@@ -825,7 +825,7 @@ async function runAISuggest() {
   resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 生成中, 请稍候 (~5-30秒)...</div>';
   try {
     // 模型在书属性页设置(/book/<book>),这里不传会走 cfg
-    const r = await fetch("/api/outline/${BOOK}/ai-suggest", {
+    const r = await fetch(`/api/outline/${BOOK}/ai-suggest`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       credentials: "same-origin",
@@ -892,7 +892,7 @@ async function runAIExpand() {
   resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 展开中...</div>';
   try {
     // 模型在书属性页设置(/book/<book>),这里不传会走 cfg
-    const r = await fetch("/api/outline/${BOOK}/ai-expand", {
+    const r = await fetch(`/api/outline/${BOOK}/ai-expand`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       credentials: "same-origin",

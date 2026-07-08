@@ -115,8 +115,9 @@ class TestPages:
         assert "_getSelectedProvider" not in body, "_getSelectedProvider should be removed"
         # 新 UI: 跳到书属性页的链接 + model-status 显示
         assert 'id="model-status"' in body, "model-status display should be present"
-        # 有跳到书属性的链接
-        assert '/book/${BOOK}' in body, "should have a link to /book/${BOOK}"
+        # 有跳到书属性的链接 (Jinja 渲染后是 /book/<实际书名>)
+        assert '/book/test_book' in body or 'href="/book/{{ book }}"' in body, \
+            "should have a link to /book/<book_name>"
 
     def test_outline_page_handles_book_with_no_chapters(self, client, auth_disabled, tmp_projects_root):
         storage.init_project("empty_book", {"book_name": "empty_book"})
