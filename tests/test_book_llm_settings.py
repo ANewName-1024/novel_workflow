@@ -118,3 +118,28 @@ class TestBookLLMSettingsAPI:
         cfg = storage.read_json(fresh_book, "config.json")
         assert cfg["llm_provider"] == "preserved"
         assert cfg["llm_model"] == "preserved_model"
+
+
+# ── JS 加载逻辑 regression (Provider 下拉卡 “加载中…” 修复) ─────────────────────
+
+from pathlib import Path
+
+
+class TestLoadLLMProvidersJS:
+    """book.html 的 loadLLMProviders 必须:
+       1. API 返回 {providers: {name: cfg}} (object), 用 Object.entries 不是 .map
+       2. 在 DOM 渲染后调用 (DOMContentLoaded), 否则 getElementById 拿到 null
+    """
+
+    def test_uses_object_entries_not_array_map(self):
+        book_html = (Path(__file__).parent.parent / "review_ui" / "templates" / "book.html").read_text(encoding="utf-8")
+        assert "Object.entries(data.providers" in book_html, \
+            "loadLLMProviders must use Object.entries for object-typed providers"
+        assert "(data.providers || []).map(" not in book_html, \
+            "loadLLMProviders must NOT use (data.providers || []).map — API returns dict"
+
+    def test_called_on_dom_content_loaded(self):
+        book_html = (Path(__file__).parent.parent / "review_ui" / "templates" / "book.html").read_text(encoding="utf-8")
+        assert ('addEventListener("DOMContentLoaded", loadLLMProviders)' in book_html
+                or "addEventListener('DOMContentLoaded', loadLLMProviders)" in book_html), \
+            "loadLLMProviders must be wrapped in DOMContentLoaded — otherwise select is null"

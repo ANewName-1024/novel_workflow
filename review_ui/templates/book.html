@@ -206,7 +206,11 @@ async function loadLLMProviders() {
   try {
     const r = await fetch("/api/llm/providers");
     const data = await r.json();
-    _llmProviders = (data.providers || []).map(p => ({name: p.name, label: p.label || p.name}));
+    // API 返回 {providers: {name: cfg}} (object), 不是 array — 用 Object.entries 迭代
+    _llmProviders = Object.entries(data.providers || {}).map(([name, cfg]) => ({
+      name,
+      label: cfg.label || name,
+    }));
     const curProv = {{ cfg.llm_provider|default('', true)|tojson }};
     const opts = ['<option value="">(default — 全局默认)</option>'];
     opts.push('<option value="custom">[ custom 自填 ]</option>');
@@ -226,7 +230,7 @@ async function loadLLMProviders() {
       sel.value = "";
     }
   } catch (e) {
-    sel.innerHTML = '<option value="">加载失败</option>';
+    if (sel) sel.innerHTML = '<option value="">加载失败</option>';
   }
 }
 
@@ -291,7 +295,8 @@ async function saveLLMSettings() {
   setTimeout(() => { msg.textContent = ""; }, 3000);
 }
 
-loadLLMProviders();
+// 必须在 <select> 渲染之后调用, 否则 getElementById 拿到 null
+document.addEventListener("DOMContentLoaded", loadLLMProviders);
 </script>
 <div class="section-title">
   🤖 AI 模型设置
