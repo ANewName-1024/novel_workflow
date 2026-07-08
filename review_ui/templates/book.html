@@ -5,6 +5,32 @@
 {% block content %}
 <style>
 /* ===== book.html 专属样式 (page-specific, 不在 main.css) ===== */
+.llm-settings-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 10px 0 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.llm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.llm-row label {
+  width: 70px;
+  color: var(--muted); font-size: 13px;
+  text-align: right;
+}
+.llm-row select, .llm-row input[type=text] {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+.save-msg.ok { color: var(--ok); margin-left: 8px; font-size: 13px; }
+.save-msg.err { color: var(--crit); margin-left: 8px; font-size: 13px; }
+.save-msg { margin-left: 8px; font-size: 13px; }
+
 .section-title {
   font-size: 15px; font-weight: 600; margin: 20px 0 10px;
   display: flex; align-items: center; gap: 8px;
@@ -169,6 +195,132 @@
   } catch (e) { /* ignore */ }
 })();
 </script>
+
+<script>
+// === AI 模型设置 (书级别 — 在 book.html 统一管理) ===
+const BOOK = "{{ book }}";
+let _llmProviders = [];
+
+async function loadLLMProviders() {
+  const sel = document.getElementById("llm-provider");
+  try {
+    const r = await fetch("/api/llm/providers");
+    const data = await r.json();
+    _llmProviders = (data.providers || []).map(p => ({name: p.name, label: p.label || p.name}));
+    const curProv = {{ cfg.llm_provider|default('', true)|tojson }};
+    const opts = ['<option value="">(default — 全局默认)</option>'];
+    opts.push('<option value="custom">[ custom 自填 ]</option>');
+    for (const p of _llmProviders) {
+      opts.push(`<option value="${p.name}">${p.label}</option>`);
+    }
+    sel.innerHTML = opts.join("");
+    // 设当前值
+    if (curProv && _llmProviders.some(p => p.name === curProv)) {
+      sel.value = curProv;
+    } else if (curProv && curProv !== "(default — 全局默认)") {
+      sel.value = "custom";
+      const inp = document.getElementById("llm-custom-prov");
+      inp.style.display = "";
+      inp.value = curProv;
+    } else {
+      sel.value = "";
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">加载失败</option>';
+  }
+}
+
+sel_addEventListener_called();
+
+function sel_addEventListener_called() {
+  const sel = document.getElementById("llm-provider");
+  if (!sel || sel._listenerAdded) return;
+  sel._listenerAdded = true;
+  sel.addEventListener("change", (e) => {
+    const inp = document.getElementById("llm-custom-prov");
+    if (e.target.value === "custom") {
+      inp.style.display = "";
+    } else {
+      inp.style.display = "none";
+      inp.value = "";
+    }
+  });
+}
+
+function _getLLMProvider() {
+  const sel = document.getElementById("llm-provider");
+  if (sel.value === "custom") {
+    const inp = document.getElementById("llm-custom-prov");
+    return inp ? inp.value.trim() : "";
+  }
+  return sel.value;
+}
+
+async function saveLLMSettings() {
+  const msg = document.getElementById("llm-save-msg");
+  const modelInput = document.getElementById("llm-model");
+  const provider = _getLLMProvider();
+  const model = modelInput.value.trim();
+  if (!provider) {
+    msg.textContent = "❌ provider 不能为空";
+    msg.className = "save-msg err";
+    return;
+  }
+  msg.textContent = "⏳ 保存…";
+  msg.className = "save-msg";
+  try {
+    const r = await fetch(`/api/config/${BOOK}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ llm_provider: provider, llm_model: model }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      msg.textContent = "✅ 已保存";
+      msg.className = "save-msg ok";
+      const cur = document.getElementById("llm-current");
+      if (cur) cur.textContent = `(${provider}${model ? ' · ' + model : ''})`;
+    } else {
+      msg.textContent = "❌ " + (data.error || "保存失败");
+      msg.className = "save-msg err";
+    }
+  } catch (e) {
+    msg.textContent = "❌ " + e.message;
+    msg.className = "save-msg err";
+  }
+  setTimeout(() => { msg.textContent = ""; }, 3000);
+}
+
+loadLLMProviders();
+</script>
+<div class="section-title">
+  🤖 AI 模型设置
+  <span class="count" id="llm-current">({{ cfg.llm_provider|default('default', true) }}{% if cfg.llm_model %} · {{ cfg.llm_model }}{% endif %})</span>
+</div>
+<div class="llm-settings-card">
+  <div class="llm-row">
+    <label for="llm-provider">Provider</label>
+    <select id="llm-provider" aria-label="LLM Provider">
+      <option value="">(加载中…)</option>
+    </select>
+    <input type="text" id="llm-custom-prov" placeholder="custom provider 名"
+      style="display:none;" size="14" />
+  </div>
+  <div class="llm-row">
+    <label for="llm-model">Model</label>
+    <input type="text" id="llm-model" placeholder="(default — provider 默认)"
+      size="32" value="{{ cfg.llm_model or '' }}" />
+  </div>
+  <div class="llm-row">
+    <label></label>
+    <button class="btn primary" id="llm-save-btn" onclick="saveLLMSettings()">💾 保存 AI 模型设置</button>
+    <span id="llm-save-msg" class="save-msg"></span>
+  </div>
+  <div class="llm-row" style="font-size:12px;color:var(--muted);">
+    <label></label>
+    <span>💡 影响: 大纲 AI 助手(生成章节/展开)、章节 AI 修订、自动评审</span>
+  </div>
+</div>
 
 <div class="section-title">📊 评审统计</div>
 <div class="stats-grid">

@@ -85,24 +85,38 @@ class TestPages:
         assert r.status_code == 200
         assert b"loadOutline()" in r.data
 
-    def test_ai_suggest_call_includes_provider_and_model(self, client, auth_disabled, two_vol_book):
-        """Regression: AI 助手调用必须传 llm_provider/llm_model,才能用当前选择.
-        (Bug: webUI 修改模型后调 AI 助手不生效,因为没传 provider/model 给 API.)"""
+    def test_ai_suggest_call_relies_on_book_cfg(self, client, auth_disabled, two_vol_book):
+        """AI 助手调用不再传 provider/model — 使用书属性页的统一设置 (cfg)。
+        书属性页 (/book/<book>) 是唯一的 AI 模型设置入口。"""
         r = client.get("/outline/test_book")
         body = r.data.decode("utf-8", errors="replace")
-        # ai-suggest 调用必须含 llm_provider/llm_model
-        # 找到 ai-suggest 周围代码块
+        # ai-suggest 调用不应再传 llm_provider/llm_model
         idx = body.find("/api/outline/${BOOK}/ai-suggest")
         assert idx > 0, "ai-suggest fetch call not found"
         block = body[idx:idx+800]
-        assert "llm_provider" in block, "ai-suggest fetch body missing llm_provider"
-        assert "llm_model" in block, "ai-suggest fetch body missing llm_model"
+        assert "llm_provider" not in block, "ai-suggest fetch body should NOT pass llm_provider"
+        assert "llm_model" not in block, "ai-suggest fetch body should NOT pass llm_model"
         # 同样 ai-expand
         idx2 = body.find("/api/outline/${BOOK}/ai-expand")
         assert idx2 > 0, "ai-expand fetch call not found"
         block2 = body[idx2:idx2+800]
-        assert "llm_provider" in block2, "ai-expand fetch body missing llm_provider"
-        assert "llm_model" in block2, "ai-expand fetch body missing llm_model"
+        assert "llm_provider" not in block2, "ai-expand fetch body should NOT pass llm_provider"
+        assert "llm_model" not in block2, "ai-expand fetch body should NOT pass llm_model"
+
+    def test_outline_page_no_longer_has_model_switcher(self, client, auth_disabled, two_vol_book):
+        """AI 模型设置已迁移到 book.html,outline 页面顶部不应再有 ms-provider 等控件。
+        (v1.3 优化: 统一入口在书属性页。)"""
+        r = client.get("/outline/test_book")
+        body = r.data.decode("utf-8", errors="replace")
+        # 旧 UI 元素应该已移除
+        assert 'id="ms-provider"' not in body, "ms-provider select should be removed"
+        assert 'id="ms-model"' not in body, "ms-model input should be removed"
+        assert "saveModelConfig" not in body, "saveModelConfig function should be removed"
+        assert "_getSelectedProvider" not in body, "_getSelectedProvider should be removed"
+        # 新 UI: 跳到书属性页的链接 + model-status 显示
+        assert 'id="model-status"' in body, "model-status display should be present"
+        # 有跳到书属性的链接
+        assert '/book/${BOOK}' in body, "should have a link to /book/${BOOK}"
 
     def test_outline_page_handles_book_with_no_chapters(self, client, auth_disabled, tmp_projects_root):
         storage.init_project("empty_book", {"book_name": "empty_book"})

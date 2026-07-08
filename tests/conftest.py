@@ -38,3 +38,22 @@ def tmp_projects_root(tmp_path, monkeypatch):
         pass
 
     return proj_root
+
+
+@pytest.fixture
+def auth_disabled(monkeypatch):
+    """禁用 admin 登录 (所有页面/API 可直接访问)."""
+    from review_ui import app as review_app
+    monkeypatch.setattr(review_app, "_get_auth", lambda: {
+        "enabled": False, "user": "", "password": ""
+    })
+
+
+@pytest.fixture
+def client(tmp_projects_root, auth_disabled):
+    """测试用 Flask client (admin 已禁用)."""
+    from review_ui import app as review_app
+    review_app.app.config["TESTING"] = True
+    review_app.app.config["SECRET_KEY"] = "test-secret-stable"
+    with review_app.app.test_client() as c:
+        yield c
