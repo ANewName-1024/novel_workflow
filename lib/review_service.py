@@ -245,6 +245,12 @@ def mark_false_positive(book: str, chapter_id: str, reviewer: str, notes: str) -
     })
     save_review(book, record)
     append_audit(book, chapter_id, "false_positive", reviewer, notes)
+    # L51 修复: false_positive 也算 review 过, 同步 mark chapter completed
+    try:
+        num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
+        storage.mark_chapter_completed(book, chapter_id, num)
+    except Exception:
+        pass
     return record
 
 def apply_edit_to_chapter(book: str, chapter_id: str) -> bool:
@@ -271,7 +277,11 @@ def get_review_queue(book: str) -> list[dict]:
         rows2 = _dbmod.list_reviews(storage.ROOT, book, status="needs_rewrite")
         out = rows + rows2
         if out:
-            return sorted(out, key=lambda r: r.get("ch_id", ""))
+            # 兼容 layer: DB schema 用 ch_id, 上层 API 用 chapter_id
+            for r in out:
+                if "chapter_id" not in r and "ch_id" in r:
+                    r["chapter_id"] = r["ch_id"]
+            return sorted(out, key=lambda r: r.get("chapter_id") or r.get("ch_id", ""))
     except Exception:
         pass
     out = []

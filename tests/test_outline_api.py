@@ -150,9 +150,13 @@ class TestNodeAdd:
         loaded = oe.load_outline_or_empty("test_book")
         assert any(c["title"] == "新章" for c in loaded["chapters"])
 
-    def test_add_node_missing_parent_vol_400(self, client, auth_disabled, seeded_book):
-        r = client.post("/api/outline/test_book/node", json={"position": 0})
-        assert r.status_code == 400
+    def test_add_node_missing_parent_vol_falls_back(self, client, auth_disabled, seeded_book):
+        """v1.3: 缺 parent_vol 时回退到首个 volume (mobile 友好)."""
+        r = client.post("/api/outline/test_book/node", json={"position": 0, "title": "X"})
+        assert r.status_code == 201
+        node = r.get_json()["node"]
+        # 应回退到首个 volume
+        assert node.get("vol") == "vol_1"
 
 
 # ── 4. PUT /api/outline/<book>/node/<id> ─────────────────────────────────

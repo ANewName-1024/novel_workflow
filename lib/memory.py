@@ -27,12 +27,12 @@ from .entity import (
     WorldRule,
     gen_id,
 )
+from . import storage
 
 # ── 文件 IO ───────────────────────────────────────────────────────────────
 
 def _mem_path(book: str, lib: str) -> Path:
     """获取 memory 文件路径, 从 lib.storage.PROJECTS_ROOT 拼接."""
-    from . import storage
     return storage.PROJECTS_ROOT / book / "memory" / f"{lib}.json"
 
 

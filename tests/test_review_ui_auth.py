@@ -50,7 +50,9 @@ class TestAuthDisabled:
     def test_books_api_accessible(self, client, auth_disabled, tmp_projects_root):
         r = client.get("/api/projects")
         assert r.status_code == 200
-        assert "test_book" in r.get_json()
+        # API 返回 {"ok": True, "projects": {<id>: {...}}} — nested lookup
+        body = r.get_json()
+        assert "projects" in body and "test_book" in body["projects"]
 
     def test_login_redirects_when_disabled(self, client, auth_disabled):
         """auth 关了就不让看到登录页."""

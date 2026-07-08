@@ -19,6 +19,7 @@ def tmp_projects_root(tmp_path, monkeypatch):
     monkeypatch storage.PROJECTS_ROOT + ROOT 指到 tmp.
     """
     from lib import storage
+    from lib import db as _dbmod
     proj_root = tmp_path / "projects"
     proj_root.mkdir()
 
@@ -27,4 +28,13 @@ def tmp_projects_root(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "ROOT", proj_root)
 
     storage.init_project("test_book", {"book_name": "test_book", "genre": "玄幻"})
+
+    # 同时同步到 SQLite (review_ui /api/projects + review_service 都从 db 读)
+    try:
+        _dbmod.init_db(proj_root)
+        _cfg = storage.read_json("test_book", "config.json") or {}
+        _dbmod.upsert_project(proj_root, "test_book", _cfg.get("book_name", "test_book"), _cfg)
+    except Exception:
+        pass
+
     return proj_root
