@@ -180,3 +180,30 @@ class TestAPI:
             "moves": [{"ch_id": "ch_001", "new_vol": "vol_1", "new_position": 0}],
         })
         assert r.status_code == 200
+
+    def test_ai_modal_model_display_is_dynamic(self):
+        """Regression: AI 助手 modal 标题里的模型名不能硬编码。
+
+        之前写死 '(本地 Qwen3.6-35B)', 用户改了 book.html 里的 LLM 后这里仍显示旧名。
+        修复: 改为 id='modal-ai-model' 占位符, 打开 modal 时由 loadModelStatus() 填充。
+        """
+        from pathlib import Path
+        outline = (Path(__file__).resolve().parent.parent
+                   / "review_ui" / "templates" / "outline.html").read_text(encoding="utf-8")
+        # 不能硬编码具体模型名 (例如 'Qwen3.6' / 'Qwythos' / 'GPT-4')
+        assert "Qwen3.6" not in outline, "AI modal model display is hardcoded — must be dynamic"
+        assert "Qwythos" not in outline, "AI modal model display is hardcoded — must be dynamic"
+        # 必须有动态占位符 + JS 填充逻辑
+        assert 'id="modal-ai-model"' in outline, "AI modal header needs id='modal-ai-model' placeholder"
+        # loadModelStatus() 必须更新这个 id
+        assert "getElementById(\"modal-ai-model\")" in outline \
+            or "getElementById('modal-ai-model')" in outline, \
+            "loadModelStatus() must update #modal-ai-model"
+        # showAIModal() 必须刷新
+        assert "function showAIModal" in outline
+        # 调用 showAIModal 时必须 trigger loadModelStatus (避免缓存旧名)
+        # 不强制测试具体语句, 但要确认 JS 代码块中存在调用
+        show_block_idx = outline.find("function showAIModal")
+        assert show_block_idx > 0
+        show_block = outline[show_block_idx:show_block_idx + 400]
+        assert "loadModelStatus" in show_block, "showAIModal must call loadModelStatus to refresh model name"

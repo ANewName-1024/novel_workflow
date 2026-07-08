@@ -340,7 +340,7 @@
 <!-- AI 助手 Modal -->
 <div class="modal-bg" id="modal-ai">
   <div class="modal" style="max-width: 720px;">
-    <h2>🤖 AI 助手 <span style="font-size: 12px; color: var(--muted); font-weight: normal;">(本地 Qwen3.6-35B)</span></h2>
+    <h2>🤖 AI 助手 <span id="modal-ai-model" style="font-size: 12px; color: var(--muted); font-weight: normal;">(加载中…)</span></h2>
     <div class="error" id="modal-ai-error"></div>
 
     <div style="display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
@@ -756,18 +756,31 @@ let _msProviders = [];
 // 书属性页 /book/<book> 才能改 AI 模型。顶部只显示当前给个 status dot。
 async function loadModelStatus() {
   const dot = document.getElementById("model-status");
-  if (!dot) return;
+  const modal = document.getElementById("modal-ai-model");
   try {
     const r = await fetch(`/api/config/${BOOK}`);
     if (!r.ok) return;
     const cfg = await r.json();
     const prov = cfg.llm_provider || "(default)";
     const model = cfg.llm_model || "";
-    dot.innerHTML = `<span class="current-dot" style="background:var(--ok);"></span>${prov}${model ? ' · ' + NW.escapeHtml(model) : ''}`;
-    dot.title = `${prov} · ${model || "(provider 默认)"}`;
+    const text = `${prov}${model ? ' · ' + NW.escapeHtml(model) : ''}`;
+    if (dot) {
+      dot.innerHTML = `<span class="current-dot" style="background:var(--ok);"></span>${text}`;
+      dot.title = `${prov} · ${model || "(provider 默认)"}`;
+    }
+    if (modal) {
+      modal.textContent = `(${text})`;
+      modal.title = `${prov} · ${model || "(provider 默认)"}`;
+    }
   } catch (e) {
-    dot.textContent = "❓";
-    dot.title = "加载失败 (请到 /book/" + BOOK + " 设置)";
+    if (dot) {
+      dot.textContent = "❓";
+      dot.title = "加载失败 (请到 /book/" + BOOK + " 设置)";
+    }
+    if (modal) {
+      modal.textContent = "(加载失败)";
+      modal.title = "加载失败 (请到 /book/" + BOOK + " 设置)";
+    }
   }
 }
 
@@ -782,6 +795,8 @@ document.getElementById("modal-vol").addEventListener("click", e => {
 function showAIModal() {
   document.getElementById("modal-ai").classList.add("show");
   switchAITab("suggest");
+  // 打开时刷新 modal 标题里的模型名, 否则改了 AI 模型但 modal 仍显示旧名
+  loadModelStatus();
 }
 function switchAITab(tab) {
   const panes = {suggest: "ai-pane-suggest", expand: "ai-pane-expand"};
