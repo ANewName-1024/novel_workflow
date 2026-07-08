@@ -85,6 +85,25 @@ class TestPages:
         assert r.status_code == 200
         assert b"loadOutline()" in r.data
 
+    def test_ai_suggest_call_includes_provider_and_model(self, client, auth_disabled, two_vol_book):
+        """Regression: AI 助手调用必须传 llm_provider/llm_model,才能用当前选择.
+        (Bug: webUI 修改模型后调 AI 助手不生效,因为没传 provider/model 给 API.)"""
+        r = client.get("/outline/test_book")
+        body = r.data.decode("utf-8", errors="replace")
+        # ai-suggest 调用必须含 llm_provider/llm_model
+        # 找到 ai-suggest 周围代码块
+        idx = body.find("/api/outline/${BOOK}/ai-suggest")
+        assert idx > 0, "ai-suggest fetch call not found"
+        block = body[idx:idx+800]
+        assert "llm_provider" in block, "ai-suggest fetch body missing llm_provider"
+        assert "llm_model" in block, "ai-suggest fetch body missing llm_model"
+        # 同样 ai-expand
+        idx2 = body.find("/api/outline/${BOOK}/ai-expand")
+        assert idx2 > 0, "ai-expand fetch call not found"
+        block2 = body[idx2:idx2+800]
+        assert "llm_provider" in block2, "ai-expand fetch body missing llm_provider"
+        assert "llm_model" in block2, "ai-expand fetch body missing llm_model"
+
     def test_outline_page_handles_book_with_no_chapters(self, client, auth_disabled, tmp_projects_root):
         storage.init_project("empty_book", {"book_name": "empty_book"})
         r = client.get("/outline/empty_book")

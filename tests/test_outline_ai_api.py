@@ -94,6 +94,41 @@ class TestAISuggest:
         r = client.post("/api/outline/nonexistent/ai-suggest", json={})
         assert r.status_code == 404
 
+    def test_writes_llm_provider_to_config(self, client, book_with_outline, monkeypatch):
+        """Regression: 前端传的 llm_provider/llm_model 必须写入 config.json.
+        (Bug: M6 加了 API 支持,但 webUI 调用时未传 — 依赖用户手动点保存.)
+        修复后,AI 助手调用会把当前 UI 选择的 model 写入 cfg,
+        避免依赖手动保存。"""
+        from lib import outline_ai as oai
+        from lib import storage
+        monkeypatch.setattr(oai, "suggest_chapters", lambda **kw: {"chapters": [], "reasoning": ""})
+
+        # 调用时带 llm_provider/llm_model
+        r = client.post("/api/outline/test-book/ai-suggest", json={
+            "count": 1, "llm_provider": "deepseek", "llm_model": "deepseek-chat",
+        })
+        assert r.status_code == 200
+        # config.json 已被更新
+        cfg = storage.read_json("test-book", "config.json")
+        assert cfg["llm_provider"] == "deepseek"
+        assert cfg["llm_model"] == "deepseek-chat"
+
+    def test_empty_provider_does_not_overwrite(self, client, book_with_outline, monkeypatch):
+        """不带 llm_provider 时不应覆盖已有 config."""
+        from lib import outline_ai as oai
+        from lib import storage
+        monkeypatch.setattr(oai, "suggest_chapters", lambda **kw: {"chapters": [], "reasoning": ""})
+
+        # 预设 cfg
+        cfg = storage.read_json("test-book", "config.json")
+        cfg["llm_provider"] = "preserved_provider"
+        storage.write_json("test-book", "config.json", cfg)
+
+        r = client.post("/api/outline/test-book/ai-suggest", json={"count": 1})
+        assert r.status_code == 200
+        cfg = storage.read_json("test-book", "config.json")
+        assert cfg["llm_provider"] == "preserved_provider"
+
 
 # ── 2. ai-expand ───────────────────────────────────────────────
 
@@ -141,6 +176,21 @@ class TestAIExpand:
         assert captured["summary"] == "测试摘要"
         assert captured["book_title"] == "测试书"
         assert captured["genre"] == "玄幻"
+
+    def test_writes_llm_provider_to_config(self, client, book_with_outline, monkeypatch):
+        """Regression: ai-expand 也必须支持前端的 llm_provider/llm_model."""
+        from lib import outline_ai as oai
+        from lib import storage
+        monkeypatch.setattr(oai, "expand_chapter", lambda **kw: {"key_events": [], "foreshadow": "", "pov_notes": ""})
+
+        r = client.post("/api/outline/test-book/ai-expand", json={
+            "title": "t", "summary": "s",
+            "llm_provider": "local", "llm_model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+        })
+        assert r.status_code == 200
+        cfg = storage.read_json("test-book", "config.json")
+        assert cfg["llm_provider"] == "local"
+        assert cfg["llm_model"] == "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
 
 
 # ── 3. _outline_to_text helper ─────────────────────────────────

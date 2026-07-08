@@ -896,11 +896,17 @@ async function runAISuggest() {
   const resultEl = document.getElementById("ai-suggest-result");
   resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 生成中, 请稍候 (~5-30秒)...</div>';
   try {
+    const provider = _getSelectedProvider();
+    const model = document.getElementById("ms-model").value.trim();
     const r = await fetch("/api/outline/${BOOK}/ai-suggest", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       credentials: "same-origin",
-      body: JSON.stringify({count: count}),
+      body: JSON.stringify({
+        count: count,
+        llm_provider: provider,
+        llm_model: model,
+      }),
     });
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || "请求失败");
@@ -962,11 +968,18 @@ async function runAIExpand() {
   const resultEl = document.getElementById("ai-expand-result");
   resultEl.innerHTML = '<div style="color: var(--muted); padding: 12px;">🤖 展开中...</div>';
   try {
+    const provider = _getSelectedProvider();
+    const model = document.getElementById("ms-model").value.trim();
     const r = await fetch("/api/outline/${BOOK}/ai-expand", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       credentials: "same-origin",
-      body: JSON.stringify({title, summary}),
+      body: JSON.stringify({
+        title,
+        summary,
+        llm_provider: provider,
+        llm_model: model,
+      }),
     });
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || "请求失败");
