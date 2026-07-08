@@ -75,6 +75,49 @@ class NovelApi {
     }
   }
 
+  Future<dynamic> _put(String path, {Map<String, dynamic>? body}) async {
+    final url = '$_baseUrl$path';
+    final r = await http.put(Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Client-Version': 'apk-1.0.0',
+        },
+        body: body != null ? jsonEncode(body) : null);
+    if (r.statusCode >= 400) {
+      appLogger.logHttpError(url, r.statusCode, r.body);
+      throw Exception('HTTP ${r.statusCode}: ${r.body}');
+    }
+    appLogger.debug('PUT $url -> ${r.statusCode}');
+    try {
+      return jsonDecode(r.body);
+    } on FormatException {
+      throw Exception('非 JSON 响应 (HTTP ${r.statusCode}): '
+          '${r.body.substring(0, r.body.length > 80 ? 80 : r.body.length)}');
+    }
+  }
+
+  Future<dynamic> _delete(String path) async {
+    final url = '$_baseUrl$path';
+    final r = await http.delete(Uri.parse(url),
+        headers: {
+          'Accept': 'application/json',
+          'X-Client-Version': 'apk-1.0.0',
+        });
+    if (r.statusCode >= 400) {
+      appLogger.logHttpError(url, r.statusCode, r.body);
+      throw Exception('HTTP ${r.statusCode}: ${r.body}');
+    }
+    appLogger.debug('DELETE $url -> ${r.statusCode}');
+    if (r.body.isEmpty) return const {};
+    try {
+      return jsonDecode(r.body);
+    } on FormatException {
+      throw Exception('非 JSON 响应 (HTTP ${r.statusCode}): '
+          '${r.body.substring(0, r.body.length > 80 ? 80 : r.body.length)}');
+    }
+  }
+
   // === Projects / Books ===
   /// /api/projects returns a JSON array of book names
   Future<List<Book>> listBooks() async {
@@ -183,6 +226,49 @@ class NovelApi {
 
   Future<void> deleteOutlineNode(String book, String chapterId) async {
     await _post('/api/outline/$book/node/$chapterId/delete', body: {'id': chapterId});
+  }
+
+  /// Update an existing chapter node's editable fields.
+  /// Server: PUT /api/outline/<book>/node/<ch_id>
+  Future<OutlineNode> updateOutlineNode(String book, String chId, Map<String, dynamic> patch) async {
+    final data = await _put('/api/outline/$book/node/$chId', body: patch);
+    return OutlineNode.fromJson((data['node'] as Map).cast<String, dynamic>());
+  }
+
+  /// Delete a chapter node.
+  /// Server: DELETE /api/outline/<book>/node/<ch_id>
+  Future<void> deleteOutlineNodeHard(String book, String chId) async {
+    await _delete('/api/outline/$book/node/$chId');
+  }
+
+  /// Reorder nodes by giving a list of moves.
+  /// Server: POST /api/outline/<book>/reorder
+  /// moves: [{ch_id, new_vol, new_position}, ...]
+  Future<void> reorderOutlineNodes(String book, List<Map<String, dynamic>> moves) async {
+    await _post('/api/outline/$book/reorder', body: {'moves': moves});
+  }
+
+  /// Add a new volume.
+  /// Server: POST /api/outline/<book>/volumes
+  /// Returns the new volume dict (id, title, summary, chapters).
+  Future<Map<String, dynamic>> addOutlineVolume(String book, {required String title, String summary = ''}) async {
+    final data = await _post('/api/outline/$book/volumes',
+        body: {'title': title, 'summary': summary});
+    return ((data['volume'] as Map).cast<String, dynamic>());
+  }
+
+  /// Delete a volume; chapters get reassigned to the first remaining volume.
+  /// Server: DELETE /api/outline/<book>/volumes/<vol_id>
+  Future<int> deleteOutlineVolume(String book, String volId) async {
+    final data = await _delete('/api/outline/$book/volumes/$volId');
+    return (data['reassigned'] as int?) ?? 0;
+  }
+
+  /// Update volume title/summary via PUT /api/outline/<book> (full replace).
+  /// Caller is responsible for providing a valid full outline.
+  /// Convenience: call this after locally editing one volume in the loaded outline.
+  Future<void> replaceOutline(String book, Map<String, dynamic> outline) async {
+    await _put('/api/outline/$book', body: outline);
   }
 
   // === Pipeline ===
