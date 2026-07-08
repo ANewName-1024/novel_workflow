@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'api.dart';
 
 enum LogLevel { debug, info, warn, error, fatal }
@@ -70,6 +72,8 @@ class AppLogger {
   String _deviceId = 'flutter-unknown';
   String _deviceModel = '';
   String _appVersion = '1.0.0+1';
+  String _appBuild = '1';
+  String _packageName = '';
   Timer? _flushTimer;
   bool _initialized = false;
   bool _flushInProgress = false;
@@ -78,7 +82,36 @@ class AppLogger {
     if (_initialized) return;
     _initialized = true;
 
-    _deviceModel = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+    // Read real version + build from package_info_plus
+    try {
+      final pkg = await PackageInfo.fromPlatform();
+      _appVersion = '${pkg.version}+${pkg.buildNumber}';
+      _appBuild = pkg.buildNumber;
+      _packageName = pkg.packageName;
+    } catch (e) {
+      // Fallback to hard-coded if package_info_plus fails
+      _appVersion = '1.0.0+1';
+      _appBuild = '1';
+      _packageName = 'com.example.novel_app';
+    }
+
+    // Read richer device info from device_info_plus
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final a = await deviceInfo.androidInfo;
+        _deviceModel = '${a.manufacturer} ${a.model} (Android ${a.version.release}, SDK ${a.version.sdkInt})';
+      } else if (Platform.isIOS) {
+        final i = await deviceInfo.iosInfo;
+        _deviceModel = '${i.name} (iOS ${i.systemVersion})';
+      } else if (Platform.isWindows) {
+        _deviceModel = 'Windows ${Platform.operatingSystemVersion}';
+      } else {
+        _deviceModel = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+      }
+    } catch (e) {
+      _deviceModel = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+    }
 
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString('_log_device_id') ?? '';
@@ -87,9 +120,13 @@ class AppLogger {
       await prefs.setString('_log_device_id', _deviceId);
     }
 
-    _appVersion = prefs.getString('_app_version') ?? '1.0.0+1';
     _flushTimer = Timer.periodic(_flushInterval, (_) => _flushBatch());
   }
+
+  String get appVersion => _appVersion;
+  String get appBuild => _appBuild;
+  String get packageName => _packageName;
+  String get deviceModelPublic => _deviceModel;
 
   String get deviceId => _deviceId;
 
@@ -171,6 +208,43 @@ class AppLogger {
       appVersion: _appVersion,
       msg: 'CRASH: $msg',
       stack: stack,
+    );
+    _pendingBatch.add(entry);
+    // Immediately try to flush so crash reports aren't lost on app exit.
+    _flushBatch();
+  }
+
+  /// Report a Flutter framework error (e.g. RenderFlex overflow, build errors).
+  /// These are usually caught by FlutterError.onError; this helper
+  /// ensures they hit the server log even if the framework handler was
+  /// bypassed.
+  void reportFlutterError(String msg, String stack, {Map<String, dynamic>? context}) {
+    final entry = LogEntry(
+      id: 'flutter-${DateTime.now().millisecondsSinceEpoch}',
+      ts: DateTime.now().millisecondsSinceEpoch / 1000,
+      level: LogLevel.error,
+      deviceId: _deviceId,
+      deviceModel: _deviceModel,
+      appVersion: _appVersion,
+      msg: 'FLUTTER_ERROR: $msg',
+      stack: stack,
+      context: context ?? {},
+    );
+    _pendingBatch.add(entry);
+    _flushBatch();
+  }
+
+  /// Report an uncaught async error (caught by PlatformDispatcher.onError).
+  void reportAsyncError(Object error, StackTrace stack) {
+    final entry = LogEntry(
+      id: 'async-${DateTime.now().millisecondsSinceEpoch}',
+      ts: DateTime.now().millisecondsSinceEpoch / 1000,
+      level: LogLevel.fatal,
+      deviceId: _deviceId,
+      deviceModel: _deviceModel,
+      appVersion: _appVersion,
+      msg: 'ASYNC_ERROR: $error',
+      stack: stack.toString(),
     );
     _pendingBatch.add(entry);
     _flushBatch();

@@ -4,13 +4,17 @@ import 'services/api.dart';
 import 'services/logger.dart';
 import 'screens/book_detail.dart';
 import 'screens/settings.dart';
-
+import 'dart:ui' as ui;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await novelApi.init();
   await appLogger.init();
-  appLogger.info('App started');
+  appLogger.info('App started', ctx: {
+    'app_version': appLogger.appVersion,
+    'package': appLogger.packageName,
+    'device': appLogger.deviceId,
+  });
   runApp(const NovelApp());
 }
 
@@ -19,14 +23,38 @@ class NovelApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Global error handler
+    // ── Global error handler: framework errors (build / layout / paint) ──
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
-      appLogger.reportCrash(
+      // Log every framework error to server.
+      appLogger.reportFlutterError(
         details.exceptionAsString(),
         details.stack?.toString() ?? '',
+        context: {
+          'library': details.library,
+          'context': details.context?.toString(),
+          'silent': details.silent,
+        },
       );
     };
+
+    // ── Custom ErrorWidget: show a friendly retry card instead of the
+    // dreaded red/yellow "RenderFlex overflowed" box. The crash is still
+    // recorded above via FlutterError.onError.
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      return _ErrorCard(
+        message: details.exceptionAsString(),
+        stack: details.stack?.toString(),
+      );
+    };
+
+    // ── PlatformDispatcher: catches uncaught async errors (outside Flutter
+    // framework, e.g. timer callbacks, futures, isolates).
+    ui.PlatformDispatcher.instance.onError = (error, stack) {
+      appLogger.reportAsyncError(error, stack);
+      return true; // handled; do not crash
+    };
+
     return MaterialApp(
       title: '小说工作流',
       debugShowCheckedModeBanner: false,
@@ -40,6 +68,57 @@ class NovelApp extends StatelessWidget {
         ),
       ),
       home: const HomeScreen(),
+    );
+  }
+}
+
+/// Friendly fallback widget shown when a build/layout/paint error occurs.
+/// The actual crash is already uploaded to the server via FlutterError.onError.
+class _ErrorCard extends StatelessWidget {
+  final String message;
+  final String? stack;
+  const _ErrorCard({required this.message, this.stack});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.orange.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning_amber, color: Colors.orange.shade800, size: 24),
+                const SizedBox(width: 8),
+                const Text('界面渲染出错', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '已上传到服务器。返回上一级或重启应用。',
+              style: TextStyle(color: Colors.orange.shade900, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Text(
+                message,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                maxLines: 6,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -98,7 +177,24 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('小说工作流'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('小说工作流'),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'v${appLogger.appVersion}',
+                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
