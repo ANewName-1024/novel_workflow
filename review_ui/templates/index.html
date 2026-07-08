@@ -2,12 +2,16 @@
 
 {% block title %}📚 小说评审台{% endblock %}
 
-{% block content %}
+{% block extra_head %}
 <style>
 /* ===== index.html 专属样式 ===== */
+.book-card-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
 .book-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-  padding: 16px 18px; margin-bottom: 12px;
+  padding: 16px 18px;
   display: block;
   transition: border-color 0.2s, transform 0.2s;
   text-decoration: none; color: inherit;
@@ -36,48 +40,143 @@
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
 }
 .empty code { background: var(--panel2); padding: 2px 6px; border-radius: 4px; }
+.book-actions {
+  position: absolute; top: 12px; right: 12px;
+  display: flex; gap: 6px; opacity: 0; transition: opacity 0.15s;
+}
+.book-card-wrap:hover .book-actions,
+.book-card-wrap:focus-within .book-actions { opacity: 1; }
 @media (max-width: 720px) {
+  .book-actions { opacity: 1; }  /* 触屏常显 */
   .stats { gap: 4px; }
   .stat { padding: 5px 8px; font-size: 11px; }
   .book-meta { font-size: 12px; }
 }
-</style>
+.btn-icon {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+  width: 32px; height: 32px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; transition: background 0.15s, border-color 0.15s;
+  padding: 0; color: inherit;
+}
+.btn-icon:hover { background: var(--accent); border-color: var(--accent); }
+.btn-icon.danger:hover { background: var(--crit); border-color: var(--crit); }
+.btn-primary {
+  background: var(--accent); color: white;
+  border: none; border-radius: 8px;
+  padding: 10px 18px; font-size: 14px; font-weight: 600;
+  cursor: pointer;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-secondary {
+  background: var(--panel2); color: inherit;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 18px; font-size: 14px;
+  cursor: pointer;
+}
+.toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px;
+}
+.toolbar h1 { margin: 0; }
+.toolbar .actions { display: flex; gap: 8px; }
 
+/* 模态框 */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: none; align-items: center; justify-content: center;
+  z-index: 100; padding: 16px;
+}
+.modal-backdrop.show { display: flex; }
+.modal {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; max-width: 560px; width: 100%;
+  max-height: 90vh; overflow-y: auto;
+}
+.modal h2 { margin-top: 0; margin-bottom: 16px; font-size: 20px; }
+.modal .field { margin-bottom: 12px; }
+.modal label {
+  display: block; margin-bottom: 4px; font-size: 13px;
+  color: var(--muted); font-weight: 600;
+}
+.modal input, .modal textarea, .modal select {
+  width: 100%; box-sizing: border-box;
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--panel2); color: inherit;
+  font-size: 14px; font-family: inherit;
+}
+.modal textarea { min-height: 80px; resize: vertical; }
+.modal .field-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.modal .field-row .field { margin-bottom: 12px; }
+.modal .field-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+.modal .error {
+  background: rgba(255,107,107,0.15); color: var(--crit);
+  padding: 10px 12px; border-radius: 6px; margin-bottom: 12px;
+  font-size: 13px; display: none;
+}
+.modal .error.show { display: block; }
+.modal .required-mark { color: var(--crit); }
+@media (max-width: 720px) {
+  .modal .field-row { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
 <h1><span class="icon">📚</span>小说评审台</h1>
 <div class="subtitle">人工审核 · 章节评审队列 · 历史追溯</div>
 
 <div class="container" style="padding-left:0;padding-right:0;">
+  <div class="toolbar">
+    <div></div>
+    <div class="actions">
+      <button class="btn-primary" id="btn-new-book" type="button">+ 新建书籍</button>
+    </div>
+  </div>
+
   {% if books %}
     {% for b in books %}
-    <a class="book-card" href="/book/{{ b.name }}">
-      <div class="book-title">{{ b.title }}</div>
-      <div class="book-meta">
-        <span>📂 {{ b.name }}</span>
-        <span>🎭 {{ b.genre }}</span>
-        <span>👤 {{ b.protagonist }}</span>
-        <span>📄 {{ b.chapters }} 章</span>
+    <div class="book-card-wrap">
+      <a class="book-card" href="/book/{{ b.name }}">
+        <div class="book-title">{{ b.title }}</div>
+        <div class="book-meta">
+          <span>📂 {{ b.name }}</span>
+          <span>🎭 {{ b.genre }}</span>
+          <span>👤 {{ b.protagonist }}</span>
+          <span>📄 {{ b.chapters }} 章</span>
+        </div>
+        <div class="stats">
+          {% if b.pending %}
+          <div class="stat pending"><span class="num">⚠ {{ b.pending }}</span><span>待审</span></div>
+          {% endif %}
+          {% if b.needs_rewrite %}
+          <div class="stat crit"><span class="num">✗ {{ b.needs_rewrite }}</span><span>需重写</span></div>
+          {% endif %}
+          {% if b.approved %}
+          <div class="stat ok"><span class="num">✓ {{ b.approved }}</span><span>已批准</span></div>
+          {% endif %}
+          <div class="stat"><span class="num">{{ b.auto_passed }}</span><span>自动通过</span></div>
+          <div class="stat"><span class="num">{{ b.human_edited }}</span><span>人工编辑</span></div>
+          {% if b.false_positive %}
+          <div class="stat"><span class="num">{{ b.false_positive }}</span><span>误报</span></div>
+          {% endif %}
+        </div>
+      </a>
+      <div class="book-actions">
+        <button class="btn-icon" data-act="edit" data-book="{{ b.name }}" title="编辑" aria-label="编辑">✏️</button>
+        <button class="btn-icon danger" data-act="delete" data-book="{{ b.name }}" title="删除" aria-label="删除">🗑️</button>
       </div>
-      <div class="stats">
-        {% if b.pending %}
-        <div class="stat pending"><span class="num">⚠ {{ b.pending }}</span><span>待审</span></div>
-        {% endif %}
-        {% if b.needs_rewrite %}
-        <div class="stat crit"><span class="num">✗ {{ b.needs_rewrite }}</span><span>需重写</span></div>
-        {% endif %}
-        {% if b.approved %}
-        <div class="stat ok"><span class="num">✓ {{ b.approved }}</span><span>已批准</span></div>
-        {% endif %}
-        <div class="stat"><span class="num">{{ b.auto_passed }}</span><span>自动通过</span></div>
-        <div class="stat"><span class="num">{{ b.human_edited }}</span><span>人工编辑</span></div>
-        {% if b.false_positive %}
-        <div class="stat"><span class="num">{{ b.false_positive }}</span><span>误报</span></div>
-        {% endif %}
-      </div>
-    </a>
+    </div>
     {% endfor %}
   {% else %}
     <div class="empty">
-      📭 没有项目。<br>在 <code>novel_workflow/projects/</code> 下用 <code>python novel.py init</code> 创建。
+      📭 没有项目。<br>点击右上角 <strong>+ 新建书籍</strong> 创建第一个项目。
     </div>
   {% endif %}
 </div>
@@ -85,4 +184,254 @@
 <div class="page-footer" style="padding:24px;text-align:center;color:var(--muted);font-size:12px;">
   Novel Review UI · 端口 21199 · 数据: <code>novel_workflow/projects/</code>
 </div>
+
+<!-- 新建/编辑模态框 -->
+<div class="modal-backdrop" id="book-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <h2 id="modal-title">新建书籍</h2>
+    <div class="error" id="modal-error"></div>
+    <form id="book-form">
+      <input type="hidden" name="mode" value="create">
+      <div class="field">
+        <label>项目名 (slug) <span class="required-mark">*</span></label>
+        <input type="text" name="name" required pattern="[A-Za-z0-9_\-]{1,64}"
+               placeholder="my_novel (字母数字下划线连字符)">
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+          目录名,创建后不可修改。1-64 字符,允许 <code>[A-Za-z0-9_-]</code>
+        </div>
+      </div>
+      <div class="field">
+        <label>书名 (显示名) <span class="required-mark">*</span></label>
+        <input type="text" name="book_name" required placeholder="我的小说">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>题材</label>
+          <input type="text" name="genre" placeholder="玄幻 / 都市 / 科幻 ..." value="都市">
+        </div>
+        <div class="field">
+          <label>基调</label>
+          <input type="text" name="tone" placeholder="轻松日常 / 热血 ..." value="轻松日常">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>主角</label>
+          <input type="text" name="protagonist" placeholder="张三">
+        </div>
+        <div class="field">
+          <label>反派</label>
+          <input type="text" name="antagonist" placeholder="李四">
+        </div>
+      </div>
+      <div class="field">
+        <label>主剧情 <span class="required-mark">*</span></label>
+        <textarea name="main_plot" required placeholder="一段话描述故事核心冲突和走向"></textarea>
+      </div>
+      <div class="field">
+        <label>文风</label>
+        <input type="text" name="style" placeholder="简洁流畅" value="简洁流畅">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>目标章节数</label>
+          <input type="number" name="target_chapters" min="1" max="9999" value="20">
+        </div>
+        <div class="field">
+          <label>每章字数</label>
+          <input type="number" name="words_per_chapter" min="500" max="50000" value="2500">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>LLM 模型</label>
+          <input type="text" name="llm_model" placeholder="deepseek-chat / Qwen3.6-...gguf">
+        </div>
+        <div class="field">
+          <label>LLM Provider</label>
+          <input type="text" name="llm_provider" placeholder="deepseek / local / openai">
+        </div>
+      </div>
+      <div class="field">
+        <label>API Base URL</label>
+        <input type="text" name="api_base" placeholder="https://api.deepseek.com/v1">
+      </div>
+      <div class="field-actions">
+        <button type="button" class="btn-secondary" data-act="cancel">取消</button>
+        <button type="submit" class="btn-primary" id="modal-submit">创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 删除确认 -->
+<div class="modal-backdrop" id="delete-modal" role="dialog" aria-modal="true">
+  <div class="modal" style="max-width:420px;">
+    <h2>确认删除</h2>
+    <div class="error" id="delete-error"></div>
+    <p style="margin:0 0 8px;">即将删除项目 <strong id="delete-target"></strong></p>
+    <p style="color:var(--crit);font-size:13px;margin:0;">
+      ⚠ 此操作不可撤销:所有章节、大纲、记忆文件都将被永久删除。
+    </p>
+    <div class="field-actions">
+      <button type="button" class="btn-secondary" data-act="cancel">取消</button>
+      <button type="button" class="btn-primary" id="delete-confirm" style="background:var(--crit);">确认删除</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const bookModal = document.getElementById('book-modal');
+  const deleteModal = document.getElementById('delete-modal');
+  const bookForm = document.getElementById('book-form');
+  const modalTitle = document.getElementById('modal-title');
+  const modalError = document.getElementById('modal-error');
+  const modalSubmit = document.getElementById('modal-submit');
+  const deleteError = document.getElementById('delete-error');
+  const deleteTarget = document.getElementById('delete-target');
+  const deleteConfirm = document.getElementById('delete-confirm');
+  const nameInput = bookForm.elements['name'];
+  let deleteBookName = null;
+
+  function showError(el, msg) {
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function clearError(el) {
+    el.textContent = '';
+    el.classList.remove('show');
+  }
+  function openModal(modal) { modal.classList.add('show'); }
+  function closeModal(modal) { modal.classList.remove('show'); clearError(modalError); clearError(deleteError); }
+
+  // ── 新建 ──────────────────────────────────────────────────────────────
+  document.getElementById('btn-new-book').addEventListener('click', () => {
+    bookForm.reset();
+    bookForm.elements['mode'].value = 'create';
+    bookForm.elements['name'].disabled = false;
+    nameInput.value = '';
+    bookForm.elements['book_name'].value = '';
+    bookForm.elements['genre'].value = '都市';
+    bookForm.elements['tone'].value = '轻松日常';
+    bookForm.elements['style'].value = '简洁流畅';
+    bookForm.elements['target_chapters'].value = '20';
+    bookForm.elements['words_per_chapter'].value = '2500';
+    modalTitle.textContent = '新建书籍';
+    modalSubmit.textContent = '创建';
+    openModal(bookModal);
+    setTimeout(() => nameInput.focus(), 50);
+  });
+
+  // ── 编辑 ──────────────────────────────────────────────────────────────
+  async function editBook(book) {
+    clearError(modalError);
+    bookForm.elements['mode'].value = 'edit';
+    bookForm.elements['name'].value = book;
+    bookForm.elements['name'].disabled = true;
+    modalTitle.textContent = `编辑书籍 [${book}]`;
+    modalSubmit.textContent = '保存';
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(book)}`);
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || '加载失败');
+      const cfg = data.config;
+      for (const k of ['book_name','genre','tone','protagonist','antagonist',
+                       'main_plot','style','target_chapters','words_per_chapter',
+                       'llm_model','llm_provider','api_base']) {
+        if (cfg[k] != null) bookForm.elements[k].value = cfg[k];
+      }
+      openModal(bookModal);
+    } catch (exc) {
+      showError(modalError, '加载项目配置失败: ' + exc.message);
+    }
+  }
+
+  // ── 提交 ──────────────────────────────────────────────────────────────
+  bookForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearError(modalError);
+    modalSubmit.disabled = true;
+    const mode = bookForm.elements['mode'].value;
+    const payload = {};
+    for (const el of bookForm.elements) {
+      if (el.name && el.name !== 'mode') payload[el.name] = el.value;
+    }
+    try {
+      const url = mode === 'edit'
+        ? `/api/projects/${encodeURIComponent(payload.name)}`
+        : '/api/projects';
+      const method = mode === 'edit' ? 'PUT' : 'POST';
+      const r = await fetch(url, {
+        method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      location.reload();
+    } catch (exc) {
+      showError(modalError, (mode === 'edit' ? '保存' : '创建') + '失败: ' + exc.message);
+    } finally {
+      modalSubmit.disabled = false;
+    }
+  });
+
+  // ── 删除 ──────────────────────────────────────────────────────────────
+  function askDelete(book) {
+    deleteBookName = book;
+    deleteTarget.textContent = book;
+    clearError(deleteError);
+    openModal(deleteModal);
+  }
+  deleteConfirm.addEventListener('click', async () => {
+    if (!deleteBookName) return;
+    deleteConfirm.disabled = true;
+    clearError(deleteError);
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(deleteBookName)}`, {
+        method: 'DELETE',
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      location.reload();
+    } catch (exc) {
+      showError(deleteError, '删除失败: ' + exc.message);
+    } finally {
+      deleteConfirm.disabled = false;
+    }
+  });
+
+  // ── 卡片按钮事件委托 ──────────────────────────────────────────────────
+  document.querySelectorAll('.book-card-wrap').forEach(wrap => {
+    const book = wrap.querySelector('.btn-icon')?.dataset.book;
+    if (!book) return;
+    wrap.querySelector('[data-act="edit"]')?.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation(); editBook(book);
+    });
+    wrap.querySelector('[data-act="delete"]')?.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation(); askDelete(book);
+    });
+  });
+
+  // ── 取消按钮 + 点背景关闭 ─────────────────────────────────────────────
+  document.querySelectorAll('[data-act="cancel"]').forEach(b => {
+    b.addEventListener('click', () => {
+      closeModal(bookModal); closeModal(deleteModal);
+    });
+  });
+  [bookModal, deleteModal].forEach(m => {
+    m.addEventListener('click', (e) => {
+      if (e.target === m) closeModal(m);
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeModal(bookModal); closeModal(deleteModal);
+    }
+  });
+})();
+</script>
 {% endblock %}
