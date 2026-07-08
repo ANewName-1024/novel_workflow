@@ -33,7 +33,19 @@ class NovelApi {
       throw Exception('HTTP ${r.statusCode}: ${r.body}');
     }
     appLogger.debug('GET $url -> ${r.statusCode}');
-    return jsonDecode(r.body);
+    try {
+      return jsonDecode(r.body);
+    } on FormatException {
+      // Server may have returned a non-JSON body (e.g. text/plain chapter
+      // markdown, or an HTML error page). Surface a clear error instead
+      // of letting jsonDecode crash the caller.
+      appLogger.warn('GET $url returned non-JSON body', ctx: {
+        'len': r.body.length,
+        'preview': r.body.substring(0, r.body.length > 200 ? 200 : r.body.length),
+      });
+      throw Exception('非 JSON 响应 (HTTP ${r.statusCode}): '
+          '${r.body.substring(0, r.body.length > 80 ? 80 : r.body.length)}');
+    }
   }
 
   Future<dynamic> _post(String path,
@@ -51,7 +63,16 @@ class NovelApi {
       throw Exception('HTTP ${r.statusCode}: ${r.body}');
     }
     appLogger.debug('POST $url -> ${r.statusCode}');
-    return jsonDecode(r.body);
+    try {
+      return jsonDecode(r.body);
+    } on FormatException {
+      appLogger.warn('POST $url returned non-JSON body', ctx: {
+        'len': r.body.length,
+        'preview': r.body.substring(0, r.body.length > 200 ? 200 : r.body.length),
+      });
+      throw Exception('非 JSON 响应 (HTTP ${r.statusCode}): '
+          '${r.body.substring(0, r.body.length > 80 ? 80 : r.body.length)}');
+    }
   }
 
   // === Projects / Books ===
@@ -88,9 +109,17 @@ class NovelApi {
         .toList();
   }
 
+  /// Returns chapter detail. The server returns the body as text/plain
+  /// markdown, NOT JSON, so we use getChapterRaw (Accept: text/plain)
+  /// and wrap it into a Chapter object.
   Future<Chapter> getChapter(String book, String ch) async {
-    final data = await _get('/api/chapter/$book/$ch') as Map<String, dynamic>;
-    return Chapter.fromJson(data);
+    final raw = await getChapterRaw(book, ch);
+    return Chapter(
+      id: ch,
+      title: ch,  // server doesn't include title in text body
+      content: raw is String ? raw : raw.toString(),
+      status: 'loaded',
+    );
   }
 
   Future<ChapterDiff> getDiff(String book, String ch) async {
