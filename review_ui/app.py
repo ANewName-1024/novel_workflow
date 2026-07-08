@@ -1230,18 +1230,29 @@ def api_outline_replace(book):
 def api_outline_node_add(book):
     """POST /api/outline/<book>/node
     body: {parent_vol: 'vol_1', position: 0, title: '...', summary: '...',
-           pov: '...', key_events: [...], foreshadow: [...]}"""
+           pov: '...', key_events: [...], foreshadow: [...]}
+
+    parent_vol is optional; if missing, falls back to:
+      1. The first existing volume in the outline.
+      2. Auto-create a default 'vol_1' if the outline has no volumes.
+    """
     _ensure_book(book)
     body = request.get_json(silent=True) or {}
     parent_vol = body.get("parent_vol") or body.get("vol")
     position = int(body.get("position", 0))
-    if not parent_vol:
-        abort(400, description="'parent_vol' 必填")
     o = oe.load_outline_or_empty(book)
+    if not parent_vol:
+        # Fallback 1: first existing volume
+        if o.get("volumes"):
+            parent_vol = o["volumes"][0]["id"]
+        else:
+            # Fallback 2: auto-create a default volume
+            default_vol = oe.add_volume(o, title="默认卷", summary="自动创建")
+            parent_vol = default_vol["id"]
     fields = {k: v for k, v in body.items() if k in oe.NODE_FIELDS and k != "id"}
     node = oe.add_node(o, parent_vol, position, **fields)
     oe.save_outline(book, o)
-    return jsonify({"ok": True, "node": node}), 201
+    return jsonify({"ok": True, "node": node, "parent_vol": parent_vol}), 201
 
 
 @app.route("/api/outline/<book>/node/<ch_id>", methods=["PUT"])
