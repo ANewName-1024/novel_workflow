@@ -113,7 +113,7 @@ class TestExpandChapter:
             title="第1章 开篇", summary="主角登场",
         )
         assert result["key_events"] == ["事件1", "事件2"]
-        assert result["foreshadow"] == "悬疑"
+        assert result["foreshadow"] == ["悬疑"]  # normalized to list (frontend contract)
         call = fake_llm.calls[0]
         assert "第1章 开篇" in call["prompt"]
         assert "主角登场" in call["prompt"]

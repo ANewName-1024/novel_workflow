@@ -110,7 +110,26 @@ def suggest_chapters(
         max_tokens=2048,
         stage="outline_ai_suggest",
     )
-    return _parse_json(raw, fallback={"chapters": [], "reasoning": raw})
+    result = _parse_json(raw, fallback={"chapters": [], "reasoning": raw})
+    # 标准化: foreshadow 应该是 list[ str ] (前端会 .map())
+    # LLM 可能返回字符串 → wrap 成单元素 list; 缺失 → 空 list
+    for ch in result.get("chapters") or []:
+        fs = ch.get("foreshadow")
+        if isinstance(fs, str):
+            ch["foreshadow"] = [fs] if fs.strip() else []
+        elif isinstance(fs, list):
+            ch["foreshadow"] = [str(x) for x in fs if str(x).strip()]
+        else:
+            ch["foreshadow"] = []
+        # key_events 同理
+        ke = ch.get("key_events")
+        if isinstance(ke, str):
+            ch["key_events"] = [ke] if ke.strip() else []
+        elif isinstance(ke, list):
+            ch["key_events"] = [str(x) for x in ke if str(x).strip()]
+        else:
+            ch["key_events"] = []
+    return result
 
 
 def expand_chapter(
@@ -141,7 +160,23 @@ def expand_chapter(
         max_tokens=1536,
         stage="outline_ai_expand",
     )
-    return _parse_json(raw, fallback={"key_events": [], "foreshadow": "", "notes": raw})
+    result = _parse_json(raw, fallback={"key_events": [], "foreshadow": "", "notes": raw})
+    # 标准化: foreshadow → list[str], key_events → list[str]
+    fs = result.get("foreshadow")
+    if isinstance(fs, str):
+        result["foreshadow"] = [fs] if fs.strip() else []
+    elif isinstance(fs, list):
+        result["foreshadow"] = [str(x) for x in fs if str(x).strip()]
+    else:
+        result["foreshadow"] = []
+    ke = result.get("key_events")
+    if isinstance(ke, str):
+        result["key_events"] = [ke] if ke.strip() else []
+    elif isinstance(ke, list):
+        result["key_events"] = [str(x) for x in ke if str(x).strip()]
+    else:
+        result["key_events"] = []
+    return result
 
 
 # ── JSON parsing helpers ────────────────────────────────────────────────────
