@@ -270,7 +270,10 @@ def apply_edit_to_chapter(book: str, chapter_id: str) -> bool:
 # ── queries (SQLite first, file fallback) ──────────────────────────────────
 
 def get_review_queue(book: str) -> list[dict]:
-    """Return all chapters with status pending_review or needs_rewrite. SQLite first."""
+    """Return all chapters with status pending_review or needs_rewrite. SQLite first.
+    每个 item 额外带 chapter_title (从 chapters 目录解析), 供 /book/<book> 待审表格显示.
+    """
+    out: list[dict] = []
     try:
         from . import db as _dbmod
         rows = _dbmod.list_reviews(storage.ROOT, book, status="pending_review")
@@ -281,19 +284,33 @@ def get_review_queue(book: str) -> list[dict]:
             for r in out:
                 if "chapter_id" not in r and "ch_id" in r:
                     r["chapter_id"] = r["ch_id"]
-            return sorted(out, key=lambda r: r.get("chapter_id") or r.get("ch_id", ""))
     except Exception:
         pass
-    out = []
-    for p in sorted(review_dir(book).glob("ch_*.review.json")):
-        try:
-            r = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        s = r.get("status")
-        if s in ("pending_review", "needs_rewrite"):
-            out.append(r)
-    return out
+    if not out:
+        for p in sorted(review_dir(book).glob("ch_*.review.json")):
+            try:
+                r = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            s = r.get("status")
+            if s in ("pending_review", "needs_rewrite"):
+                out.append(r)
+    # Enrich: cross-ref chapters dir to get titles (前 bug: 待审表格只显示 ch_001, 没标题)
+    try:
+        ch_map = {ch.get("id"): ch for ch in storage.list_chapters(book)}
+        for r in out:
+            cid = r.get("chapter_id") or r.get("ch_id", "")
+            ch = ch_map.get(cid, {})
+            r["chapter_title"] = ch.get("title", "")
+            r["word_count"] = ch.get("word_count", 0)
+            r["preview"] = ch.get("preview", "")
+    except Exception:
+        # chapter 目录可能还没创建, 静默 fallback
+        for r in out:
+            r.setdefault("chapter_title", "")
+            r.setdefault("word_count", 0)
+            r.setdefault("preview", "")
+    return sorted(out, key=lambda r: r.get("chapter_id") or r.get("ch_id", ""))
 
 def get_review_stats(book: str) -> dict:
     """Aggregate counts. SQLite first, file fallback."""

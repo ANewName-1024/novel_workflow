@@ -99,6 +99,8 @@
   gap: 10px; margin-bottom: 6px;
 }
 .queue-row-main .ch { font-weight: 600; color: var(--accent); font-size: 16px; }
+.queue-row-main .queue-title { flex: 1; font-weight: 500; color: var(--text, var(--fg)); font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-row-main .queue-title.empty { color: var(--muted); font-style: italic; }
 .queue-row-meta {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   font-size: 13px; color: var(--muted);
@@ -367,6 +369,7 @@ document.addEventListener("DOMContentLoaded", loadLLMProviders);
     <a class="row-body" href="/book/{{ book }}/{{ r.chapter_id }}">
       <div class="queue-row-main">
         <span class="ch">{{ r.chapter_id }}</span>
+        <span class="queue-title {{ '' if r.chapter_title else 'empty' }}">{{ r.chapter_title|truncate(40) if r.chapter_title else '(无标题)' }}</span>
         <span class="severity {{ r.auto_severity }}">{{ r.auto_severity }}</span>
       </div>
       <div class="queue-row-meta">
