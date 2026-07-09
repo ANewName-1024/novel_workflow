@@ -63,20 +63,67 @@ def metrics_path(book: str) -> Path:
 # ── 进程状态检查 ───────────────────────────────────────────────────────────
 
 def _is_pid_alive(pid: int) -> bool:
-    """跨平台 PID 存活检查."""
+    """跨平台 PID 存活检查. 区分 'alive' (真的在跑) vs 'zombie' (死了, 未被 parent wait).
+
+    历史坑 (2026-07-09): 之前 psutil.pid_exists() / os.kill(pid, 0) 都把 zombie 判成 alive.
+    后果: 子进程出 LLM 错死了, state 一直 running, 看板卡住, 用户无法重跑.
+    修复: zombie 状态不算 alive.
+    """
     if pid is None or pid <= 0:
         return False
     if psutil is not None:
         try:
-            return psutil.pid_exists(pid)
+            if not psutil.pid_exists(pid):
+                return False
+            p = psutil.Process(pid)
+            # psutil status constants: 'running', 'sleeping', 'disk-sleep', 'stopped',
+            # 'trace-stop', 'zombie', 'dead', 'wake-kill', 'idle' (Linux only)
+            status = p.status
+            if status in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                return False
+            return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
         except Exception:
             return False
-    # fallback: POSIX only
+    # fallback: POSIX only — read /proc/<pid>/status for State: Z
+    if os.name == "posix":
+        try:
+            with open(f"/proc/{pid}/status", "r") as f:
+                for line in f:
+                    if line.startswith("State:"):
+                        # 'State:\tZ (zombie)'  or  'State:\tR (running)' etc.
+                        if "(zombie)" in line:
+                            return False
+                        return True
+            return False  # 未读到 State 行 → 视为不存在
+        except (OSError, IOError):
+            return False
+    # Windows fallback (无 psutil)
     try:
         os.kill(pid, 0)
         return True
     except (OSError, ProcessLookupError):
         return False
+
+
+def _reap_zombie(pid: int) -> bool:
+    """POSIX: waitpid 收尸 zombie. 返回是否成功 reap.
+
+    不调用这个函数, zombie 会一直在进程表里, ps 看着庙 'alive'.
+    但因为 _is_pid_alive 现在能识 zombie, 不 reap 也不会误判.
+    reap 是 '清理垃圾', 业务逻辑不依赖此函数.
+    """
+    if pid is None or pid <= 0:
+        return False
+    if os.name == "posix":
+        try:
+            # WNOHANG: 不挂起, 只检查
+            _pid, _status = os.waitpid(pid, os.WNOHANG)
+            return _pid == pid
+        except (OSError, ChildProcessError):
+            return False
+    return False
 
 
 def _kill_pid_tree(pid: int, grace_sec: float = 5.0) -> bool:
@@ -276,10 +323,29 @@ class PipelineRunner:
             pid = state.get("pid")
             if not _is_pid_alive(pid):
                 # PID 死了但 state 没更新, 自动校准
-                state["status"] = "failed"
-                state["ended_at"] = _now_iso()
-                state["exit_code"] = -1
-                state["error"] = "进程异常退出 (无更新)"
+                # 先看 log 有没有 '完成' marker — 有就说明子进程其实写完了
+                # 只是 sub 退出后没改 state
+                log_path = state.get("log_path")
+                tail_text = ""
+                if log_path and Path(log_path).exists():
+                    try:
+                        tail_text = Path(log_path).read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        pass
+                if "章节撰写完成" in tail_text or "✓ 完成" in tail_text:
+                    # 实际上成功了
+                    state["status"] = "done"
+                    state["ended_at"] = _now_iso()
+                    state["exit_code"] = 0
+                    state["error"] = None
+                    state["current_stage"] = "done"
+                else:
+                    state["status"] = "failed"
+                    state["ended_at"] = _now_iso()
+                    state["exit_code"] = -1
+                    state["error"] = "进程异常退出 (无更新)"
+                # 尽力 reap zombie (POSIX only), 避免进程表里持续占位
+                _reap_zombie(pid)
                 _write_state(book, state)
                 _active.pop(book, None)
             else:

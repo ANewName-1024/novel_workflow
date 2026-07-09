@@ -241,8 +241,8 @@ def cmd_outline(args: argparse.Namespace) -> None:
               f"如需重新生成加 --regenerate")
         return  # 正常跳过, 不算错误
 
-    llm = LLM(model=cfg.get("llm_model",""), api_base=cfg.get("api_base",""))
-    print(f"LLM: {cfg.get('llm_model')} | {cfg.get('api_base')}")
+    llm = get_llm(book=book)
+    print(f"LLM: {llm.model} | {llm.api_base}")
     print("正在生成三阶大纲…（预计 30-60 秒）\n")
 
     ol = outmod.generate_outline(
@@ -283,8 +283,8 @@ def cmd_write(args: argparse.Namespace) -> None:
     if not cfg or not ol:
         raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 未初始化大纲", detail="请先运行 outline")
 
-    llm = LLM(model=cfg.get("llm_model",""), api_base=cfg.get("api_base",""))
-    print(f"LLM: {cfg.get('llm_model')}")
+    llm = get_llm(book=book)
+    print(f"LLM: {llm.model} | {llm.api_base}")
     print(f"\n滑动窗口上下文预算估算（基于 build_writing_context）：")
     for i in [1, 5, 10, 15, 20]:
         if i > (prog.get("total_chapters") or cfg.get("target_chapters", 20)):
@@ -363,7 +363,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     cfg  = storage.read_json(book, "config.json")
     if not cfg:
         raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在")
-    llm = LLM(model=cfg.get("llm_model",""), api_base=cfg.get("api_base",""))
+    llm = get_llm(book=book)
 
     if args.chapter:
         rev = revmod.review_chapter(book, args.chapter, llm)
@@ -570,8 +570,7 @@ def cmd_review_edit(args: argparse.Namespace) -> None:
             print(f"  ⤷ 已同步覆盖到 chapters/{chapter_id}.md")
             # Re-run summary & state for new content
             try:
-                llm = LLM(model=(storage.read_json(book,'config.json') or {}).get('llm_model',''),
-                          api_base=(storage.read_json(book,'config.json') or {}).get('api_base',''))
+                llm = get_llm(book=book)
                 summod.generate_chapter_summary(book, chapter_id, llm)
                 statemod.update_state_after_chapter(book, int(chapter_id.split('_')[1]), llm)
                 print(f"  ⤷ 已重新生成摘要 + 更新状态")
@@ -946,7 +945,7 @@ def _dispatch(args: argparse.Namespace, log: logging.Logger) -> None:
         last = chapters[-1]["id"]
         text = storage.read_chapter(book, last) or ""
         cfg  = storage.read_json(book, "config.json") or {}
-        llm  = LLM(model=cfg.get("llm_model",""), api_base=cfg.get("api_base",""))
+        llm  = get_llm(book=book)
         ex   = extmod.extract_from_chapter(text, llm)
         memory.merge_extraction(book, ex)
         print(f"✓ 从 [{last}] 提取并更新记忆库完成")
