@@ -105,6 +105,16 @@
     }[c]));
   };
 
+  // ── toList: 统一 LLM/旧数据的 list 字段 (str → [str], missing → []) ───
+  // LLM prompt 让 foreshadow 返回 30字内字符串, 但前端/数据都用 list.
+  // 旧数据可能有 string 残留, 此 helper 防御性转 list.
+  NW.toList = function(v) {
+    if (Array.isArray(v)) return v.filter(x => x != null && String(x).trim());
+    if (v == null) return [];
+    const s = String(v).trim();
+    return s ? [s] : [];
+  };
+
   // ── Time formatting ─────────────────────────────────────────────────
   NW.fmtTime = function(iso) {
     if (!iso) return "";

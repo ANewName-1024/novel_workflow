@@ -165,8 +165,9 @@ def add_node(outline: dict, parent_vol: str, position: int, **fields) -> dict:
     node.setdefault("title", "未命名章节")
     node.setdefault("summary", "")
     node.setdefault("pov", "")
-    node.setdefault("key_events", [])
-    node.setdefault("foreshadow", [])
+    # 防御: 接受 string 输入 (LLM/旧数据), 强制转 list[str]
+    node["key_events"] = _to_list(node.get("key_events"))
+    node["foreshadow"] = _to_list(node.get("foreshadow"))
     _insert_at_vol_position(outline, parent_vol, position, node)
     return node
 
@@ -186,7 +187,11 @@ def update_node(outline: dict, ch_id: str, **fields) -> dict:
         raise ValueError(f"chapter {ch_id} not found")
     for k, v in fields.items():
         if k in NODE_FIELDS and k != "id":
-            node[k] = v
+            # 防御: list 字段被传 string (LLM/旧数据) → 转 list
+            if k in ("key_events", "foreshadow"):
+                node[k] = _to_list(v)
+            else:
+                node[k] = v
     return node
 
 
@@ -267,6 +272,16 @@ def validate_outline(outline: dict) -> list[str]:
 
 
 # ── Diff (用于大纲版本对比) ─────────────────────────────────────────────────
+
+def _to_list(v) -> list:
+    """防御: 统一成 list[str]. LLM/旧数据可能传 string, 需要 wrap 成单元素 list."""
+    if isinstance(v, list):
+        return [str(x) for x in v if str(x).strip()]
+    if v is None:
+        return []
+    s = str(v).strip()
+    return [s] if s else []
+
 
 def _dict_field_diff(old: dict, new: dict, ignore: set | None = None) -> list[str]:
     """Top-level field diff — returns sorted list of field names whose values changed."""

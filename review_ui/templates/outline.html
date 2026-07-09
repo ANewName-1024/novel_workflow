@@ -615,7 +615,8 @@ function populateVolSelect(selectedVol) {
 function renderListItems(containerId, items) {
   const c = document.getElementById(containerId);
   c.innerHTML = "";
-  items.forEach(v => addListItem(containerId, v));
+  // 防御: items 可能是 string (旧数据/AI 直传), NW.toList 统一成 list[str]
+  NW.toList(items).forEach(v => addListItem(containerId, v));
 }
 
 function addListItem(containerId, value = "") {
@@ -659,8 +660,8 @@ async function submitNode(e) {
         title: data.title,
         summary: data.summary,
         pov: data.pov,
-        key_events: data.key_events,
-        foreshadow: data.foreshadow,
+        key_events: NW.toList(data.key_events),
+        foreshadow: NW.toList(data.foreshadow),
       });
     }
     closeModal("modal-node");
@@ -874,8 +875,8 @@ async function acceptAISuggestion(ch) {
       title: ch.title,
       summary: ch.summary,
       pov: ch.pov,
-      key_events: ch.key_events || [],
-      foreshadow: ch.foreshadow || [],
+      key_events: NW.toList(ch.key_events),
+      foreshadow: NW.toList(ch.foreshadow),
     });
     await loadOutline();
   } catch (e) {
@@ -904,10 +905,10 @@ async function runAIExpand() {
       <div style="background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
         <div style="font-weight: 500; margin-bottom: 8px;">${NW.escapeHtml(title)}</div>
         ${data.summary ? `<div style="font-size: 13px; margin-bottom: 6px;">${NW.escapeHtml(data.summary)}</div>` : ""}
-        ${data.key_events && data.key_events.length ? `<div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">📌 关键事件:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.key_events.map(e => `<li>${NW.escapeHtml(e)}</li>`).join("")}</ul>` : ""}
-        ${data.foreshadow && data.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn); margin-bottom: 4px;">🌱 伏笔:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.foreshadow.map(f => `<li>${NW.escapeHtml(f)}</li>`).join("")}</ul>` : ""}
+        ${Array.isArray(data.key_events) && data.key_events.length ? `<div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">📌 关键事件:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.key_events.map(e => `<li>${NW.escapeHtml(e)}</li>`).join("")}</ul>` : ""}
+        ${Array.isArray(data.foreshadow) && data.foreshadow.length ? `<div style="font-size: 12px; color: var(--warn); margin-bottom: 4px;">🌱 伏笔:</div><ul style="margin: 0 0 6px 20px; font-size: 12px;">${data.foreshadow.map(f => `<li>${NW.escapeHtml(f)}</li>`).join("")}</ul>` : ""}
         <div style="margin-top: 8px;">
-          <button class="btn primary" style="font-size: 12px; padding: 4px 10px;" onclick='acceptAIExpanded(${JSON.stringify({title, summary: data.summary || summary, key_events: data.key_events || [], foreshadow: data.foreshadow || []}).replace(/'/g, "&#39;")})'>✓ 加入大纲</button>
+          <button class="btn primary" style="font-size: 12px; padding: 4px 10px;" onclick='acceptAIExpanded(${JSON.stringify({title, summary: data.summary || summary, key_events: NW.toList(data.key_events), foreshadow: NW.toList(data.foreshadow)}).replace(/'/g, "&#39;")})'>✓ 加入大纲</button>
         </div>
       </div>
     `;
@@ -924,8 +925,8 @@ async function acceptAIExpanded(data) {
       position: 999,
       title: data.title,
       summary: data.summary,
-      key_events: data.key_events,
-      foreshadow: data.foreshadow,
+      key_events: NW.toList(data.key_events),
+      foreshadow: NW.toList(data.foreshadow),
     });
     closeModal("modal-ai");
     await loadOutline();
