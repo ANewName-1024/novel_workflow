@@ -39,6 +39,8 @@ projects/*/config.json
 projects/nonexistent*
 projects/不存在*
 projects/测试书籍/
+projects/test_book/**
+projects/test-book/**
 
 # ===== 部署/本地配置 (不入库, 含密码) =====
 config.yaml
