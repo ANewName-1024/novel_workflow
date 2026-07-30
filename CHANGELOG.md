@@ -6,46 +6,59 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ### Added (新增)
 
-**M2: 评审增强 (commit 15a26f8) — v1.2**
-- 评论流 `/api/comments/<book>/<ch>` POST/GET/DELETE (4 路由 + 6 测试)
-- 通知中心 `/api/notifications/<book>` GET + read/read-all
-  * 页面顶部铃铛 + 未读计数 + 全文查看
-- 行级 diff 锚点: review item 关联章节行号 + 上下文点击跳转
-- 批量审批增强: 选择 + 过滤（按严重度/阶段/标签）+ 撤销
+**v1.3 M5-M7: 移动 App + AI 模型统一 + Project CRUD (2026-07-06~09, 22 commits)**
 
-**M3: 章节版本控制 (commit fb142d0) — v1.2**
-- `lib/version.py` (207 行): 自研文件版本控制 + 最佳 commit hash
-  * `create_version / list_versions / get_version / latest_version / revert_to / diff_versions`
-  * 存储: `projects/<book>/chapters/.versions/<ch>/v001.json` + manifest
-  * 跳过连续重复内容, 避免 noise versions
-- `lib/storage.py: write_chapter` 自动 snapshot (best-effort)
-- 4 个 API 端点: versions list/get/revert/diff-versions
-- 章节页版本历史 panel: 4 类 trigger badge (auto/edit/revert/pre_revert)
-  * 查看 / 对比 / 回滚 按钮 (二次确认)
-- +38 测试 (301 → 339 passed in 15.41s)
+v1.3 累计: 482 → 533 tests (+51)
 
-**M4: 大纲编辑器 — v1.2**
-- M4.1-M4.2 (commit 1700663): 节点 CRUD + 重排 + 9 API + 51 测试
-  * `lib/outline_editor.py` (354 行): volumes + chapters 操作 + 跨卷重排 + sync 自动重建 + 5 类 diff + validation
-  * 9 API endpoints (GET/PUT/POST/POST/DELETE/POST/POST/DELETE/GET) 路径在 /api/outline/<book>/*
-  * 完整章节编辑: 标题/摘要/pov/key_events/foreshadow/卷归属
-  * save_outline 自动触发 M3 版本快照 (best-effort, dict→json 字符串)
-- M4.3 (commit 07ceb65): 大纲编辑器 UI + versions/diff
-  * `review_ui/templates/outline.html` (575 行): 树状视图 + 节点编辑 modal + HTML5 native drag&drop
-  * 拖拽降级路径: ↑↓ 按钮重排 / 编辑 modal 改 vol
-  * `versions` endpoint: GET /api/outline/<book>/versions (list outline snapshots)
-  * diff 面板: added/removed/moved/edited 5 类变更
-  * +7 UI 测试 (390 → 397 passed in 16.24s)
-  * 总 v1.2 测试: 135 → 397 (+262 测试)
-- 文档: 待补 DESIGN-v1.2-outline.md
+**M5: 移动 App 三合一 (commit 80e3430, +24 tests)**
+- LLM 配置页 (与书属性联动, `b9a8a62` APK 解析报错 +9)
+- AI 大纲按钮 (调用 outline_ai API, `c440ca6` crash fix, `50ed857` 传 provider/model)
+- 章节在线编辑 + diff 面板
+- SQLite 全量数据 + reviews/entities API 迁 DB (`dda4383`)
+- 公网部署 + AI 生成报错修复 (`87d2799`)
 
-**总状态: v1.2.0 M1-M4 全部完成 (4 commits, 58 新测试 under M2-M4, ~58 files + 397 tests)**
+**M6+: AI 模型设置统一到 book.html (commit c8b3320, +8 tests)**
+- 用户反馈 "使用 AI 模型在书籍属性统一设置"
+- 把 ms-provider/ms-model/saveModelConfig 从 outline.html 移除
+- 搬到 /book/\<book\> 第一屏 "🤖 AI 模型设置" 卡片
+- outline.html 顶部加 "⚙ 书属性" 链接 + 状态 dot (只读)
+- bug fix: `5840d86` Provider 下拉卡在 "加载中…" — Object.entries + DOMContentLoaded
+
+**M7: Project CRUD UI + API (commit 66aafcf, +18 tests)**
+- book.html 顶部加 "+ 新书" 按钮 → modal 表单 → API
+- create/edit/delete books from webUI (不用 ssh 到 VPS 就能管理项目)
+- bug fix: `160e8e4` outline: remove illegal 'function NW.api()' syntax breaking JS
+
+**Mobile 修复系列**
+- `a8205d5` outline node add parent_vol 缺省自动创建
+- `aabe3b4` mobile: outline page fails to load
+- `bb2c20b` mobile: getChapter + JSON safety in _get/_post
+- `5437bc4` mobile: version display + crash upload + remote debug help
+- `1d9c38f` mobile: manual outline editing
+
+**AI 助手 + 模板修复**
+- `8354fb6` outline.html: AI 助手 modal 模型名硬编码 → 动态显示
+- `c51a99a` AI 助手 + dashboard + entities 裸 helper 调用 → NW.
+- `53f92a9` outline.html: AI 助手生成建议/展开章节 — fetch() 用双引号字符串
+- `955f60b` outline_ai: 标准化 AI 响应 — foreshadow/key_events 统一成 list[str]
+- `87464c9` outline: AI 助手调用时直接传当前选择的 provider/model
+
+**Pipeline + Book 修复**
+- `f57077e` outline: 编辑章节报错 items.forEach is not a function — 全面 list 字段防御
+- `c03b0a6` pipeline: zombie PID 检测 + LLM provider 路由 — 流水线编写失败 (3 个 bug 一起修)
+- `2ab3e80` book: 待审章节表格显示章节标题 (不再只显示 ch_001)
+
+**安全 + 文档**
+- `a003e9a` pip-audit report (92 → 40 vulns, 依赖升级)
+- `9e9885f` docs: 进展追踪更新 v1.3 M5-M7 + scripts 调试脚本归档
+- `4fafc75` chore: ignore projects/test_book/ + projects/test-book/
 
 ## [1.2.0] - 2026-07-02
 
-**实体管理精细化** — v1.2 M1 全部完成 (M1.1 → M1.5)
+**实体管理精细化 + 评审增强 + 章节版本控制 + 大纲编辑器 + 流水线 FSM**
+— v1.2 M1-M5 全部完成 (5 commits, 451 tests, ~120 files)
 
-详细设计: `docs/DESIGN-v1.2-entities.md`
+详细设计: `docs/DESIGN-v1.2-entities.md` · `docs/DESIGN-v1.2-outline.md`
 
 ### Added (新增)
 
@@ -71,7 +84,7 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
   - WorldRule 显示硬约束 (红色列表) + 关联实体
   - Modal 编辑器: 动态表单, list 类型支持 add/remove item, 暗色主题
 - `review_ui/app.py`: GET /entities/\<book\>?type=... 路由
-- `review_ui/templates/book.html`: nav 加"实体管理"链接
+- `review_ui/templates/book.html`: nav 加 "实体管理" 链接
 - `tools/migrate_world.py` (161 行): world.json 旧→新格式迁移
   - dry-run / --apply 写入 / --backup 备份
   - 检测格式: empty/legacy/new/mixed
@@ -84,7 +97,43 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 - `review_ui/app.py`: POST /api/entities/\<book\>/check-consistency
   - {chapter_id} 或 {all: true} 批量扫描
 
-**M1.5: tag v1.2.0** (本 commit)
+**M2: 评审增强 (commit 15a26f8)**
+- 评论流 `/api/comments/<book>/<ch>` POST/GET/DELETE (4 路由 + 6 测试)
+- 通知中心 `/api/notifications/<book>` GET + read/read-all
+  * 页面顶部铃铛 + 未读计数 + 全文查看
+- 行级 diff 锚点: review item 关联章节行号 + 上下文点击跳转
+- 批量审批增强: 选择 + 过滤（按严重度/阶段/标签）+ 撤销
+
+**M3: 章节版本控制 (commit fb142d0, +38 tests, 301 → 339)**
+- `lib/version.py` (207 行): 自研文件版本控制 + 最佳 commit hash
+  * `create_version / list_versions / get_version / latest_version / revert_to / diff_versions`
+  * 存储: `projects/<book>/chapters/.versions/<ch>/v001.json` + manifest
+  * 跳过连续重复内容, 避免 noise versions
+- `lib/storage.py: write_chapter` 自动 snapshot (best-effort)
+- 4 个 API 端点: versions list/get/revert/diff-versions
+- 章节页版本历史 panel: 4 类 trigger badge (auto/edit/revert/pre_revert)
+  * 查看 / 对比 / 回滚 按钮 (二次确认)
+
+**M4: 大纲编辑器 (commits 1700663 + 07ceb65, +58 tests, 339 → 397)**
+- M4.1-M4.2 (commit 1700663): 节点 CRUD + 重排 + 9 API + 51 测试
+  * `lib/outline_editor.py` (354 行): volumes + chapters 操作 + 跨卷重排 + sync 自动重建 + 5 类 diff + validation
+  * 9 API endpoints (GET/PUT/POST/POST/DELETE/POST/POST/DELETE/GET) 路径在 /api/outline/\<book\>/*
+  * 完整章节编辑: 标题/摘要/pov/key_events/foreshadow/卷归属
+  * save_outline 自动触发 M3 版本快照 (best-effort, dict→json 字符串)
+- M4.3 (commit 07ceb65): 大纲编辑器 UI + versions/diff
+  * `review_ui/templates/outline.html` (575 行): 树状视图 + 节点编辑 modal + HTML5 native drag&drop
+  * 拖拽降级路径: ↑↓ 按钮重排 / 编辑 modal 改 vol
+  * `versions` endpoint: GET /api/outline/\<book\>/versions (list outline snapshots)
+  * diff 面板: added/removed/moved/edited 5 类变更
+
+**M5: 流水线 FSM (commits d27ff4e + 6e7f523, +54 tests, 397 → 451)**
+- M5.0-M5.1 (commit d27ff4e): Pipeline FSM + checkpoint + DESIGN 文档 + 33 lib 测试
+- M5.2-M5.4 (commit 6e7f523): chapter.py 集成 + 4 API + dashboard 按钮 + 21 测试
+- `lib/pipeline_v2.py` (新增): 8 阶段 FSM
+  * checkpoint/recover/resume state machine
+  * skip/rerun 单阶段 API
+  * chapter.py 集成, dashboard UI 按钮 (checkpoint / skip / rerun)
+- 文档: `docs/DESIGN-v1.2-pipeline.md`
 
 ### Tests
 
@@ -94,8 +143,12 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 - `tests/test_review_ui_entities.py`: 31 测试 (REST API + 页面渲染)
 - `tests/test_migrate_world.py`: 9 测试 (迁移脚本全路径)
 - `tests/test_world_rule_consistency.py`: 13 测试 (一致性扫描)
+- M2 评论/通知 + ~20 tests
+- M3 +38 tests
+- M4 +58 tests
+- M5 +54 tests
 
-**总测试: 135 → 252 passed in 15.00s**
+**总测试: 135 → 252 (M1) → 290 (M3) → 397 (M4) → 451 (M5) passed**
 
 ## [1.1.2] - 2026-07-02
 
@@ -141,7 +194,7 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 - `review_ui/dashboard.py` (200 行): 6 个新 API + 1 页面
   - POST /api/pipeline/start  POST /cancel  GET /status
   - GET /api/pipeline/logs  GET /metrics  GET /logs/stream (SSE)
-  - GET /dashboard/<book>  → 渲染 dashboard.html
+  - GET /dashboard/\<book\>  → 渲染 dashboard.html
 - `review_ui/templates/dashboard.html` (530 行):
   - 控制面板 + 状态详情 + 7 阶段进度条
   - Chart.js Token 折线图 (7d)
@@ -254,7 +307,9 @@ novel_workflow 的所有重要变更按 [Keep a Changelog](https://keepachangelo
 
 ## 路线图
 
-- [ ] v1.1: Web UI 加进度大屏 + token 用量图表
-- [ ] v1.2: 多书并发写 (后台任务队列)
-- [ ] v1.3: 移动 App (Flutter, 复用 API)
-- [ ] v2.0: 多用户 / 角色权限 (post-MVP)
+- [x] v1.1: Web UI 加进度大屏 + token 用量图表
+- [x] v1.2: 实体管理精细化 + 评审增强 + 章节版本 + 大纲编辑 + 流水线 FSM
+- [x] v1.3: 会话过渡 + 移动 App + AI 模型统一 + Project CRUD (533 tests)
+- [ ] v1.3 M8: 移动 App 对接 book.html AI 设置 + 截图/E2E 文档
+- [ ] v1.4: 实体管理 UI 改进 / 章节版本浏览器 / Diff 可视化
+- [ ] v2.0: Vue3 全量 + 多用户 / 角色权限 (post-MVP)
