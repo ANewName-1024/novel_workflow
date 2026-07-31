@@ -87,8 +87,7 @@ review_ui/__pycache__/
 review_ui/setup_nginx2.ps1
 review_ui/setup_nginx3.ps1
 review_ui/check_ehandler.py
-# 高风险 SSH pubkey 路由草稿 patch — 未应用, 等用户明示 (2026-07-30)
-review_ui/app_log_ssh_endpoint_patch.txt
+# SSH pubkey 路由草稿 patch — 已永久拒绝 (2026-07-31, 见 scripts/_security_rejected/)
 
 # ===== OpenClaw session 交接日志 (openclaw memory, 非仓库功能) =====
 memory/
