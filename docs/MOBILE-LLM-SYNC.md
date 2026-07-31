@@ -53,4 +53,4 @@ mobile App 保存
 
 ## 相关 commit
 
-- 见 `git log --oneline -- mobile/lib/screens/llm_config.dart` 找最新 v1.3 M8 commit
+- v1.3 M8 commit: `d390251` "feat(v1.3 M8): mobile LLM 配置保存时同步到所有 books 的 config.json"
