@@ -1,0 +1,116 @@
+# novel_workflow CI (v1.4)
+# 跑 Python pytest + Flutter analyze + 文档 lint
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ── Python 后端测试 ──────────────────────────────────────
+  python-tests:
+    name: Python tests (pytest)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: |
+          python -m pytest tests/ -v --no-header --tb=short \
+            --junitxml=pytest-junit.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ matrix.python-version }}
+          path: pytest-junit.xml
+
+  # ── Flutter (mobile) analyze ─────────────────────────────
+  flutter-analyze:
+    name: Flutter analyze
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.6"
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+  # ── 文档 / 仓库卫生 ─────────────────────────────────────
+  repo-hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check .gitignore covers security_rejected
+        run: |
+          # scripts/_security_rejected/ 应该是仓库文档, 必须入库
+          if [ ! -d "scripts/_security_rejected" ]; then
+            echo "ERROR: scripts/_security_rejected/ missing (SSH patch 归档)"
+            exit 1
+          fi
+          echo "✅ scripts/_security_rejected/ present (反面教材)"
+
+      - name: Check no high-risk patch files
+        run: |
+          # review_ui/app_log_ssh_endpoint_patch.txt 不应出现 (已归档到 _security_rejected)
+          if [ -f "review_ui/app_log_ssh_endpoint_patch.txt" ]; then
+            echo "ERROR: SSH patch file still in review_ui/"
+            exit 1
+          fi
+          echo "✅ SSH patch 已归档"
+
+      - name: Markdown lint (粗检)
+        run: |
+          # 简单粗检: docs/*.md 不能含 TODO 残留 (vague 词)
+          if grep -rn "TODO" docs/ 2>/dev/null | head -5; then
+            echo "WARN: 文档含 TODO 残留 (人工 review)"
+          else
+            echo "✅ docs/ clean"
+          fi
+
+  # ── Anti-pattern guard (本地有的 hook 也跑) ─────────────
+  anti-pattern:
+    name: Anti-pattern guard
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect vague time references in commits/docs
+        run: |
+          # 简单 grep: 找 "最新", "最近", "上次", "之前" 等模糊时间词
+          if grep -rE "最新|最近|上次|之前" docs/ CHANGELOG.md 2>/dev/null | grep -vE "Anti-Pattern|self-improving" | head -5; then
+            echo "::warning::模糊时间词 detected (人工 review)"
+          else
+            echo "✅ No vague time references"
+          fi
