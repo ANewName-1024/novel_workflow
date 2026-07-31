@@ -1101,6 +1101,19 @@ def api_chapter_diff_versions(book, ch):
         abort(404, description=str(e))
 
 
+@app.route("/api/chapter/<book>/diff-chapters/<ch1>/<ch2>", methods=["GET"])
+def api_chapter_diff_chapters(book, ch1, ch2):
+    """GET /api/chapter/<book>/diff-chapters/<ch1>/<ch2> — 跨章节 diff (v1.4).
+
+    对比两章当前内容, 返回 unified diff + 统计.
+    """
+    _ensure_book(book)
+    try:
+        return jsonify(ver_serv.diff_chapters(book, ch1, ch2))
+    except ValueError as e:
+        abort(404, description=str(e))
+
+
 # 行级 diff 锚点: 按行号取上下文 ±N 行
 @app.route("/api/chapter/<book>/<ch>/context")
 def api_chapter_context(book, ch):

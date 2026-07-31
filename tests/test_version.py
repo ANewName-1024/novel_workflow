@@ -213,3 +213,50 @@ class TestAutoSnapshot:
         # 至少 2 个 snapshot
         assert len(items) >= 2
         assert items[-1]["trigger"] == "auto"
+
+
+# ── 跨章节 diff (v1.4) ──────────────────────────────────────────────
+
+class TestDiffChapters:
+    def test_diff_two_chapters_with_changes(self, setup_book):
+        """ch_001 改 v2 后, 跟另一章对比."""
+        storage.write_chapter("test_book", "ch_001", "line A\nline B\n")
+        storage.write_chapter("test_book", "ch_002", "line A\nline C\n")
+        result = version.diff_chapters("test_book", "ch_001", "ch_002")
+        assert result["ch1"] == "ch_001"
+        assert result["ch2"] == "ch_002"
+        assert result["has_diff"] is True
+        assert any("line C" in l for l in result["diff"])
+        assert result["char_ch1"] == len("line A\nline B\n")
+        assert result["char_ch2"] == len("line A\nline C\n")
+
+    def test_diff_identical_chapters(self, setup_book):
+        """同内容两个章节, has_diff=False."""
+        storage.write_chapter("test_book", "ch_001", "same content here\n")
+        storage.write_chapter("test_book", "ch_002", "same content here\n")
+        result = version.diff_chapters("test_book", "ch_001", "ch_002")
+        assert result["has_diff"] is False
+        assert result["diff"] == []
+
+    def test_diff_missing_chapter_raises(self, setup_book):
+        """只写一章节, 另一章节不存在时仍能 diff (空内容)."""
+        storage.write_chapter("test_book", "ch_001", "only one\n")
+        # ch_002 不存在 → text2 空 → 不抛, has_diff=True
+        result = version.diff_chapters("test_book", "ch_001", "ch_002")
+        assert result["has_diff"] is True
+        assert result["char_ch2"] == 0
+        assert "only one" in "\n".join(result["diff"])
+
+    def test_diff_both_missing_raises(self, setup_book):
+        """两章都不存在 → 抛 ValueError."""
+        with pytest.raises(ValueError, match="both chapters empty"):
+            version.diff_chapters("test_book", "ch_999", "ch_888")
+
+    def test_diff_swap_chapters_flips_sign(self, setup_book):
+        """swap ch1/ch2, char_diff 变负号."""
+        storage.write_chapter("test_book", "ch_001", "short")
+        storage.write_chapter("test_book", "ch_002", "longer content here")
+        r1 = version.diff_chapters("test_book", "ch_001", "ch_002")
+        r2 = version.diff_chapters("test_book", "ch_002", "ch_001")
+        assert r1["char_diff"] == -r2["char_diff"]
+        assert r1["char_diff"] > 0

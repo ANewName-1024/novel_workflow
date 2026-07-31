@@ -192,6 +192,31 @@ def diff_versions(
     }
 
 
+def diff_chapters(book: str, ch1: str, ch2: str) -> dict:
+    """跨章节 diff (v1.4).
+
+    对比两章当前内容 (不是某个版本).
+    返回统一 diff + 统计 + 各章元数据.
+    """
+    from . import storage
+    text1 = storage.read_chapter(book, ch1) or ""
+    text2 = storage.read_chapter(book, ch2) or ""
+    if not text1 and not text2:
+        raise ValueError(f"both chapters empty or missing: ch1={ch1} ch2={ch2}")
+    diff = list(difflib.unified_diff(
+        text1.splitlines(), text2.splitlines(),
+        fromfile=ch1, tofile=ch2, lineterm="", n=3,
+    ))
+    return {
+        "ch1": ch1, "ch2": ch2,
+        "has_diff": text1 != text2,
+        "diff": diff,
+        "char_diff": len(text2) - len(text1),
+        "char_ch1": len(text1), "char_ch2": len(text2),
+        "word_diff_ch1": len(text1), "word_diff_ch2": len(text2),
+    }
+
+
 def _word_count_diff(text1: str, text2: str) -> int:
     return len(text2) - len(text1)
 

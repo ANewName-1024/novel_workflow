@@ -201,6 +201,7 @@
   {% if next_id %}
     <a href="/book/{{ book }}/{{ next_id }}" class="nav-btn">{{ next_id }} →</a>
   {% else %}<span class="nav-btn disabled">下一章 →</span>{% endif %}
+  <button class="nav-btn" onclick="openChapterDiffModal()" title="v1.4: 跨章节 diff">🔀 对比其他章</button>
 </nav>
 {% endif %}
 
@@ -584,6 +585,23 @@ async function diffWith(vid) {
     box.style.display = "block";
     viewingVid = null;
   } catch (e) { NW.toast("diff 失败: " + e.message, "err"); }
+}
+
+async function openChapterDiffModal() {
+  const target = prompt(`输入要对比的目标章节 ID (当前: ${CH}).\n例如: ch_002, ch_010`);
+  if (!target || !target.trim()) return;
+  const targetId = target.trim();
+  if (targetId === CH) { NW.toast("目标章节就是当前章节, 请选别的", "warn"); return; }
+  NW.toast("diff 计算中...", "info");
+  try {
+    const data = await NW.api("GET", `/api/chapter/${BOOK}/diff-chapters/${CH}/${targetId}`);
+    const box = document.getElementById("version-content");
+    const stats = `(${data.char_ch1} 字 vs ${data.char_ch2} 字, 净变动 ${data.char_diff > 0 ? '+' : ''}${data.char_diff})`;
+    box.textContent = `== 跨章节 diff: ${CH} vs ${targetId} ${stats} ==\n\n` + (data.diff || []).join("\n");
+    box.style.display = "block";
+    viewingVid = null;
+    NW.toast(data.has_diff ? "diff 完成 (有差异)" : "diff 完成 (无差异)", "ok");
+  } catch (e) { NW.toast("跨章节 diff 失败: " + e.message, "err"); }
 }
 
 async function revertTo(vid) {
