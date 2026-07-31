@@ -160,7 +160,7 @@ mobile/
 
 **改动**: `lib/screens/llm_config.dart` `_save()`
 
-**之前**: 改完只存本机 `SharedPreferences`, web book.html 和其他设备看不到。
+**改前 (M8 commit d390251 之前)**: 改完只存本机 `SharedPreferences`, web book.html 和其他设备看不到。
 
 **之后**: 保存时同时:
 1. 写 `SharedPreferences` (本地快速读)
