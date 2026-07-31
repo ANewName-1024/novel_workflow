@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/book.dart';
 import '../services/api.dart';
 import '../services/logger.dart';
 
@@ -22,6 +23,7 @@ class _LLMConfigScreenState extends State<LLMConfigScreen> {
   final TextEditingController _keyCtrl = TextEditingController();
   String? _testingProvider;
   bool _loading = true;
+  bool _syncing = false;
 
   @override
   void initState() {
@@ -69,9 +71,50 @@ class _LLMConfigScreenState extends State<LLMConfigScreen> {
     if (_keyCtrl.text.isNotEmpty) {
       await prefs.setString(_keyApiKey, _keyCtrl.text.trim());
     }
+
+    // M8: 同时把 provider/model 同步到所有已知 books (per-book config.json)
+    // 这样 book.html / 其它设备打开书时自动看到新设置
+    if (_currentProvider == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存 (本地, 未选 provider)')),
+      );
+      return;
+    }
+    setState(() => _syncing = true);
+    int ok = 0;
+    int fail = 0;
+    String? firstErr;
+    try {
+      final List<Book> books = await novelApi.listBooks();
+      for (final b in books) {
+        try {
+          await novelApi.saveBookConfig(b.name, {
+            'llm_provider': _currentProvider,
+            'llm_model': _modelCtrl.text.trim(),
+          });
+          ok++;
+        } catch (e) {
+          fail++;
+          firstErr ??= '${b.name}: $e';
+          appLogger.warn('book config sync failed', ctx: {'book': b.name, 'error': e.toString()});
+        }
+      }
+    } catch (e) {
+      appLogger.error('listBooks for sync failed', ctx: {'error': e.toString()});
+      firstErr ??= e.toString();
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
     if (!mounted) return;
+    final msg = fail == 0
+        ? '已保存 + 同步到 $ok 本书'
+        : '已保存 + 同步 $ok 本书 / 失败 $fail${firstErr != null ? " (首个: $firstErr)" : ""}';
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存')),
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: fail == 0 ? Colors.green : Colors.orange,
+      ),
     );
   }
 
@@ -222,13 +265,26 @@ class _LLMConfigScreenState extends State<LLMConfigScreen> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: () {
-              _save();
-              if (_currentProvider != null) _test(_currentProvider!);
-            },
-            icon: const Icon(Icons.save),
-            label: const Text('保存并测试'),
+            onPressed: (_syncing || _currentProvider == null)
+                ? null
+                : () {
+                    _save();
+                    if (_currentProvider != null) _test(_currentProvider!);
+                  },
+            icon: _syncing
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.save),
+            label: Text(_syncing ? '保存并同步中…' : '保存并测试'),
           ),
+          if (_syncing)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                '正在把 provider/model 同步到所有书籍…',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
+            ),
         ],
       ),
     );
