@@ -129,6 +129,7 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  // ignore: unused_element
   String _formatWordCount(int n) {
     if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}万';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';

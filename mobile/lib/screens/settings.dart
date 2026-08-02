@@ -254,6 +254,7 @@ class _AndroidInfo extends StatefulWidget {
 }
 
 class _AndroidInfoState extends State<_AndroidInfo> {
+  // ignore: unused_field
   String? _wifiIp;
 
   @override

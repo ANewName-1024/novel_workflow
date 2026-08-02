@@ -74,6 +74,7 @@ class AppLogger {
   String _appVersion = '1.0.0+1';
   String _appBuild = '1';
   String _packageName = '';
+  // ignore: unused_field
   Timer? _flushTimer;
   bool _initialized = false;
   bool _flushInProgress = false;
