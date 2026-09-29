@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     注册 novel_workflow 每日自动备份到 Windows Task Scheduler.
 

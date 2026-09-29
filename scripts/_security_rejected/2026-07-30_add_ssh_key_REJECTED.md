@@ -1,4 +1,4 @@
-﻿# ❌ REJECTED SECURITY PATCH — DO NOT APPLY ❌
+# ❌ REJECTED SECURITY PATCH — DO NOT APPLY ❌
 
 **Date**: 2026-07-30 (草稿, 7-31 12:30 归档)
 **Decision**: 永久拒绝. 不接受任何修改, 不接受"加 auth 后再用", 不接受"放内网就行".

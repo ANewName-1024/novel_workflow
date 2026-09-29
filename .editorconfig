@@ -1,0 +1,29 @@
+# novel_workflow/.editorconfig
+#
+# 强制统一编码为 UTF-8 (no BOM), LF 行尾, 末尾单换行.
+# 编码一致性不是审美, 是「下次有人用记事本打开脚本不踩雷」的工程要求.
+#
+# .editorconfig 是声明, 真正生效靠编辑器 (VS Code / PyCharm / IntelliJ 默认会读).
+# CI 里用 tools/check_encoding.py 做硬性校验.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{bat,ps1}]
+end_of_line = crlf
+# Windows 批处理 / PowerShell 用 CRLF 是历史包袱 (Notepad / cmd.exe 解析),
+# 强制 LF 会被 PS 5 默认按 GBK 解析时报语法错 (坑过 2 次).
+
+[*.{md,json,yml,yaml}]
+trim_trailing_whitespace = false
+# Markdown 表格里尾空有表意; JSON/YAML 不允许尾空是规范自身保证的, 关掉更明确.
+
+[*.py]
+indent_size = 4
+max_line_length = 120

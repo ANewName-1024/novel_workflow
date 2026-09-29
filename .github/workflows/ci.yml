@@ -143,3 +143,13 @@ jobs:
             echo "::error::unexpected file(s) in tests/ -- pytest.ini testpaths assumes test_*.py only"
             exit 1
           fi
+
+      - name: All text files are UTF-8 (no BOM)
+        # Three classes of encoding drift sneak in: Windows Notepad saves
+        # as UTF-16 LE by default; ps2exe stamps UTF-8 BOM at the front;
+        # GBK-codepage shells mangle UTF-8 comments. Any of these turns a
+        # text-processing script into a hard-to-diagnose encoding error.
+        # The fix path is documented in tools/check_encoding.py:
+        #     python tools/normalize_encoding.py --apply
+        run: |
+          python tools/check_encoding.py
