@@ -23,8 +23,13 @@ from pathlib import Path
 from flask import jsonify
 from flask import request
 from lib import storage
-
 from review_ui.core import _ensure_book
+
+import logging
+
+# 本模块过去没有 logger, 导致几处镜像写失败完全静默。
+# 语义不变(主写在 try 外正常抛, 镜像写失败不该中断业务), 只是让它可见。
+log = logging.getLogger(__name__)
 
 # Phase 1 随函数一同迁来的模块级常量(原本在 app.py 顶层)
 _BOOK_SLUG_RE = _re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
@@ -188,13 +193,16 @@ def _update_project(book: str, payload: dict) -> tuple[dict, int]:
 
     cfg["updated_at"] = __import__("datetime").datetime.now().isoformat()
     storage.write_json(book, "config.json", cfg)
-    # 同步到 SQLite
+    # 同步到 SQLite。主写(文件)已在 try 外, 失败照常抛; 这里吞的只是镜像写,
+    # 语义正确 —— 但静默会让镜像停写无从发现: 读回走 DB 优先, 拿到的是
+    # 过期数据, 而用户以为刚改完。补一条警告, 不改控制流。
     try:
         from lib import db as _dbmod
         _dbmod.init_db(storage.ROOT)
         _dbmod.upsert_project(storage.ROOT, book, cfg.get("book_name", book), cfg)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("项目镜像写入 SQLite 失败, 读回将走文件兜底 (book=%s): %s: %s",
+                    book, type(e).__name__, e, exc_info=True)
     return {"ok": True, "book": book, "message": f"项目 [{book}] 已更新"}, 200
 
 
