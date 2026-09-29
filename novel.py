@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 novel.py — 长篇小说编写工作流 CLI
 

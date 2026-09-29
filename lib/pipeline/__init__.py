@@ -18,11 +18,20 @@ lib/pipeline — 流水线包(Phase 2)
 """
 from __future__ import annotations
 
+# ── 下层:异常体系(errors 是唯一真相,state.py 曾自定义同名类已收编)──
+from .errors import (
+    PermanentError,
+    PipelineError,
+    TransientError,
+    best_effort,
+    classify_os_error,
+    retry,
+)
+
 # ── 下层:状态机 + 检查点 ──
 from .state import (
     ChapterCheckpoint,
     CheckpointDoc,
-    PipelineError,
     PipelineV2,
     StageCheckpoint,
     StageState,
@@ -45,13 +54,16 @@ from .process import (
     pipeline_state_path,
 )
 
-from . import process, state  # noqa: E402,F401  子模块直引
+from . import errors, process, state  # noqa: E402,F401  子模块直引
 
 __all__ = [
     # 子模块
-    "process", "state",
+    "errors", "process", "state",
+    # 异常体系
+    "PipelineError", "TransientError", "PermanentError",
+    "best_effort", "retry", "classify_os_error",
     # 状态机层
-    "ChapterCheckpoint", "CheckpointDoc", "PipelineError", "PipelineV2",
+    "ChapterCheckpoint", "CheckpointDoc", "PipelineV2",
     "StageCheckpoint", "StageState", "checkpoint_path", "checkpoint_snapshot",
     "get_interrupted_chapters", "get_last_snapshot", "get_v2", "recover_stage",
     # 进程层

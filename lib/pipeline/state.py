@@ -26,7 +26,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .. import storage
-from ..errors import ErrorCode, NovelError
+from ..errors import ErrorCode
+from .errors import PermanentError, PipelineError, TransientError
+
+__all__ = [
+    "ChapterCheckpoint", "CheckpointDoc", "PipelineError",
+    "PipelineV2", "StageCheckpoint", "StageState",
+    "checkpoint_path", "checkpoint_snapshot",
+    "get_interrupted_chapters", "get_last_snapshot", "get_v2",
+    "recover_stage", "PermanentError", "TransientError",
+]
 
 
 # ── 常量 ──────────────────────────────────────────────────────────────────
@@ -67,10 +76,9 @@ _VALID_TRANSITIONS: set[tuple[str, str]] = {
 
 
 # ── 异常 ──────────────────────────────────────────────────────────────────
-
-class PipelineError(NovelError):
-    """状态机专用错误, 继承 NovelError 复用现有错误处理."""
-    pass
+# PipelineError / TransientError / PermanentError 已收编到 .errors,
+# 那里是唯一真相(state.py 曾自定义一个同名类,现已删除)。
+# 此处保持 PipelineError(code, message) 位置参数,故 6 处 raise 无需改动。
 
 
 # ── 数据模型 ──────────────────────────────────────────────────────────────
