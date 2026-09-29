@@ -7,13 +7,68 @@ v1.3: Multi-provider support via llm_providers.py
 from __future__ import annotations
 
 import time, json, tiktoken
-from typing import Generator, Optional, TYPE_CHECKING
+import logging
+from typing import Any, Callable, Generator, Optional, TYPE_CHECKING
 from openai import OpenAI, RateLimitError, APIError
+try:
+    from openai import APIConnectionError, APITimeoutError
+except ImportError:      # 老版本 SDK 没有细分类
+    APIConnectionError = APITimeoutError = None
 
 from .llm_providers import resolve_model, resolve_for_book, get_provider_config, BUILTIN_PROVIDERS
 
+log = logging.getLogger(__name__)
+
 DEFAULT_API_BASE = "http://127.0.0.1:60443/v1"
 DEFAULT_MODEL = "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
+
+# ── 重试分类 ──────────────────────────────────────────────────────────────
+# 依据 tools/probe_openai_errors.py 对当前 SDK 实测的继承关系, 不是凭记忆:
+#   APIError                  所有 API 异常的基类 —— catch 它等于什么都重试
+#   APIConnectionError        连接层, 无状态码          -> 可重试
+#   APITimeoutError           <- APIConnectionError      -> 可重试
+#   APIStatusError            有 status_code
+#     RateLimitError  429 / ConflictError 409            -> 可重试
+#     BadRequestError 400 / AuthenticationError 401
+#     PermissionDeniedError 403 / NotFoundError 404
+#     UnprocessableEntityError 422                       -> 不可重试
+#
+# 原实现 catch (RateLimitError, APIError), 而 APIError 是上面所有确定性错误
+# 的基类, 于是填错 API key 也会重试满 max_retries 次 —— 按默认
+# retry_delay=10s 算, 一个 401 要白等 30 秒才报错。
+_RETRYABLE_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504})
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """该失败是否值得重试。只有瞬时错误才值得。"""
+    if APIConnectionError is not None and isinstance(
+            exc, (APIConnectionError, APITimeoutError)):
+        return True          # 连不上 / 超时, 必然是瞬时的
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        # 非 openai 异常(如 _stream_completion 抛的 RuntimeError): 保守不重试,
+        # 否则一个编程错误会被当成网络抖动反复重试。
+        return False
+    return status in _RETRYABLE_STATUS
+
+
+
+def _err_desc(exc: BaseException) -> str:
+    """给错误一句人能读懂的原因, 写进 RuntimeError 消息里。"""
+    status = getattr(exc, "status_code", None)
+    name = type(exc).__name__
+    return f"HTTP {status} {name}" if status else name
+
+
+def _backoff(base: float, attempt: int, cap: float = 60.0) -> None:
+    """指数退避, 并设上限。
+
+    固定间隔在上游限流时会持续加压, 指数退避给它喘息时间; 上限避免
+    第 5 次重试睡十几分钟。
+    """
+    delay = min(base * (2 ** attempt), cap)
+    if delay > 0:
+        time.sleep(delay)
 
 
 class LLM:
@@ -158,9 +213,17 @@ class LLM:
                     out_tok = self._count_tokens(text)
                 self._emit_metrics(eff_stage, eff_ch, in_tok, out_tok, latency_ms)
                 return text
-            except (RateLimitError, APIError) as e:
+            except Exception as e:
+                if not _is_retryable(e):
+                    # 确定性失败(400/401/403/404 等): 重试没有意义,
+                    # 否则只是把参数错误重试到超时才报错。
+                    raise RuntimeError(
+                        f"LLM API error (不可重试, {_err_desc(e)}): {e}") from e
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_delay)
+                    _backoff(self.retry_delay, attempt)
+                    log.warning("LLM 调用失败, %.1fs 后重试 (%d/%d): %s: %s",
+                                self.retry_delay * (2 ** attempt), attempt + 1,
+                                self.max_retries, type(e).__name__, e)
                     continue
                 raise RuntimeError(f"LLM API error after {self.max_retries} retries: {e}") from e
 
@@ -213,9 +276,15 @@ class LLM:
                     out_tok = self._count_tokens(text)
                 self._emit_metrics(eff_stage, eff_ch, in_tok, out_tok, latency_ms)
                 return text
-            except (RateLimitError, APIError) as e:
+            except Exception as e:
+                if not _is_retryable(e):
+                    raise RuntimeError(
+                        f"LLM API error (不可重试, {_err_desc(e)}): {e}") from e
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_delay)
+                    _backoff(self.retry_delay, attempt)
+                    log.warning("LLM 调用失败, %.1fs 后重试 (%d/%d): %s: %s",
+                                self.retry_delay * (2 ** attempt), attempt + 1,
+                                self.max_retries, type(e).__name__, e)
                     continue
                 raise RuntimeError(f"LLM API error: {e}") from e
 
