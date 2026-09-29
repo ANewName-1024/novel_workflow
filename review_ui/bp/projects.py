@@ -30,9 +30,7 @@ from review_ui.core import _ensure_book
 _BOOK_SLUG_RE = _re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 bp = Blueprint("projects", __name__,
-               template_folder=str(_UI / "templates"),
-               static_folder=str(_UI / "static"),
-               static_url_path="/static")
+               template_folder=str(_UI / "templates"))
 
 
 @bp.route("/api/projects")

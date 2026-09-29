@@ -25,9 +25,7 @@ from flask import request
 
 from review_ui.core import _ensure_book
 bp = Blueprint("comments", __name__,
-               template_folder=str(_UI / "templates"),
-               static_folder=str(_UI / "static"),
-               static_url_path="/static")
+               template_folder=str(_UI / "templates"))
 
 
 @bp.route("/api/comments/<book>", methods=["GET"])
