@@ -128,6 +128,10 @@ def save_review(book: str, record: dict) -> None:
             reviewer=record.get("reviewer"),
             reviewer_notes=record.get("reviewer_notes"),
             v2_chars=record.get("v2_chars", 0),
+            # 不传 history 的话 DB 侧永远是 []。而 get_review 是 DB 优先,
+            # 于是评审审计轨迹(谁在何时批准/拒绝/编辑了哪章)在 UI 上完全不可见 ——
+            # 文件里有, 读回来没有, 且没有任何报错。
+            history=record.get("history") or [],
         )
     except Exception:
         log.warning("SQLite 评审镜像写失败,仅文件已存 (book=%s ch=%s)", book, chapter_id, exc_info=True)

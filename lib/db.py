@@ -296,8 +296,14 @@ def upsert_review(root: Path, book: str, ch_id: str,
                   status: str, auto_severity: Optional[str] = None,
                   auto_issues_count: int = 0, auto_result: Optional[dict] = None,
                   reviewer: Optional[str] = None, reviewer_notes: Optional[str] = None,
-                  v2_chars: int = 0, append_history: Optional[dict] = None) -> int:
-    """Insert or update review; returns review id."""
+                  v2_chars: int = 0, history: Optional[list] = None,
+                  append_history: Optional[dict] = None) -> int:
+    """Insert or update review; returns review id.
+
+    history: 完整评审历史, 传入则【覆盖】DB 里的。这是文件→DB 同步的语义 ——
+    文件(在 git 里)才是真相源, DB 只是查询加速用的镜像。
+    append_history: 追加单条。全仓无调用方, 保留仅为兼容。
+    """
     now = datetime.datetime.now().isoformat()
     conn = get_conn(default_db_path(root))
 
@@ -307,9 +313,12 @@ def upsert_review(root: Path, book: str, ch_id: str,
         (book, ch_id),
     ).fetchone()
     if row:
-        history = json.loads(row["history_json"])
-        if append_history:
-            history.append(append_history)
+        if history is not None:
+            hist = list(history)          # 以传入的全量为准
+        else:
+            hist = json.loads(row["history_json"])
+            if append_history:
+                hist.append(append_history)
         rid = row["id"]
         created_at = row["created_at"]
         reviewed_at = now if reviewer else None
@@ -321,10 +330,11 @@ def upsert_review(root: Path, book: str, ch_id: str,
             (status, auto_severity, auto_issues_count,
              json.dumps(auto_result, ensure_ascii=False) if auto_result else None,
              reviewer, reviewer_notes, reviewed_at,
-             v2_chars, json.dumps(history, ensure_ascii=False), now, rid),
+             v2_chars, json.dumps(hist, ensure_ascii=False), now, rid),
         )
     else:
-        history = [append_history] if append_history else []
+        hist = (list(history) if history is not None
+                else ([append_history] if append_history else []))
         reviewed_at = now if reviewer else None
         cur = conn.execute(
             """INSERT INTO reviews (book, ch_id, status, auto_severity, auto_issues_count,
@@ -334,7 +344,7 @@ def upsert_review(root: Path, book: str, ch_id: str,
             (book, ch_id, status, auto_severity, auto_issues_count,
              json.dumps(auto_result, ensure_ascii=False) if auto_result else None,
              reviewer, reviewer_notes, reviewed_at,
-             v2_chars, json.dumps(history, ensure_ascii=False), now, now),
+             v2_chars, json.dumps(hist, ensure_ascii=False), now, now),
         )
         rid = cur.lastrowid
     conn.commit()
@@ -348,11 +358,20 @@ def get_review(root: Path, book: str, ch_id: str) -> Optional[dict]:
     ).fetchone()
     if not row:
         return None
-    d = dict(r)
+    # 原来写的是 dict(r) —— r 从未定义(上面绑的是 row), 每次查到行都抛
+    # NameError。像是从下面 list_reviews() 复制时带走了 r 却没带走 for 循环。
+    d = dict(row)
     if d.get("auto_result_json"):
         d["auto_result"] = json.loads(d["auto_result_json"])
     if d.get("history_json"):
         d["history"] = json.loads(d["history_json"])
+    # 兼容 layer: DB 用 ch_id, 上层 API 与文件 record 用 chapter_id。
+    # get_review_queue() 一直有这个兼容层, 单条读的 get_review() 漏了。
+    # 因为本函数一直是坏的(NameError 被 review_service 的 try/except 吞掉后
+    # 回退读文件), 从没人走过这条路, 漏了也看不出来。修好名字后若不补这层,
+    # auto_flag()/approve() 里的 record['chapter_id'] 会直接 KeyError。
+    if "chapter_id" not in d and "ch_id" in d:
+        d["chapter_id"] = d["ch_id"]
     return d
 
 
