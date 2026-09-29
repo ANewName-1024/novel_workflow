@@ -254,7 +254,10 @@ def merge_extraction(book: str, extraction: dict) -> None:
             # 升级为 WorldRule
             try:
                 wr = WorldRule(
-                    name=wu[:30] or wu[:30],
+                    # 原来是 wu[:30] or wu[:30] —— 两侧相同, 短路永不生效,
+                    # 应是复制粘贴残留。本意应为 wu[:30] or wu(截断为空时回退全文),
+                    # 但非空字符串截断后必非空, 所以两者行为一致, 简化之。
+                    name=wu[:30],
                     category="其他",
                     description=wu,
                 )
@@ -295,6 +298,37 @@ def merge_extraction(book: str, extraction: dict) -> None:
 # ═════════════════════════════════════════════════════════════════════════
 # EntityStore — v1.2 M1.1 新增统一 CRUD 层
 # ═════════════════════════════════════════════════════════════════════════
+
+# Event / Foreshadow 的 id 就是其文本的前 30 字。
+# 这个数字原先散在 5 处(get_event / get_foreshadow / update_foreshadow /
+# delete_event / delete_foreshadow), 且访问方式还不统一(dataclass 属性 vs
+# 原始 dict .get())。改一处漏四处就会让两个实体的 id 行为分裂, 所以收在这里。
+_ID_PREFIX_LEN = 30
+
+
+def _id_matches(text: object, ident: str) -> bool:
+    """文本前 30 字是否等于 ident。text 非字符串时当作不匹配。"""
+    return isinstance(text, str) and text[:_ID_PREFIX_LEN] == ident
+
+
+def _find_by_id_prefix(items, attr: str, ident: str):
+    """在实体列表里按文本前缀找一条, 找不到返回 None。"""
+    for it in items:
+        if _id_matches(getattr(it, attr, ""), ident):
+            return it
+    return None
+
+
+def _rows_without_id(rows: list[dict], field: str, ident: str) -> list[dict]:
+    """原始 dict 列表里剔除 id 匹配的行。"""
+    return [r for r in rows if not _id_matches(r.get(field, ""), ident)]
+
+
+def _require_existed(before: list, after: list, label: str, ident: str) -> None:
+    """删除时确认真的删掉了东西 —— 没删掉说明 id 不存在。"""
+    if len(after) == len(before):
+        raise ValueError(f"{label} '{ident}' 不存在")
+
 
 class EntityStore:
     """统一管理 4 类实体的 CRUD.
@@ -365,16 +399,12 @@ class EntityStore:
 
     def get_event(self, event_id: str) -> Event | None:
         """按 event 文本前 30 字匹配."""
-        for e in self.list_events():
-            if e.event[:30] == event_id:
-                return e
-        return None
+        return _find_by_id_prefix(self.list_events(), "event", event_id)
 
     def delete_event(self, event_id: str) -> None:
         events = get_events(self.book)
-        new_events = [e for e in events if e.get("event", "")[:30] != event_id]
-        if len(new_events) == len(events):
-            raise ValueError(f"Event '{event_id}' 不存在")
+        new_events = _rows_without_id(events, "event", event_id)
+        _require_existed(events, new_events, "Event", event_id)
         update_events(self.book, new_events)
 
     # ── Foreshadow ───────────────────────────────────────────────────
@@ -390,15 +420,12 @@ class EntityStore:
         return [Foreshadow.from_dict(f) for f in items]
 
     def get_foreshadow(self, fs_id: str) -> Foreshadow | None:
-        for f in self.list_foreshadows():
-            if f.foreshadow[:30] == fs_id:
-                return f
-        return None
+        return _find_by_id_prefix(self.list_foreshadows(), "foreshadow", fs_id)
 
     def update_foreshadow(self, fs_id: str, **fields) -> Foreshadow:
         items = get_foreshadowing(self.book)
         for i, f in enumerate(items):
-            if f.get("foreshadow", "")[:30] == fs_id:
+            if _id_matches(f.get("foreshadow", ""), fs_id):
                 for k, v in fields.items():
                     if k in f:
                         f[k] = v
@@ -410,9 +437,8 @@ class EntityStore:
 
     def delete_foreshadow(self, fs_id: str) -> None:
         items = get_foreshadowing(self.book)
-        new_items = [f for f in items if f.get("foreshadow", "")[:30] != fs_id]
-        if len(new_items) == len(items):
-            raise ValueError(f"Foreshadow '{fs_id}' 不存在")
+        new_items = _rows_without_id(items, "foreshadow", fs_id)
+        _require_existed(items, new_items, "Foreshadow", fs_id)
         update_foreshadowing(self.book, new_items)
 
     # ── WorldRule (v1.2 新!) ─────────────────────────────────────────
