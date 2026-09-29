@@ -206,9 +206,9 @@ class TestAutoSnapshot:
         monkeypatch.setattr(storage, "ROOT", proj_root)
         storage.init_project("test_book", {"book_name": "test_book"})
 
-        storage.write_chapter("test_book", "ch_001", "v1")
+        storage.write_chapter("test_book", "ch_001", "v1", allow_overwrite=True)
         # 再次写不同内容
-        storage.write_chapter("test_book", "ch_001", "v2 with changes")
+        storage.write_chapter("test_book", "ch_001", "v2 with changes", allow_overwrite=True)
         items = version.list_versions("test_book", "ch_001")
         # 至少 2 个 snapshot
         assert len(items) >= 2
@@ -220,8 +220,8 @@ class TestAutoSnapshot:
 class TestDiffChapters:
     def test_diff_two_chapters_with_changes(self, setup_book):
         """ch_001 改 v2 后, 跟另一章对比."""
-        storage.write_chapter("test_book", "ch_001", "line A\nline B\n")
-        storage.write_chapter("test_book", "ch_002", "line A\nline C\n")
+        storage.write_chapter("test_book", "ch_001", "line A\nline B\n", allow_overwrite=True)
+        storage.write_chapter("test_book", "ch_002", "line A\nline C\n", allow_overwrite=True)
         result = version.diff_chapters("test_book", "ch_001", "ch_002")
         assert result["ch1"] == "ch_001"
         assert result["ch2"] == "ch_002"
@@ -232,15 +232,15 @@ class TestDiffChapters:
 
     def test_diff_identical_chapters(self, setup_book):
         """同内容两个章节, has_diff=False."""
-        storage.write_chapter("test_book", "ch_001", "same content here\n")
-        storage.write_chapter("test_book", "ch_002", "same content here\n")
+        storage.write_chapter("test_book", "ch_001", "same content here\n", allow_overwrite=True)
+        storage.write_chapter("test_book", "ch_002", "same content here\n", allow_overwrite=True)
         result = version.diff_chapters("test_book", "ch_001", "ch_002")
         assert result["has_diff"] is False
         assert result["diff"] == []
 
     def test_diff_missing_chapter_raises(self, setup_book):
         """只写一章节, 另一章节不存在时仍能 diff (空内容)."""
-        storage.write_chapter("test_book", "ch_001", "only one\n")
+        storage.write_chapter("test_book", "ch_001", "only one\n", allow_overwrite=True)
         # ch_002 不存在 → text2 空 → 不抛, has_diff=True
         result = version.diff_chapters("test_book", "ch_001", "ch_002")
         assert result["has_diff"] is True
@@ -254,8 +254,8 @@ class TestDiffChapters:
 
     def test_diff_swap_chapters_flips_sign(self, setup_book):
         """swap ch1/ch2, char_diff 变负号."""
-        storage.write_chapter("test_book", "ch_001", "short")
-        storage.write_chapter("test_book", "ch_002", "longer content here")
+        storage.write_chapter("test_book", "ch_001", "short", allow_overwrite=True)
+        storage.write_chapter("test_book", "ch_002", "longer content here", allow_overwrite=True)
         r1 = version.diff_chapters("test_book", "ch_001", "ch_002")
         r2 = version.diff_chapters("test_book", "ch_002", "ch_001")
         assert r1["char_diff"] == -r2["char_diff"]

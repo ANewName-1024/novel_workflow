@@ -76,11 +76,31 @@ def read_chapter(book: str, chapter_id: str) -> Optional[str]:
     path = chapters_dir(book) / f"{chapter_id}.md"
     return path.read_text(encoding="utf-8") if path.exists() else None
 
-def write_chapter(book: str, chapter_id: str, content: str) -> None:
+def write_chapter(book: str, chapter_id: str, content: str,
+                  allow_overwrite: bool = False) -> None:
+    """写章节。
+
+    allow_overwrite=False(默认)时, 若目标已存在且非空且内容不同, 则拒绝写入。
+    产品问题: novel.py:312 用 progress.current_chapter 算 start, 断点可能落在
+    一个【已写完但未记账】的章节上。实测 projects/测试书籍: 磁盘有 ch_008
+    (2972 字), chapters_completed 里没有它, current_chapter=7 → continue 从
+    ch_008 开始写, 会把已完成的正文整个重写掉; 而该书既无 versions 快照, 两个
+    tar 备份也都不含 ch_008 —— 覆盖后不可恢复。
+
+    合法覆盖的路径(self_check.rewrite_chapter 自检重写)必须显式传 True。
+    """
     path = chapters_dir(book) / f"{chapter_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     # v1.2 M3: 读老内容, 写完后再 snapshot
     old_content = read_chapter(book, chapter_id)
+    if (not allow_overwrite and old_content and old_content.strip()
+            and old_content != content):
+        raise FileExistsError(
+            f"章节 {chapter_id} 已存在且非空({len(old_content)} 字), 拒绝覆盖。\n"
+            f"  确认要重写 → 调用方传 allow_overwrite=True\n"
+            f"  断点错位   → 修 progress.json 的 current_chapter, "
+            f"或把 {chapter_id} 加入 chapters_completed"
+        )
     path.write_text(content, encoding="utf-8")
     if old_content != content:
         try:

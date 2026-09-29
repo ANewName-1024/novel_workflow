@@ -410,5 +410,7 @@ def rewrite_chapter(
     # Clean & save
     from .chapter import clean_chapter_text
     new_text = clean_chapter_text(new_text, title, ch_num)
-    storage.write_chapter(book, chapter_id, new_text)
+    # 自检重写是【合法覆盖】—— 它的职责就是把不合格的正文改掉。
+    # write_chapter 默认拒绝覆盖已有非空章节, 这条路径必须显式放行。
+    storage.write_chapter(book, chapter_id, new_text, allow_overwrite=True)
     return new_text
