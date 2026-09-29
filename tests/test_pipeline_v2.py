@@ -1,5 +1,5 @@
 """
-test_pipeline_v2.py — lib/pipeline_v2.PipelineV2 (v1.2 M5)
+test_pipeline_v2.py — lib/pipeline/state.py 的 PipelineV2 (v1.2 M5)
 
 ~30 tests:
 - Checkpoint 持久化 (load/save/reset/atomic)
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lib import pipeline_v2 as pv2
+from lib.pipeline import state as pv2
 from lib import storage
 from lib.errors import ErrorCode
 

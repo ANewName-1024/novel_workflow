@@ -727,7 +727,7 @@ def cmd_backup(args: argparse.Namespace) -> None:
 
 def cmd_pipeline_resume(args: argparse.Namespace) -> None:
     """Recover and resume interrupted pipeline."""
-    from lib import pipeline_v2 as pv
+    from lib.pipeline import state as pv
     if args.chapter:
         m = re.match(r"ch_?(\d+)", str(args.chapter))
         ch = int(m.group(1)) if m else int(args.chapter)
@@ -753,7 +753,7 @@ def cmd_pipeline_resume(args: argparse.Namespace) -> None:
 
 def cmd_pipeline_status(args: argparse.Namespace) -> None:
     """Show pipeline checkpoint snapshot."""
-    from lib import pipeline_v2 as pv
+    from lib.pipeline import state as pv
     snapshot = pv.get_last_snapshot(args.book)
     if snapshot is None or not snapshot.get("available"):
         print("📭 无可用的 pipeline snapshot")

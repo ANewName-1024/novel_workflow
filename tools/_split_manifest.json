@@ -1,0 +1,103 @@
+{
+ "routes": {
+  "projects": [
+   "api_projects",
+   "api_projects_create",
+   "api_project_get",
+   "api_project_update",
+   "api_project_delete"
+  ],
+  "review": [
+   "api_queue",
+   "api_review",
+   "api_stats",
+   "api_history",
+   "api_approve",
+   "api_reject",
+   "api_edit",
+   "api_false_positive",
+   "api_batch_approve",
+   "api_batch_reject",
+   "api_queue_filtered",
+   "api_diff"
+  ],
+  "chapter": [
+   "api_chapter",
+   "api_chapter_entity_diff",
+   "api_apply_feedback",
+   "api_chapter_versions_list",
+   "api_chapter_versions_get",
+   "api_chapter_revert",
+   "api_chapter_diff_versions",
+   "api_chapter_diff_chapters",
+   "api_chapter_context"
+  ],
+  "pipeline": [
+   "api_pipeline_interruptions",
+   "api_pipeline_resume"
+  ],
+  "llm_config": [
+   "api_llm_providers",
+   "api_llm_health_check",
+   "api_book_config_read",
+   "api_book_config_write"
+  ],
+  "comments": [
+   "api_comments_list",
+   "api_comments_add",
+   "api_comments_delete"
+  ],
+  "notifications": [
+   "api_notifications_list",
+   "api_notifications_read",
+   "api_notifications_read_all"
+  ],
+  "entities": [
+   "api_entities_list",
+   "api_entities_counts",
+   "api_entities_get",
+   "api_entities_create",
+   "api_entities_update",
+   "api_entities_delete",
+   "api_check_consistency"
+  ],
+  "outline": [
+   "api_outline_get",
+   "api_outline_replace",
+   "api_outline_node_add",
+   "api_outline_node_update",
+   "api_outline_node_delete",
+   "api_outline_reorder",
+   "api_outline_volume_add",
+   "api_outline_volume_delete",
+   "api_outline_versions_list",
+   "api_outline_diff",
+   "api_outline_ai_suggest",
+   "api_outline_ai_expand"
+  ]
+ },
+ "helpers": {
+  "projects": [
+   "_list_books",
+   "_list_chapters",
+   "_create_project",
+   "_update_project",
+   "_delete_project",
+   "_validate_book_slug"
+  ],
+  "review": [
+   "_ensure_review_backfill",
+   "_diff_stats"
+  ],
+  "entities": [
+   "_parse_entity_type",
+   "_entity_to_dict"
+  ],
+  "outline": [
+   "_outline_to_text"
+  ]
+ },
+ "core": [
+  "_ensure_book"
+ ]
+}

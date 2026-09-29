@@ -1,5 +1,5 @@
 """
-pipeline_v2.py — Pipeline 状态机 + Checkpoint 持久化 (v1.2 M5)
+state.py — Pipeline 状态机 + Checkpoint 持久化 (v1.2 M5)
 
 设计依据: docs/DESIGN-v1.2-pipeline.md
 
@@ -25,8 +25,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
-from . import storage
-from .errors import ErrorCode, NovelError
+from .. import storage
+from ..errors import ErrorCode, NovelError
 
 
 # ── 常量 ──────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ _VALID_TRANSITIONS: set[tuple[str, str]] = {
 # ── 异常 ──────────────────────────────────────────────────────────────────
 
 class PipelineError(NovelError):
-    """pipeline_v2 专用错误, 继承 NovelError 复用现有错误处理."""
+    """状态机专用错误, 继承 NovelError 复用现有错误处理."""
     pass
 
 
@@ -501,7 +501,7 @@ def checkpoint_snapshot(book: str, ch: int, stage: str | None = None) -> dict:
             snapshot["failed_stage"] = s
 
     # Save to file (per book, for cross-session recovery)
-    from . import storage as _sto
+    from .. import storage as _sto
     snap_path = _sto.project_root(book) / "memory" / "pipeline_snapshot.json"
     snap_path.parent.mkdir(parents=True, exist_ok=True)
     snap_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -511,7 +511,7 @@ def checkpoint_snapshot(book: str, ch: int, stage: str | None = None) -> dict:
 
 def get_last_snapshot(book: str) -> dict | None:
     """Load the last saved pipeline snapshot (may be from previous session)."""
-    from . import storage as _sto
+    from .. import storage as _sto
     snap_path = _sto.project_root(book) / "memory" / "pipeline_snapshot.json"
     if not snap_path.exists():
         return None

@@ -21,7 +21,7 @@ def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
     Also snapshots checkpoint + session log on each completed stage.
     """
     try:
-        from . import pipeline_v2 as _pv2
+        from .pipeline import state as _pv2
         _pv2.get_v2().transition(book, ch, stage, status, **kwargs)
     except Exception as _e:
         print(f"  [v2-checkpoint] {stage}→{status} 写入失败: {_e}", file=sys.stderr)

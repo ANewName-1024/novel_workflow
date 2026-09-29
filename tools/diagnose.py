@@ -75,7 +75,7 @@ print("=" * 78)
 print("2. pipeline.py vs pipeline_v2.py 重复度")
 print("=" * 78)
 p1 = os.path.join(ROOT, "lib", "pipeline.py")
-p2 = os.path.join(ROOT, "lib", "pipeline_v2.py")
+p2 = os.path.join(ROOT, "lib", "lib.pipeline.state.py")
 if os.path.exists(p1) and os.path.exists(p2):
     s1 = open(p1, encoding="utf-8").read()
     s2 = open(p2, encoding="utf-8").read()

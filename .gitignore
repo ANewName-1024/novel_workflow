@@ -93,3 +93,6 @@ review_ui/check_ehandler.py
 memory/
 
 .meta/
+
+# Phase 1 app.py 拆分前的本地备份,不入库
+*.bak_phase1

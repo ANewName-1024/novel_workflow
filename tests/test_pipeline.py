@@ -83,7 +83,7 @@ def test_status_running_pid_alive(tmp_projects_root, book):
         s = runner.status(book)
         assert s is not None
         assert s["status"] == "running"
-        assert pipeline._is_pid_alive(s["pid"]) is True
+        assert pipeline.process._is_pid_alive(s["pid"]) is True
     finally:
         runner.cancel(book)
 
@@ -113,13 +113,13 @@ def test_cancel_kills_subprocess(tmp_projects_root, book):
     state = runner.start(book, chapter_num=1, auto_rewrite=False)
     pid = state["pid"]
     # 1s 内子进程应该还在 (write_chapter 至少 ~30s)
-    assert pipeline._is_pid_alive(pid)
+    assert pipeline.process._is_pid_alive(pid)
     # cancel
     new_state = runner.cancel(book)
     assert new_state["status"] == "cancelled"
     # 1s 内 PID 应该死了
     time.sleep(1.0)
-    assert not pipeline._is_pid_alive(pid)
+    assert not pipeline.process._is_pid_alive(pid)
 
 
 def test_cancel_no_state_raises(tmp_projects_root, book):
@@ -230,13 +230,13 @@ def test_parse_current_stage_from_log(tmp_projects_root, book):
         "[2026-07-01T22:52:00] [PIPELINE] book=测试书籍 ch=8 stage=extract status=start\n",
         encoding="utf-8",
     )
-    cur = pipeline._parse_current_stage_from_log(book)
+    cur = pipeline.process._parse_current_stage_from_log(book)
     assert cur == "extract"
 
 
 def test_parse_current_stage_no_log(tmp_projects_root, book):
     """log 不存在返回 None."""
-    assert pipeline._parse_current_stage_from_log(book) is None
+    assert pipeline.process._parse_current_stage_from_log(book) is None
 
 
 def test_parse_current_stage_no_marker(tmp_projects_root, book):
@@ -244,7 +244,7 @@ def test_parse_current_stage_no_marker(tmp_projects_root, book):
     log = pipeline.pipeline_log_path(book)
     log.parent.mkdir(exist_ok=True)
     log.write_text("just some lines\nno markers here\n", encoding="utf-8")
-    assert pipeline._parse_current_stage_from_log(book) is None
+    assert pipeline.process._parse_current_stage_from_log(book) is None
 
 
 def test_status_reflects_log_current_stage(tmp_projects_root, book):

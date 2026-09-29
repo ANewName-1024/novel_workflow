@@ -32,7 +32,7 @@ bp = Blueprint("pipeline", __name__,
 def api_pipeline_interruptions(book):
     """GET /api/pipeline/<book>/interruptions — 列出所有中断的管道 (v1.3 M4)."""
     _ensure_book(book)
-    from lib import pipeline_v2 as pv
+    from lib.pipeline import state as pv
     interrupted = pv.get_interrupted_chapters(book)
     return jsonify({"ok": True, "chapters": interrupted})
 
@@ -45,7 +45,7 @@ def api_pipeline_resume(book, ch):
     if not m:
         abort(400, description=f"Invalid chapter id: {ch}")
     chapter_num = int(m.group(1))
-    from lib import pipeline_v2 as pv
+    from lib.pipeline import state as pv
     result = pv.recover_stage(book, chapter_num)
     return jsonify({"ok": result["ok"], "chapter": result["chapter"],
                     "recovered_stage": result["recovered_stage"],

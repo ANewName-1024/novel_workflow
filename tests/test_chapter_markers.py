@@ -41,7 +41,7 @@ def test_pipeline_regex_matches_chapter_output():
         "[PIPELINE] book=测试书籍 ch=8 stage=self_check status=done severity=ok",
     ]
     for s in samples:
-        m = pipeline._PIPELINE_RE.search(s)
+        m = pipeline.process._PIPELINE_RE.search(s)
         assert m is not None, f"正则没匹配: {s}"
         # 至少 4 个 capture group: book, ch, stage, status
         assert m.group(1)  # book

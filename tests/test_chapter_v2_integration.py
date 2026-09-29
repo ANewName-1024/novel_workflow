@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from lib import pipeline_v2 as pv2
+from lib.pipeline import state as pv2
 
 
 # ── 1. v2 helper 不抛 ─────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ def test_v2_mark_helper_does_not_raise(tmp_projects_root, monkeypatch):
     """_v2_mark 在 v2 内部抛异常时也不抛 (包 try/except)."""
     from lib import chapter as chapmod
     # 让 pv2.get_v2() 抛异常
-    with patch("lib.pipeline_v2.PipelineV2.transition", side_effect=RuntimeError("boom")):
+    with patch("lib.pipeline.state.PipelineV2.transition", side_effect=RuntimeError("boom")):
         # 不应抛
         chapmod._v2_mark("test_book", 1, "context", "RUNNING")
     # 确认 v2 文件没被创建

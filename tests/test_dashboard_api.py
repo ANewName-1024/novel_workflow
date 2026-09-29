@@ -161,7 +161,7 @@ def test_cancel_kills_and_marks_cancelled(client, auth_disabled, running_pipelin
     assert data["state"]["status"] == "cancelled"
     # 1s 内 PID 应该死了
     time.sleep(0.5)
-    assert not pipeline._is_pid_alive(data["state"]["pid"])
+    assert not pipeline.process._is_pid_alive(data["state"]["pid"])
 
 
 # ── 10. SSE stream ──────────────────────────────────────────────────────

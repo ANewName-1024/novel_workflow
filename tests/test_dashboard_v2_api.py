@@ -10,7 +10,7 @@ test_dashboard_v2_api.py — review_ui/dashboard.py 4 个 v2 API 测试 (M5.3)
 import json
 import pytest
 
-from lib import pipeline_v2 as pv2
+from lib.pipeline import state as pv2
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────

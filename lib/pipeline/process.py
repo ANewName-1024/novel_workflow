@@ -26,8 +26,8 @@ try:
 except ImportError:  # 测试环境可能没装
     psutil = None  # type: ignore
 
-from . import storage
-from .errors import ErrorCode, NovelError
+from .. import storage
+from ..errors import ErrorCode, NovelError
 
 # ── 状态文件 schema ─────────────────────────────────────────────────────────
 

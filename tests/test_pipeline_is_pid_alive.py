@@ -29,7 +29,7 @@ from lib import pipeline as pl
 
 def _current_pid_alive() -> bool:
     """self 进程显然 alive, 且不是 zombie."""
-    return pl._is_pid_alive(os.getpid())
+    return pl.process._is_pid_alive(os.getpid())
 
 
 def test_current_process_is_alive():
@@ -38,13 +38,13 @@ def test_current_process_is_alive():
 
 def test_definitely_dead_pid():
     """PID 10^7 不可能存在 (alloc PID range 测试)."""
-    assert pl._is_pid_alive(99999999) is False
+    assert pl.process._is_pid_alive(99999999) is False
 
 
 def test_invalid_pid():
-    assert pl._is_pid_alive(0) is False
-    assert pl._is_pid_alive(-1) is False
-    assert pl._is_pid_alive(None) is False
+    assert pl.process._is_pid_alive(0) is False
+    assert pl.process._is_pid_alive(-1) is False
+    assert pl.process._is_pid_alive(None) is False
 
 
 def test_zombie_is_not_alive():
@@ -66,7 +66,7 @@ def test_zombie_is_not_alive():
             # 可能被 reaper 收走了 (Linux 在 parent 不 wait 时也会清掉)
             pytest.skip("环境未产生 zombie (可能被 init reaper 收走)")
         # 核心断言: _is_pid_alive 对 zombie 返回 False
-        result = pl._is_pid_alive(pid)
+        result = pl.process._is_pid_alive(pid)
         # 顺手 reap, 清理测试痕迹
         try:
             os.waitpid(pid, os.WNOHANG)

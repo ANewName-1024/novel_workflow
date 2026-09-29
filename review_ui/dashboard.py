@@ -20,7 +20,7 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
 from lib import pipeline, storage
-from lib import pipeline_v2 as pv2
+from lib.pipeline import state as pv2
 from lib.config_loader import get_config
 from lib.errors import ErrorCode, NovelError
 
