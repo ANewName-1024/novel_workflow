@@ -236,23 +236,17 @@ def api_diff(book, ch):
 
 
 def _ensure_review_backfill(book: str) -> None:
-    """Same backfill as cmd_review_queue."""
-    chapters = storage.list_chapters(book)
-    for ch in chapters:
-        if not revserv.get_review(book, ch["id"]):
-            sc_path = storage.project_root(book) / "self_checks" / f"{ch['id']}.json"
-            sc_result = None
-            if sc_path.exists():
-                try:
-                    sc_result = json.loads(sc_path.read_text(encoding="utf-8"))
-                except Exception:
-                    sc_result = None
-            if sc_result:
-                revserv.auto_flag(book, ch["id"], sc_result, by="AI-backfill")
-            else:
-                empty = revserv._empty_record(ch["id"])
-                empty["status"] = revserv.REVIEW_STATUS["AUTO_PASSED"]
-                revserv.save_review(book, empty)
+    """补建缺失的评审记录。
+
+    实现已收进 review_service.backfill_missing_reviews()。此前本函数与
+    novel.py 的 _ensure_review_for_existing() 各有一份拷贝(docstring 写的
+    "Same backfill as cmd_review_queue" 已经自认), 两份都带着 6dd453b 修的
+    同一个 bug: 自检文件损坏被当成「没有自检」→ 写成 AUTO_PASSED。
+    而且两份已经漂移 —— 本副本少了 append_audit 调用。
+
+    逻辑重复正是「只修一半」的成因, 现在只留一份, 两个入口都委派。
+    """
+    revserv.backfill_missing_reviews(book)
 
 
 def _diff_stats(text1: str, text2: str) -> dict:

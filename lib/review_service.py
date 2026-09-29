@@ -418,3 +418,47 @@ def format_review_record(book: str, record: dict, include_chapter: bool = False,
             lines.append(f"  {'─' * 50}")
 
     return "\n".join(lines)
+
+
+def backfill_missing_reviews(book: str) -> int:
+    """为没有评审记录的章节补建记录, 返回补建的条数。
+
+    这段逻辑此前有两份拷贝: novel.py 的 _ensure_review_for_existing() 与
+    review_ui/bp/review.py 的 _ensure_review_backfill()（后者 docstring 写着
+    "Same backfill as cmd_review_queue"）。两份都在 6dd453b 修的 bug 上一模一样,
+    而我第一次只改了 CLI 那份 —— Web UI 入口继续把损坏的 self_check 当成
+    「没有自检」→ 写成 AUTO_PASSED。
+
+    逻辑重复会让「修一半」成为默认结果, 所以合并到这一处, 两个调用方都委派。
+
+    关键语义（6dd453b）:
+      自检文件不存在 → 章节写于自检功能之前, 默认通过是既定行为
+      自检文件损坏   → 记 ERROR 并跳过这一章, 【不落任何评审结论】
+
+    两者都读成「没有」正是原 bug: 前者是预期的, 后者会把错误结论写进库里
+    并固化 —— 一旦有了 review 记录, 后续流程不会再重新自检。
+    """
+    chapters = storage.list_chapters(book)
+    created = 0
+    for ch in chapters:
+        if get_review(book, ch["id"]):
+            continue
+        sc_path = storage.project_root(book) / "self_checks" / f"{ch['id']}.json"
+        sc_result = None
+        if sc_path.exists():
+            try:
+                sc_result = json.loads(sc_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as e:
+                log.error("自检记录损坏, 本章不做 backfill (book=%s ch=%s): %s: %s",
+                          book, ch["id"], type(e).__name__, e)
+                continue
+        if sc_result:
+            auto_flag(book, ch["id"], sc_result, by="AI-backfill")
+        else:
+            empty = _empty_record(ch["id"])
+            empty["status"] = REVIEW_STATUS["AUTO_PASSED"]
+            save_review(book, empty)
+            append_audit(book, ch["id"], "backfilled_no_selfcheck", "system",
+                         notes="章节无自检数据，默认通过")
+        created += 1
+    return created

@@ -493,36 +493,16 @@ def cmd_export(args: argparse.Namespace) -> None:
 # ── review service commands ───────────────────────────────────────────────────
 
 def _ensure_review_for_existing(book: str) -> None:
-    """Backfill review records for chapters that don't have one yet
-    (e.g. chapters written before review service was added, or written
-    with self_check disabled). Only initializes AUTO_PASSED if no record."""
+    """Backfill review records for chapters that don't have one yet.
+
+    实现已收进 review_service.backfill_missing_reviews()。此前本文件与
+    review_ui/bp/review.py 的 _ensure_review_backfill() 各有一份拷贝,
+    6dd453b 修了这里之后 Web UI 那份仍带着同一个 bug(损坏的 self_check
+    被当成「没有自检」→ 写成 AUTO_PASSED)。两份实现正是 bug 能只被修一半的
+    根本原因, 现在只保留一份。
+    """
     from lib import review_service as revserv
-    chapters = storage.list_chapters(book)
-    for ch in chapters:
-        if not revserv.get_review(book, ch["id"]):
-            # Try to read existing self-check if present
-            sc_path = storage.project_root(book) / "self_checks" / f"{ch['id']}.json"
-            sc_result = None
-            if sc_path.exists():
-                try:
-                    import json as _json
-                    sc_result = _json.loads(sc_path.read_text(encoding="utf-8"))
-                except (json.JSONDecodeError, OSError) as e:
-                    # 损坏 != 「没有自检数据」。落到下面的 else 会把这一章
-                    # 标成 AUTO_PASSED 并 save_review 写死 —— 那是一个评审
-                    # 结论, 不是「跳过这一章」。所以这里只记录并跳过。
-                    log.error("自检记录损坏, 本章不做 backfill (book=%s ch=%s): %s: %s",
-                              book, ch["id"], type(e).__name__, e)
-                    continue
-            if sc_result:
-                revserv.auto_flag(book, ch["id"], sc_result, by="AI-backfill")
-            else:
-                # No self-check data → mark as auto_passed (no flag)
-                empty = revserv._empty_record(ch["id"])
-                empty["status"] = revserv.REVIEW_STATUS["AUTO_PASSED"]
-                revserv.save_review(book, empty)
-                revserv.append_audit(book, ch["id"], "backfilled_no_selfcheck", "system",
-                                     notes="章节无自检数据，默认通过")
+    revserv.backfill_missing_reviews(book)
 
 def cmd_review_queue(args: argparse.Namespace) -> None:
     from lib import review_service as revserv
