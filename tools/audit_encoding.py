@@ -61,14 +61,26 @@ def classify(raw: bytes) -> str:
     return "binary"
 
 
+# 无扩展名但【确实是文本】的文件。Path(".gitignore").suffix 是空串,
+# 所以只按扩展名过滤会把它们全部跳过 —— 2026-09-29 就是这么漏掉了
+# .gitignore 里的 GBK 注释, 而 check_encoding.py 当时报 clean=287 dirty=0。
+NAMELESS_TEXT = {
+    ".gitignore", ".editorconfig", ".dockerignore", ".npmignore",
+    ".gitattributes", ".env.example", "LICENSE", "Makefile", "Dockerfile",
+}
+
+
 def iter_files() -> list[Path]:
     out: list[Path] = []
     for p in REPO.rglob("*"):
         if not p.is_file():
             continue
-        if p.suffix.lower() not in EXTS:
+        if p.suffix.lower() not in EXTS and p.name not in NAMELESS_TEXT:
             continue
-        if any(x in str(p) for x in EXCLUDE):
+        # EXCLUDE 之前是对整条路径做子串匹配, 于是 '.git' 会命中 '.gitignore'
+        # —— 编码门禁从建立起就【从未扫过 .gitignore】, 而那文件里正好有 GBK
+        # 注释。改为只按目录名排除。
+        if any(part in EXCLUDE for part in p.parts):
             continue
         out.append(p)
     return sorted(set(out), key=str)

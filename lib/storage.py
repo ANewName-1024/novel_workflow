@@ -9,12 +9,16 @@ v1.3 M6: 元数据可走 SQLite (lib.db), 章节内容仍在 .md 文件.
 """
 from __future__ import annotations
 
-import json, re, uuid
+import json, logging, re, uuid
 from pathlib import Path
 from typing import Any, Optional
 
 PROJECTS_ROOT = Path(__file__).parent.parent / "projects"
 ROOT = PROJECTS_ROOT  # alias; code uses ROOT throughout
+
+# 本模块此前没有 logger, 导致「版本快照失败」完全静默 —— 而那个快照是
+# 覆盖已有正文时【唯一的回退手段】。快照静默失败 = 旧内容被覆盖且无处可寻。
+log = logging.getLogger("novel.lib.storage")
 
 # ── path helpers ────────────────────────────────────────────────────────────
 
@@ -86,8 +90,15 @@ def write_chapter(book: str, chapter_id: str, content: str) -> None:
                 meta={"prev_chars": len(old_content) if old_content else 0,
                       "new_chars": len(content)},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            # 这里原本是静默 pass。语义本身对(快照失败不该中断写作),
+            # 但这份快照是覆盖前【唯一的回退手段】: 旧正文已经写掉了。
+            # 静默失败意味着用户永远不知道自己的作品已无版本可回退。
+            # 产品实测: 该书无 versions/ 目录, 快照从来就没成功建立过。
+            log.error("版本快照失败, 旧正文已被覆盖且无版本可回退 "
+                      "(book=%s ch=%s 旧 %d 字 → 新 %d 字): %s: %s",
+                      book, chapter_id, len(old_content or ""), len(content),
+                      type(e).__name__, e, exc_info=True)
 
 def list_chapters(book: str) -> list[dict]:
     """Return sorted list of {id, title, word_count, preview} from chapters dir.
