@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+import logging
+
 import pytest
 
 from lib.pipeline import state as pv2
@@ -89,7 +91,7 @@ def test_v2_failure_path_writes_failed_status(tmp_projects_root):
 
 # ── 3. v2 故障不影响主流程 ──────────────────────────────────────────────
 
-def test_v2_failure_does_not_break_main_flow(tmp_projects_root, capsys):
+def test_v2_failure_does_not_break_main_flow(tmp_projects_root, caplog):
     """v2 写盘抛异常 → stderr 输出, 主流程继续."""
     from lib import chapter as chapmod
     # 第一次 (context RUNNING) 正常, 第二次 (context DONE) 抛
@@ -105,9 +107,16 @@ def test_v2_failure_does_not_break_main_flow(tmp_projects_root, capsys):
         chapmod._v2_mark("test_book", 1, "context", "RUNNING")
         chapmod._v2_mark("test_book", 1, "context", "DONE")
 
-    # 第二次应被吞掉
-    captured = capsys.readouterr()
-    assert "v2-checkpoint" in captured.err or "写入失败" in captured.err or "disk full" in captured.err
+    # 第二次应被吞掉, 且必须留下可观测记录。
+    # 传输方式: 原来是 print(stderr), 现改为 log.warning (见
+    # tools/convert_chapter_logging.py)。生产路径 novel.py 调 setup_logging(),
+    # 该 logger 同时输出 stdout + 轮转文件, 终端仍可见 —— 测试环境绕过了
+    # novel.py, 所以用 caplog 捕获。
+    records = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert records, "v2 写盘失败必须留下 warning, 不能静默"
+    msg = " ".join(r.getMessage() for r in records)
+    assert "v2-checkpoint" in msg or "写入失败" in msg or "disk full" in msg, \
+        f"日志内容应指明是 checkpoint 写入失败, 实际: {msg!r}"
     # 第一次正常写盘
     v2_real = pv2.PipelineV2()
     ch = v2_real.get_chapter("test_book", 1)

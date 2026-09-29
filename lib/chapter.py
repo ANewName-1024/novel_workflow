@@ -12,6 +12,9 @@ from . import style as stylemod
 from . import self_check as scmod
 from . import review_service as revserv
 from .prompts import CHAPTER_SYSTEM, CHAPTER_USER
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
@@ -24,7 +27,7 @@ def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
         from .pipeline import state as _pv2
         _pv2.get_v2().transition(book, ch, stage, status, **kwargs)
     except Exception as _e:
-        print(f"  [v2-checkpoint] {stage}→{status} 写入失败: {_e}", file=sys.stderr)
+        log.warning("[v2-checkpoint] %s→%s 写入失败: %s", stage, status, _e)
 
     # ── v1.3 M4: snapshot checkpoint after each stage change ──────────
     try:
@@ -76,9 +79,13 @@ def write_chapter(
     )
 
     # ── Build sliding-window context ──
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=context status=start")
     from .context import build_writing_context, estimate_context_tokens
     ctx = build_writing_context(book, chapter_num)
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=context status=done")
 
     system_prompt = CHAPTER_SYSTEM.format(
@@ -115,6 +122,8 @@ def write_chapter(
     print(f"  [Chapter {chapter_num}] 上下文策略: {win} | 估算输入: ~{est_in} tok")
     print(f"  [Chapter {chapter_num}] 关键事件: {ctx['key_events'][:60]}...")
 
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=writing status=start")
     llm.set_stage_context("writing", chapter_num)
     text = llm.complete(
@@ -126,6 +135,8 @@ def write_chapter(
         # would stop generation right after the title.
         stop=["<stop>", "<END>", "### ", "---END---"],
     )
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=writing status=done")
 
     # Clean & save
@@ -136,6 +147,8 @@ def write_chapter(
     run_post_write_pipeline(book, chapter_num, ctx["chapter_id"], llm, cfg)
 
     _v2_mark(book, chapter_num, "done", "RUNNING")
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=done status=start")
     _v2_mark(book, chapter_num, "done", "DONE",
              artifacts={"word_count": len(text)})
@@ -159,6 +172,8 @@ def run_post_write_pipeline(
     """
     # 1) Extract & merge
     _v2_mark(book, chapter_num, "extract", "RUNNING")
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=start")
     llm.set_stage_context("extract", chapter_num)
     try:
@@ -170,18 +185,24 @@ def run_post_write_pipeline(
               f"{len(extraction.get('new_events',[]))} 事件, "
               f"{len(extraction.get('new_foreshadowing',[]))} 伏笔, "
               f"{len(extraction.get('new_characters',[]))} 角色")
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=done")
         _v2_mark(book, chapter_num, "extract", "DONE",
                  artifacts={"events": len(extraction.get("new_events", [])),
                             "foreshadowing": len(extraction.get("new_foreshadowing", [])),
                             "characters": len(extraction.get("new_characters", []))})
     except Exception as e:
-        print(f"  ⚠ extract 失败 (非致命): {e}")
+        log.warning("extract 失败 (非致命): %s", e)
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=failed")
         _v2_mark(book, chapter_num, "extract", "FAILED", error=str(e))
 
     # 1b) Entity diff (v1.3 M4): compute & record per-chapter entity changes
     _v2_mark(book, chapter_num, "entity_diff", "RUNNING")
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=start")
     try:
         from . import entity_diff as edmod
@@ -195,6 +216,8 @@ def run_post_write_pipeline(
               f"事件+{summary['events']['added']}, "
               f"伏笔+{summary['foreshadows']['added']}/收{summary['foreshadows']['resolved']}, "
               f"规则~{summary['world_rules']['updated']})")
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=done")
         _v2_mark(book, chapter_num, "entity_diff", "DONE",
                  artifacts={"total_changes": summary["total_changes"],
@@ -203,35 +226,49 @@ def run_post_write_pipeline(
                             "foreshadows_added": summary["foreshadows"]["added"],
                             "foreshadows_resolved": summary["foreshadows"]["resolved"]})
     except Exception as e:
-        print(f"  ⚠ entity_diff 失败 (非致命): {e}")
+        log.warning("entity_diff 失败 (非致命): %s", e)
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=failed")
         _v2_mark(book, chapter_num, "entity_diff", "FAILED", error=str(e))
 
     # 2) Generate rolling summary
     _v2_mark(book, chapter_num, "summary", "RUNNING")
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=start")
     llm.set_stage_context("summary", chapter_num)
     try:
         summod.generate_chapter_summary(book, chapter_id, llm)
         print(f"  ✓ 章节摘要生成")
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=done")
         _v2_mark(book, chapter_num, "summary", "DONE")
     except Exception as e:
-        print(f"  ⚠ 摘要生成失败 (非致命): {e}")
+        log.warning("摘要生成失败 (非致命): %s", e)
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=failed")
         _v2_mark(book, chapter_num, "summary", "FAILED", error=str(e))
 
     # 3) Update state snapshot
     _v2_mark(book, chapter_num, "state", "RUNNING")
+    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=start")
     llm.set_stage_context("state", chapter_num)
     try:
         statemod.update_state_after_chapter(book, chapter_num, llm)
         print(f"  ✓ 状态快照更新")
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=done")
         _v2_mark(book, chapter_num, "state", "DONE")
     except Exception as e:
-        print(f"  ⚠ 状态更新失败 (非致命): {e}")
+        log.warning("状态更新失败 (非致命): %s", e)
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=failed")
         _v2_mark(book, chapter_num, "state", "FAILED", error=str(e))
 
@@ -242,16 +279,20 @@ def run_post_write_pipeline(
             stylemod.extract_style_anchor(book, llm)
             print(f"  ✓ 风格锚点已建立 (基于第 1 章)")
         except Exception as e:
-            print(f"  ⚠ 风格锚点提取失败 (非致命): {e}")
+            log.warning("风格锚点提取失败 (非致命): %s", e)
 
     # 5) Self-check (optional, doubles per-chapter LLM calls)
     if cfg.get("self_check", False):
         _v2_mark(book, chapter_num, "self_check", "RUNNING")
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=self_check status=start")
         llm.set_stage_context("self_check", chapter_num)
         try:
             result = scmod.self_check_chapter(book, chapter_id, llm)
             sev = result.get("severity", "unknown")
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
             print(f"[PIPELINE] book={book} ch={chapter_num} stage=self_check status=done severity={sev}")
             _v2_mark(book, chapter_num, "self_check", "DONE",
                      artifacts={"severity": sev})
@@ -260,7 +301,7 @@ def run_post_write_pipeline(
             try:
                 revserv.auto_flag(book, chapter_id, result, by="AI")
             except Exception as flag_err:
-                print(f"  ⚠ 评审记录创建失败 (非致命): {flag_err}")
+                log.warning("评审记录创建失败 (非致命): %s", flag_err)
 
             if scmod.has_critical_issues(result, strict=cfg.get("self_check_strict", False)):
                 # critical / moderate-with-overall-ok-false
@@ -303,7 +344,7 @@ def run_post_write_pipeline(
             else:
                 print(f"  ✓ 自检通过 (severity={sev})")
         except Exception as e:
-            print(f"  ⚠ 自检失败 (非致命): {e}")
+            log.warning("自检失败 (非致命): %s", e)
             _v2_mark(book, chapter_num, "self_check", "FAILED", error=str(e))
 
     # Update progress (use shared helper so review/human-edit paths also stay in sync)
