@@ -133,6 +133,34 @@ def api_false_positive(book, ch):
     return jsonify({"ok": True, "status": record["status"]})
 
 
+def _run_batch(book, chapter_ids, reviewer, note, action, count_key):
+    """批量评审的公共骨架: 逐条独立处理, 单条失败不中断, 失败项带 error。
+
+    action 是 revserv.approve / revserv.reject; count_key 是响应里的计数字段
+    ("approved" / "rejected")。
+
+    这段循环原先在 api_batch_approve 与 api_batch_reject 里各有一份逐字相同的
+    副本, 相似度 0.976。逐项的 try/except 与结果汇总是最容易只修一半的地方 ——
+    比如某次给 per-item 失败加日志。合成一处后不可能再分叉。
+    """
+    results = []
+    for cid in chapter_ids:
+        try:
+            if not isinstance(cid, str) or not cid.startswith("ch_"):
+                raise ValueError(f"invalid chapter id: {cid!r}")
+            rec = action(book, cid, reviewer, note)
+            results.append({"id": cid, "ok": True, "status": rec["status"]})
+        except Exception as e:
+            results.append({"id": cid, "ok": False, "error": str(e)})
+    n_ok = sum(1 for r in results if r["ok"])
+    n_fail = len(results) - n_ok
+    return jsonify({"ok": n_fail == 0,
+                    "total": len(results),
+                    count_key: n_ok,
+                    "failed": n_fail,
+                    "results": results})
+
+
 @bp.route("/api/batch-approve/<book>", methods=["POST"])
 def api_batch_approve(book):
     """M5: 批量批准. body: {"chapters": ["ch_001", ...], "reviewer": "...", "notes": "..."}.
@@ -145,22 +173,8 @@ def api_batch_approve(book):
         abort(400, description="chapters (non-empty list) required")
     reviewer = (body.get("reviewer") or "wei_chao").strip()
     notes = (body.get("notes") or "Web UI 批量批准").strip()
-    results = []
-    for cid in chapter_ids:
-        try:
-            if not isinstance(cid, str) or not cid.startswith("ch_"):
-                raise ValueError(f"invalid chapter id: {cid!r}")
-            rec = revserv.approve(book, cid, reviewer, notes)
-            results.append({"id": cid, "ok": True, "status": rec["status"]})
-        except Exception as e:
-            results.append({"id": cid, "ok": False, "error": str(e)})
-    n_ok = sum(1 for r in results if r["ok"])
-    n_fail = len(results) - n_ok
-    return jsonify({"ok": n_fail == 0,
-                    "total": len(results),
-                    "approved": n_ok,
-                    "failed": n_fail,
-                    "results": results})
+    return _run_batch(book, chapter_ids, reviewer, notes,
+                      revserv.approve, "approved")
 
 
 @bp.route("/api/batch-reject/<book>", methods=["POST"])
@@ -177,22 +191,8 @@ def api_batch_reject(book):
     if not reason:
         abort(400, description="reason required")
     reviewer = (body.get("reviewer") or "wei_chao").strip()
-    results = []
-    for cid in chapter_ids:
-        try:
-            if not isinstance(cid, str) or not cid.startswith("ch_"):
-                raise ValueError(f"invalid chapter id: {cid!r}")
-            rec = revserv.reject(book, cid, reviewer, reason)
-            results.append({"id": cid, "ok": True, "status": rec["status"]})
-        except Exception as e:
-            results.append({"id": cid, "ok": False, "error": str(e)})
-    n_ok = sum(1 for r in results if r["ok"])
-    n_fail = len(results) - n_ok
-    return jsonify({"ok": n_fail == 0,
-                    "total": len(results),
-                    "rejected": n_ok,
-                    "failed": n_fail,
-                    "results": results})
+    return _run_batch(book, chapter_ids, reviewer, reason,
+                      revserv.reject, "rejected")
 
 
 @bp.route("/api/queue/<book>/filtered")
