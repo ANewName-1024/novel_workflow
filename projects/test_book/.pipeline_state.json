@@ -1,0 +1,13 @@
+{
+  "book": "test_book",
+  "status": "cancelled",
+  "pid": 27004,
+  "started_at": "2026-07-09T09:11:11",
+  "ended_at": "2026-07-09T09:11:12",
+  "current_chapter": 1,
+  "current_stage": "context",
+  "stage_started_at": "2026-07-09T09:11:11",
+  "exit_code": -1,
+  "log_path": "D:\\.openclaw\\workspace\\novel_workflow\\projects\\test_book\\logs\\pipeline.log",
+  "error": "进程异常退出 (无更新)"
+}

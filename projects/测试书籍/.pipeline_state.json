@@ -1,0 +1,13 @@
+{
+  "book": "测试书籍",
+  "status": "failed",
+  "pid": 44084,
+  "started_at": "2026-07-02T23:38:03",
+  "ended_at": "2026-07-02T23:47:30",
+  "current_chapter": 8,
+  "current_stage": "context",
+  "stage_started_at": "2026-07-02T23:38:03",
+  "exit_code": -1,
+  "log_path": "D:\\.openclaw\\workspace\\novel_workflow\\projects\\测试书籍\\logs\\pipeline.log",
+  "error": "进程异常退出 (无更新)"
+}

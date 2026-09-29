@@ -1,0 +1,77 @@
+{
+  "book": "测试书籍",
+  "chapters": {
+    "8": {
+      "book": "测试书籍",
+      "chapter": 8,
+      "stages": {
+        "context": {
+          "status": "PENDING",
+          "started_at": null,
+          "ended_at": null,
+          "artifacts": {},
+          "tokens": {},
+          "error": null
+        },
+        "writing": {
+          "status": "PENDING",
+          "started_at": null,
+          "ended_at": null,
+          "artifacts": {},
+          "tokens": {},
+          "error": null
+        },
+        "extract": {
+          "status": "DONE",
+          "started_at": "2026-07-02T23:40:22",
+          "ended_at": "2026-07-02T23:41:02",
+          "artifacts": {
+            "events": 2,
+            "foreshadowing": 3,
+            "characters": 3
+          },
+          "tokens": {},
+          "error": null
+        },
+        "summary": {
+          "status": "DONE",
+          "started_at": "2026-07-02T23:41:02",
+          "ended_at": "2026-07-02T23:41:16",
+          "artifacts": {},
+          "tokens": {},
+          "error": null
+        },
+        "state": {
+          "status": "DONE",
+          "started_at": "2026-07-02T23:41:16",
+          "ended_at": "2026-07-02T23:42:01",
+          "artifacts": {},
+          "tokens": {},
+          "error": null
+        },
+        "self_check": {
+          "status": "DONE",
+          "started_at": "2026-07-02T23:42:01",
+          "ended_at": "2026-07-02T23:43:19",
+          "artifacts": {
+            "severity": "critical"
+          },
+          "tokens": {},
+          "error": null
+        },
+        "done": {
+          "status": "DONE",
+          "started_at": "2026-07-02T23:47:29",
+          "ended_at": "2026-07-02T23:47:29",
+          "artifacts": {
+            "word_count": 2308
+          },
+          "tokens": {},
+          "error": null
+        }
+      },
+      "schema_version": 1
+    }
+  },
+  "schema_version": 1
+}

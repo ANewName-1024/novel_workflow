@@ -36,11 +36,12 @@ projects/*/state.json
 projects/*/style.json
 projects/*/outline.json
 projects/*/config.json
-projects/nonexistent*
-projects/不存在*
-projects/测试书籍/
-projects/test_book/**
-projects/test-book/**
+# 原先这里有 5 条手工加的兜底规则(nonexistent* / 不存在* / 测试书籍/ /
+# test_book/** / test-book/**), 每泄一个目录就加一行。已删除, 原因:
+#   1. 泄漏已修好 —— 清空 projects/ 后跑全量 743 测试, 未再产生任何书籍目录
+#   2. `projects/测试书籍/` 会藏起【真实书名】的用户项目, 而那本书确实存在
+#   3. 静默忽略会让下一次泄漏重新不可见
+# 正文与配置仍由上面 projects/*/... 通配规则忽略(内容不进代码仓库)
 
 # ===== 部署/本地配置 (不入库, 含密码) =====
 config.yaml

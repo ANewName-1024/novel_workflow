@@ -1,0 +1,32 @@
+[
+  {
+    "version_id": "v001",
+    "chapter_id": "ch_008",
+    "ts": "2026-07-02T23:40:22",
+    "trigger": "auto",
+    "char_count": 2308,
+    "char_diff": 2308,
+    "word_diff": 2308,
+    "content_hash": "9f6517daae89",
+    "prev_id": null,
+    "meta": {
+      "prev_chars": 2984,
+      "new_chars": 2308
+    }
+  },
+  {
+    "version_id": "v002",
+    "chapter_id": "ch_008",
+    "ts": "2026-07-02T23:44:55",
+    "trigger": "auto",
+    "char_count": 2972,
+    "char_diff": 664,
+    "word_diff": 664,
+    "content_hash": "8c92696dd482",
+    "prev_id": "v001",
+    "meta": {
+      "prev_chars": 2308,
+      "new_chars": 2972
+    }
+  }
+]
