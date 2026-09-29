@@ -94,6 +94,7 @@ def get_review(book: str, chapter_id: str) -> dict | None:
         if r:
             return r
     except Exception:
+        log.warning("SQLite 评审读取失败,回退文件 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
     p = review_path(book, chapter_id)
     if not p.exists():
@@ -129,6 +130,7 @@ def save_review(book: str, record: dict) -> None:
             v2_chars=record.get("v2_chars", 0),
         )
     except Exception:
+        log.warning("SQLite 评审镜像写失败,仅文件已存 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
 
 def append_audit(book: str, chapter_id: str, action: str, by: str, notes: str = "") -> None:
@@ -194,6 +196,7 @@ def approve(book: str, chapter_id: str, reviewer: str, notes: str = "") -> dict:
         num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
         storage.mark_chapter_completed(book, chapter_id, num)
     except Exception:
+        log.info("章节完成标记更新失败 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
     return record
 
@@ -235,6 +238,7 @@ def edit(book: str, chapter_id: str, reviewer: str, new_text: str, notes: str = 
         num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
         storage.mark_chapter_completed(book, chapter_id, num)
     except Exception:
+        log.info("章节完成标记更新失败 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
     return record
 
@@ -257,6 +261,7 @@ def mark_false_positive(book: str, chapter_id: str, reviewer: str, notes: str) -
         num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
         storage.mark_chapter_completed(book, chapter_id, num)
     except Exception:
+        log.info("章节完成标记更新失败 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
     return record
 
@@ -271,6 +276,7 @@ def apply_edit_to_chapter(book: str, chapter_id: str) -> bool:
         num = int(chapter_id.split("_")[-1]) if chapter_id.startswith("ch_") else None
         storage.mark_chapter_completed(book, chapter_id, num)
     except Exception:
+        log.info("章节完成标记更新失败 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
     return True
 
@@ -292,6 +298,7 @@ def get_review_queue(book: str) -> list[dict]:
                 if "chapter_id" not in r and "ch_id" in r:
                     r["chapter_id"] = r["ch_id"]
     except Exception:
+        log.warning("SQLite 队列查询失败,回退文件 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
     if not out:
         for p in sorted(review_dir(book).glob("ch_*.review.json")):
@@ -325,6 +332,7 @@ def get_review_stats(book: str) -> dict:
         from . import db as _dbmod
         return _dbmod.review_stats(storage.ROOT, book)
     except Exception:
+        log.warning("SQLite 统计查询失败,回退文件 (book=%s ch=%s)", book, chapter_id, exc_info=True)
         pass
     counts = {v: 0 for v in REVIEW_STATUS.values()}
     counts["total"] = 0
