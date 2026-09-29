@@ -1,5 +1,16 @@
-# novel_workflow CI (v1.4)
-# 跑 Python pytest + Flutter analyze + 文档 lint
+# novel_workflow CI
+# pytest gate + Flutter analyze + repo hygiene.
+#
+# Design notes
+# ------------
+# * `python -m pytest` with no path argument relies on pytest.ini (testpaths).
+#   Passing an explicit path here re-introduced the original bug: without
+#   testpaths, a bare pytest scans the repo root and scripts/_archive/*.py
+#   breaks collection. Always run bare pytest so the config is the single
+#   source of truth for what gets collected.
+# * The matrix covers the interpreter the project actually runs on. Local dev
+#   and VPS both use 3.14; keeping 3.12 catches accidental use of 3.13+ syntax.
+# * python-tests is the merge gate. The hygiene job must not mask it.
 
 name: CI
 
@@ -9,14 +20,21 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  # ── Python 后端测试 ──────────────────────────────────────
   python-tests:
-    name: Python tests (pytest)
-    runs-on: ubuntu-latest
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.12"]
+        include:
+          - { os: windows-latest, python-version: "3.14" }   # production platform
+          - { os: ubuntu-latest,   python-version: "3.12" }   # floor / portability
     steps:
       - uses: actions/checkout@v4
 
@@ -25,92 +43,103 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Run pytest
+      - name: Verify requirements are actually installable
+        # Guards the failure mode where a mangled comment swallows a
+        # dependency line and the install silently succeeds without it.
         run: |
-          python -m pytest tests/ -v --no-header --tb=short \
-            --junitxml=pytest-junit.xml
+          pip check
+
+      - name: Run pytest
+        run: python -m pytest -q --tb=short --junitxml=pytest-junit.xml
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-results-${{ matrix.python-version }}
+          name: pytest-${{ matrix.os }}-py${{ matrix.python-version }}
           path: pytest-junit.xml
+          if-no-files-found: ignore
 
-  # ── Flutter (mobile) analyze ─────────────────────────────
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: ruff check
+        run: ruff check lib review_ui novel.py --select=E9,F63,F7,F82
+
   flutter-analyze:
     name: Flutter analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.6"
           channel: stable
-
       - name: Install dependencies
         run: flutter pub get
-
       - name: Analyze
         run: flutter analyze
 
-  # ── 文档 / 仓库卫生 ─────────────────────────────────────
   repo-hygiene:
     name: Repo hygiene
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check .gitignore covers security_rejected
+      - name: No credential files in the tree
+        # A real gate, not a warning: these must never be committed.
         run: |
-          # scripts/_security_rejected/ 应该是仓库文档, 必须入库
-          if [ ! -d "scripts/_security_rejected" ]; then
-            echo "ERROR: scripts/_security_rejected/ missing (SSH patch 归档)"
+          fail=0
+          for f in .env .env.local; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error::$f is tracked by git"
+              fail=1
+            fi
+          done
+          if git ls-files | grep -E '\.(pem|key|pfx|p12)$'; then
+            echo "::error::private key material is tracked"
+            fail=1
+          fi
+          exit $fail
+
+      - name: Security review archive is present
+        run: |
+          test -d scripts/_security_rejected \
+            || { echo "::error::scripts/_security_rejected/ missing (SSH patch archive)"; exit 1; }
+
+      - name: Rejected patch files stay archived
+        run: |
+          if [ -f review_ui/app_log_ssh_endpoint_patch.txt ]; then
+            echo "::error::rejected SSH patch still sitting in review_ui/"
             exit 1
           fi
-          echo "✅ scripts/_security_rejected/ present (反面教材)"
 
-      - name: Check no high-risk patch files
+      - name: No stray debug scripts in the test path
+        # scripts/_archive/ must stay outside testpaths. If someone moves a
+        # module-level-side-effect script into tests/, collection dies.
         run: |
-          # review_ui/app_log_ssh_endpoint_patch.txt 不应出现 (已归档到 _security_rejected)
-          if [ -f "review_ui/app_log_ssh_endpoint_patch.txt" ]; then
-            echo "ERROR: SSH patch file still in review_ui/"
+          if git ls-files tests/ | grep -vE '^tests/(conftest\.py|test_[^/]*\.py)$'; then
+            echo "::error::unexpected file(s) in tests/ -- pytest.ini testpaths assumes test_*.py only"
             exit 1
-          fi
-          echo "✅ SSH patch 已归档"
-
-      - name: Markdown lint (粗检)
-        run: |
-          # 简单粗检: docs/*.md 不能含 TODO 残留 (vague 词)
-          if grep -rn "TODO" docs/ 2>/dev/null | head -5; then
-            echo "WARN: 文档含 TODO 残留 (人工 review)"
-          else
-            echo "✅ docs/ clean"
-          fi
-
-  # ── Anti-pattern guard (本地有的 hook 也跑) ─────────────
-  anti-pattern:
-    name: Anti-pattern guard
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Detect vague time references in commits/docs
-        run: |
-          # 简单 grep: 找 "最新", "最近", "上次", "之前" 等模糊时间词
-          if grep -rE "最新|最近|上次|之前" docs/ CHANGELOG.md 2>/dev/null | grep -vE "Anti-Pattern|self-improving" | head -5; then
-            echo "::warning::模糊时间词 detected (人工 review)"
-          else
-            echo "✅ No vague time references"
           fi

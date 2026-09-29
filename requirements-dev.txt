@@ -1,9 +1,12 @@
-# novel_workflow 开发依赖 (装在开发环境)
+# novel_workflow development dependencies
+# Install on top of runtime deps:  pip install -r requirements-dev.txt
+#
+# UTF-8, no BOM. See requirements.txt for why CJK comments are avoided here.
 -r requirements.txt
 
-# 静态分析
+# --- Static analysis (were previously swallowed by a mangled CJK comment) ---
 ruff>=0.5
 mypy>=1.10
 
-# 调试
-ipython>=8.0
+# --- Test tooling ---
+pytest-timeout>=2.3      # bounds hangs on LLM/network-backed tests
