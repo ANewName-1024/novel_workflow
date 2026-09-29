@@ -25,11 +25,6 @@ from lib import storage
 # ── fixtures ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def auth_disabled(monkeypatch):
-    review_app._get_auth = lambda: {"enabled": False, "user": "", "password": ""}
-
-
-@pytest.fixture
 def client(auth_disabled):
     review_app.app.config["TESTING"] = True
     review_app.app.config["SECRET_KEY"] = "test-projects-crud"
