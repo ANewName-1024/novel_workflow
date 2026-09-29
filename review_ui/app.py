@@ -103,7 +103,10 @@ _GLOBAL_ROUTES = {'index': 'home', 'overview_page': 'overview', 'llm_config_page
 @app.context_processor
 def _nav_context():
     """Inject nav context for unified navbar."""
-    endpoint = request.endpoint or ''
+    # Phase 1 修复: Blueprint 会给 endpoint 加蓝图名前缀
+    # (dashboard_page -> dashboard.dashboard_page), 精确匹配会失效,
+    # 导致这两个页面的导航高亮静默消失。统一取末段比较。
+    endpoint = (request.endpoint or '').rsplit('.', 1)[-1]
     rule = request.url_rule.rule if request.url_rule else ''
 
     # 提取 book 名称 (路径参数)
