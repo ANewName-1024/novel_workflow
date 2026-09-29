@@ -33,6 +33,7 @@ def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
     try:
         _pv2.checkpoint_snapshot(book, ch, stage)
     except Exception:
+        log.debug("流水线 · _v2_mark 第1处兜底步骤失败 (非致命)", exc_info=True)
         pass  # snapshot failure is non-critical
 
     # ── v1.3 M4: session log hook ─────────────────────────────────────
@@ -45,6 +46,7 @@ def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
         elif status == "FAILED":
             _slog.hook_pipeline_failed(book, ch, kwargs.get("error", ""))
     except Exception:
+        log.debug("流水线 · _v2_mark 第2处兜底步骤失败 (非致命)", exc_info=True)
         pass  # session_log is non-critical
 
 
@@ -317,10 +319,12 @@ def run_post_write_pipeline(
                         try:
                             summod.generate_chapter_summary(book, chapter_id, llm)
                         except Exception:
+                            log.info("流水线 · run_post_write_pipeline 第1处兜底步骤失败 (非致命)", exc_info=True)
                             pass
                         try:
                             statemod.update_state_after_chapter(book, chapter_num, llm)
                         except Exception:
+                            log.info("流水线 · run_post_write_pipeline 第2处兜底步骤失败 (非致命)", exc_info=True)
                             pass
                         # Re-self-check ONCE (avoid infinite loop)
                         retry = scmod.self_check_chapter(book, chapter_id, llm)
@@ -329,6 +333,7 @@ def run_post_write_pipeline(
                         try:
                             revserv.auto_flag(book, chapter_id, retry, by="AI-retry")
                         except Exception:
+                            log.info("流水线 · run_post_write_pipeline 第3处兜底步骤失败 (非致命)", exc_info=True)
                             pass
                         if scmod.has_critical_issues(retry, strict=cfg.get("self_check_strict", False)):
                             print(f"  ⚠ 重写后仍 critical (severity={retry_sev}) → 标记需人工 review")

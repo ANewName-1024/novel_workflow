@@ -28,6 +28,9 @@ from .entity import (
     gen_id,
 )
 from . import storage
+import logging
+
+log = logging.getLogger(__name__)
 
 # ── 文件 IO ───────────────────────────────────────────────────────────────
 
@@ -133,6 +136,7 @@ def get_world(book: str) -> dict:
                 )
                 new_data["rules"][wr.id] = wr.to_dict()
             except ValueError:
+                log.info("记忆合并 · get_world 第1处兜底步骤失败 (非致命)", exc_info=True)
                 pass
         return new_data
     return data
@@ -242,6 +246,7 @@ def merge_extraction(book: str, extraction: dict) -> None:
                 if wr.id not in world.get("rules", {}):
                     world.setdefault("rules", {})[wr.id] = wr.to_dict()
             except (ValueError, KeyError):
+                log.info("记忆合并 · merge_extraction 第1处兜底步骤失败 (非致命)", exc_info=True)
                 pass
     # 兼容旧 world_updates (字符串数组)
     for wu in extraction.get("world_updates", []):
@@ -256,6 +261,7 @@ def merge_extraction(book: str, extraction: dict) -> None:
                 if wr.id not in world.get("rules", {}):
                     world.setdefault("rules", {})[wr.id] = wr.to_dict()
             except ValueError:
+                log.info("记忆合并 · merge_extraction 第2处兜底步骤失败 (非致命)", exc_info=True)
                 pass
         elif isinstance(wu, dict) and wu.get("name"):
             try:
@@ -263,6 +269,7 @@ def merge_extraction(book: str, extraction: dict) -> None:
                 if wr.id not in world.get("rules", {}):
                     world.setdefault("rules", {})[wr.id] = wr.to_dict()
             except (ValueError, KeyError):
+                log.info("记忆合并 · merge_extraction 第3处兜底步骤失败 (非致命)", exc_info=True)
                 pass
     update_world(book, world)
 

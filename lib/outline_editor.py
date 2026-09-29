@@ -29,6 +29,9 @@ import json
 from typing import Any
 
 from . import storage
+import logging
+
+log = logging.getLogger(__name__)
 
 
 # ── Fields a chapter node may carry ─────────────────────────────────────────
@@ -72,6 +75,7 @@ def save_outline(book: str, outline: dict, *, auto_snapshot: bool = True) -> Non
             content_str = json.dumps(outline, ensure_ascii=False, sort_keys=True)
             create_version(book, "outline.json", content_str, trigger="edit")
         except Exception:
+            log.debug("大纲 · save_outline 第1处兜底步骤失败 (非致命)", exc_info=True)
             pass  # best-effort; version store may be absent
 
 

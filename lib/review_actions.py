@@ -26,6 +26,9 @@ from typing import Any
 from . import storage, comments, review_service, memory, entity_diff, prompts
 from .llm import LLM, get_llm
 from .prompts import CHAPTER_SYSTEM
+import logging
+
+log = logging.getLogger(__name__)
 
 
 # ── Prompt building ────────────────────────────────────────────────────
@@ -201,6 +204,7 @@ def apply_feedback_to_chapter(
         try:
             record_data = json.loads(record.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
+            log.info("评审动作 · apply_feedback_to_chapter 第1处兜底步骤失败 (非致命)", exc_info=True)
             pass
 
     feedback_block = _build_feedback_block(book, chapter_id, record_data)

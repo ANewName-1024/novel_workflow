@@ -207,6 +207,7 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
         try:
             os.unlink(tmp_path)
         except OSError:
+            log.warning("检查点 · _atomic_write_json 第1处兜底步骤失败 (非致命)", exc_info=True)
             pass
         raise
 

@@ -24,6 +24,9 @@ import threading
 import datetime
 from pathlib import Path
 from typing import Any, Optional
+import logging
+
+log = logging.getLogger(__name__)
 
 
 # ── defaults ────────────────────────────────────────────────────────────────
@@ -540,6 +543,7 @@ def close_all() -> None:
             try:
                 c.close()
             except Exception:
+                log.info("数据库 · close_all 第1处兜底步骤失败 (非致命)", exc_info=True)
                 pass
         _local.conn_dict = {}
 

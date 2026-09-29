@@ -340,6 +340,7 @@ class PipelineRunner:
                     try:
                         tail_text = Path(log_path).read_text(encoding="utf-8", errors="replace")
                     except OSError:
+                        log.warning("进程编排 · status 第1处兜底步骤失败 (非致命)", exc_info=True)
                         pass
                 if "章节撰写完成" in tail_text or "✓ 完成" in tail_text:
                     # 实际上成功了
@@ -466,6 +467,7 @@ class PipelineRunner:
                                 if line:
                                     yield line + "\n"
                     except OSError:
+                        log.warning("进程编排 · stream_log 第1处兜底步骤失败 (非致命)", exc_info=True)
                         pass
                     return
                 time.sleep(poll_interval)
