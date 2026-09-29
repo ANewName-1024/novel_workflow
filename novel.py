@@ -38,6 +38,10 @@ from lib.llm import LLM, get_llm
 from lib.errors import ErrorCode, NovelError
 from lib.logging_setup import setup_logging
 
+# 模块级 logger: novel.py 里不少辅助函数在 main() 的局部作用域之外,
+# 拿不到 main() 里那个 log。setup_logging() 由 main() 调用统一配置。
+log = logging.getLogger("novel.cli")
+
 VERSION = "0.1.0"
 
 # ── arg parser ───────────────────────────────────────────────────────────────
@@ -503,8 +507,13 @@ def _ensure_review_for_existing(book: str) -> None:
                 try:
                     import json as _json
                     sc_result = _json.loads(sc_path.read_text(encoding="utf-8"))
-                except Exception:
-                    sc_result = None
+                except (json.JSONDecodeError, OSError) as e:
+                    # 损坏 != 「没有自检数据」。落到下面的 else 会把这一章
+                    # 标成 AUTO_PASSED 并 save_review 写死 —— 那是一个评审
+                    # 结论, 不是「跳过这一章」。所以这里只记录并跳过。
+                    log.error("自检记录损坏, 本章不做 backfill (book=%s ch=%s): %s: %s",
+                              book, ch["id"], type(e).__name__, e)
+                    continue
             if sc_result:
                 revserv.auto_flag(book, ch["id"], sc_result, by="AI-backfill")
             else:
