@@ -17,6 +17,7 @@ state.py — Pipeline 状态机 + Checkpoint 持久化 (v1.2 M5)
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from dataclasses import dataclass, field, asdict
@@ -28,6 +29,8 @@ from typing import Any, Optional
 from .. import storage
 from ..errors import ErrorCode
 from .errors import PermanentError, PipelineError, TransientError
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "ChapterCheckpoint", "CheckpointDoc", "PipelineError",
@@ -209,12 +212,17 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def _read_json_safe(path: Path) -> Optional[dict[str, Any]]:
-    """读 JSON, 文件不存在 / 损坏返回 None."""
+    """读 JSON。文件不存在 / 损坏都返回 None —— 但两者语义不同,故分别记日志。
+
+    「不存在」是正常路径(首次运行);「损坏」意味着数据丢失,必须可见。
+    """
     if not path.exists():
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("检查点文件损坏,按「无」处理: %s | %s: %s",
+                    path, type(e).__name__, e)
         return None
 
 
@@ -485,8 +493,12 @@ def checkpoint_snapshot(book: str, ch: int, stage: str | None = None) -> dict:
     v2 = get_v2()
     try:
         ch_doc = v2.get_chapter(book, ch)
-    except Exception:
-        return {"book": book, "ch": ch, "available": False}
+    except Exception as e:
+        # 面板据此显示「无数据」。若此处静默,读取失败会被误读成「一切正常」。
+        log.error("读取检查点失败,返回 unavailable: book=%s ch=%s | %s: %s",
+                  book, ch, type(e).__name__, e, exc_info=True)
+        return {"book": book, "ch": ch, "available": False,
+                "error": f"{type(e).__name__}: {e}"}
 
     snapshot = {
         "book": book,
@@ -537,7 +549,12 @@ def get_interrupted_chapters(book: str) -> list[dict]:
     v2 = get_v2()
     try:
         doc = v2.load(book)
-    except Exception:
+    except Exception as e:
+        # 返回值是 [] —— 与「确实没有中断章节」无法区分。
+        # 契约不变(不破坏调用方),但失败必须留下 ERROR 记录,否则面板
+        # 会在读取失败时显示「一切正常」。
+        log.error("读取流水线状态失败,无法判断是否有中断章节: book=%s | %s: %s",
+                  book, type(e).__name__, e, exc_info=True)
         return []
 
     result = []
