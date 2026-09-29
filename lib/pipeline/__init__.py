@@ -18,15 +18,11 @@ lib/pipeline — 流水线包(Phase 2)
 """
 from __future__ import annotations
 
-# ── 下层:异常体系(errors 是唯一真相,state.py 曾自定义同名类已收编)──
-from .errors import (
-    PermanentError,
-    PipelineError,
-    TransientError,
-    best_effort,
-    classify_os_error,
-    retry,
-)
+# ── 下层:异常(errors 是唯一真相,state.py 曾自定义同名类已收编)──
+# 只导出 PipelineError —— 它被 FSM 校验真实 raise。
+# TransientError / PermanentError / retry / best_effort / classify_os_error
+# 已在收敛时移除, 理由见 errors.py 的模块文档。
+from .errors import PipelineError
 
 # ── 下层:状态机 + 检查点 ──
 from .state import (
@@ -59,9 +55,8 @@ from . import errors, process, state  # noqa: E402,F401  子模块直引
 __all__ = [
     # 子模块
     "errors", "process", "state",
-    # 异常体系
-    "PipelineError", "TransientError", "PermanentError",
-    "best_effort", "retry", "classify_os_error",
+    # 异常
+    "PipelineError",
     # 状态机层
     "ChapterCheckpoint", "CheckpointDoc", "PipelineV2",
     "StageCheckpoint", "StageState", "checkpoint_path", "checkpoint_snapshot",

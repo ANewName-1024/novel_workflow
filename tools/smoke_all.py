@@ -139,11 +139,10 @@ def _cfg():
 
 @check("7. 异常体系层级")
 def _errors():
-    from lib.pipeline.errors import PermanentError, PipelineError, TransientError
     from lib.errors import NovelError
+    from lib.pipeline.errors import PipelineError
     assert issubclass(PipelineError, NovelError)
-    assert issubclass(TransientError, PipelineError)
-    assert issubclass(PermanentError, PipelineError)
+    assert issubclass(PipelineError, Exception)
 
 
 @check("8. 流水线状态机可用")

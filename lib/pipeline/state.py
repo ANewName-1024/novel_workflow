@@ -28,7 +28,7 @@ from typing import Any, Optional
 
 from .. import storage
 from ..errors import ErrorCode
-from .errors import PermanentError, PipelineError, TransientError
+from .errors import PipelineError
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ __all__ = [
     "PipelineV2", "StageCheckpoint", "StageState",
     "checkpoint_path", "checkpoint_snapshot",
     "get_interrupted_chapters", "get_last_snapshot", "get_v2",
-    "recover_stage", "PermanentError", "TransientError",
+    "recover_stage",
 ]
 
 
@@ -79,9 +79,8 @@ _VALID_TRANSITIONS: set[tuple[str, str]] = {
 
 
 # ── 异常 ──────────────────────────────────────────────────────────────────
-# PipelineError / TransientError / PermanentError 已收编到 .errors,
-# 那里是唯一真相(state.py 曾自定义一个同名类,现已删除)。
-# 此处保持 PipelineError(code, message) 位置参数,故 6 处 raise 无需改动。
+# PipelineError 已收编到 .errors, 那里是唯一真相(state.py 曾自定义一个同名类)。
+# TransientError / PermanentError 已移除 —— 它们从未被 raise, 详见 errors.py 的说明。
 
 
 # ── 数据模型 ──────────────────────────────────────────────────────────────
