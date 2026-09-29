@@ -34,6 +34,9 @@ from .entity import (
     Character, Event, Foreshadow, WorldRule,
     ForeshadowStatus, WorldRuleStatus,
 )
+import logging
+
+log = logging.getLogger(__name__)
 
 
 CHANGELOG_DIR = "_changelog"
@@ -328,7 +331,9 @@ def get_chapter_changes(book: str, chapter_id: str) -> dict | None:
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("实体变更记录损坏,按「无变更」处理: %s | %s: %s",
+                    path, type(e).__name__, e)
         return None
 
 

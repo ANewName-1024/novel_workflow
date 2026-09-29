@@ -30,6 +30,9 @@ import json, datetime
 from pathlib import Path
 from typing import Optional
 from . import storage, self_check as scmod
+import logging
+
+log = logging.getLogger(__name__)
 
 REVIEW_STATUS = {
     "AUTO_PASSED":    "auto_passed",
@@ -97,7 +100,11 @@ def get_review(book: str, chapter_id: str) -> dict | None:
         return None
     try:
         return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        # 评审文件损坏 != 「本章没有评审」。返回 None 一样会被 UI 读成
+        # 「无评审」, 所以这里必须留痕。
+        log.warning("评审记录损坏,按「无评审」处理: %s | %s: %s",
+                    p, type(e).__name__, e)
         return None
 
 def save_review(book: str, record: dict) -> None:

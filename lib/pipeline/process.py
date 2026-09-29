@@ -28,6 +28,9 @@ except ImportError:  # 测试环境可能没装
 
 from .. import storage
 from ..errors import ErrorCode, NovelError
+import logging
+
+log = logging.getLogger(__name__)
 
 # ── 状态文件 schema ─────────────────────────────────────────────────────────
 
@@ -176,7 +179,10 @@ def _read_state(book: str) -> Optional[dict[str, Any]]:
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        # 状态文件损坏 != 「流水线没跑过」. status() 会据此把状态判错.
+        log.warning("流水线状态文件损坏,按「无状态」处理: %s | %s: %s",
+                    path, type(e).__name__, e)
         return None
 
 
@@ -210,7 +216,10 @@ def _parse_current_stage_from_log(book: str) -> Optional[str]:
             size = f.tell()
             f.seek(max(0, size - 2048))
             tail = f.read().decode("utf-8", errors="replace")
-    except OSError:
+    except OSError as e:
+        # 日志读不到 != 「日志里没有 marker」—— 后者才是正常情况.
+        log.warning("流水线日志不可读,无法解析当前阶段: %s | %s: %s",
+                    path, type(e).__name__, e)
         return None
     # 倒序找最近的 PIPELINE marker
     for line in reversed(tail.splitlines()):
@@ -395,7 +404,10 @@ class PipelineRunner:
             # 简单实现: 读全部行, 取最后 N
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
             return lines[-n:]
-        except OSError:
+        except OSError as e:
+            # 空日志是正常的; 读不到日志不是. 不记的话面板会显示「无日志」.
+            log.warning("流水线日志不可读,返回空列表: %s | %s: %s",
+                        path, type(e).__name__, e)
             return []
 
     def stream_log(self, book: str, poll_interval: float = 1.0) -> Iterator[str]:

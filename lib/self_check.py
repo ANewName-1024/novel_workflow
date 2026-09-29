@@ -12,6 +12,9 @@ import json, re
 from pathlib import Path
 from .llm import LLM
 from . import storage, memory, state
+import logging
+
+log = logging.getLogger(__name__)
 
 SELF_CHECK_PROMPT = """你是资深长篇小说终审编辑。
 
@@ -138,7 +141,9 @@ def get_self_check(book: str, chapter_id: str) -> dict | None:
         return None
     try:
         return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("自检记录损坏,按「无自检」处理: %s | %s: %s",
+                    p, type(e).__name__, e)
         return None
 
 

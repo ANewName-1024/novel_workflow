@@ -537,7 +537,9 @@ def get_last_snapshot(book: str) -> dict | None:
         return None
     try:
         return json.loads(snap_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("快照文件损坏,按「无快照」处理: %s | %s: %s",
+                    snap_path, type(e).__name__, e)
         return None
 
 
