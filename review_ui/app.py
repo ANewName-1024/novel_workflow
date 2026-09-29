@@ -511,6 +511,21 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
+    # 统一日志 (Phase 3 补): 此前 Web 进程没有任何 handler, lib/ 里的
+    # log.warning 只能走 logging.lastResort 打到 stderr, 再被 start_all.ps1
+    # 重定向到 %TEMP%\review_ui_flask.log.err —— 与 CLI 的 logs/ 分离,
+    # 排查时要在两个地方找。
+    #
+    # 用独立文件而非共用 novel_workflow.log: CLI 与 Web 同时运行时,
+    # 两个 RotatingFileHandler 争抢同一个文件会互相覆盖, 轮转时可能丢数据。
+    #
+    # 放 main() 而不是模块层 —— 测试 import 本模块时不该产生日志副作用
+    # (会建文件 handler, 污染 caplog 断言)。
+    try:
+        from lib.logging_setup import setup_logging
+        setup_logging(log_file="logs/review_ui.log")
+    except Exception as e:
+        print(f"   [warn] setup_logging skipped: {e}")
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=21199)
     parser.add_argument("--host", default="127.0.0.1")
