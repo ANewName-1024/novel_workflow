@@ -83,12 +83,21 @@ def write_chapter(
     # ── Build sliding-window context ──
     # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
     #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+    #
+    # 2026-10-01: 这两行 print 过去是 context/writing 阶段【唯一】的痕迹 ——
+    # 对应的 _v2_mark 漏了, 于是 checkpoint 里 context/writing 永远 PENDING,
+    # 而 state.STAGES 要求 8 个阶段全部 DONE/SKIPPED, 于是 is_complete()
+    # 永远 False: 写完的章节被永久列为「中断在 context」, recover_stage()
+    # 于是从 context 重跑 = 重复生成已写好的章节。
+    # print 保留(跨进程协议), _v2_mark 补上(状态机)。
+    _v2_mark(book, chapter_num, "context", "RUNNING")
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=context status=start")
     from .context import build_writing_context, estimate_context_tokens
     ctx = build_writing_context(book, chapter_num)
     # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
     #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=context status=done")
+    _v2_mark(book, chapter_num, "context", "DONE")
 
     system_prompt = CHAPTER_SYSTEM.format(
         chapter_id        = ctx["chapter_id"],
@@ -124,6 +133,10 @@ def write_chapter(
     print(f"  [Chapter {chapter_num}] 上下文策略: {win} | 估算输入: ~{est_in} tok")
     print(f"  [Chapter {chapter_num}] 关键事件: {ctx['key_events'][:60]}...")
 
+    # 2026-10-01: 同 context 阶段, 补上漏掉的 _v2_mark(见上方说明)。
+    # 注意 _v2_mark 必须排在协议锁注释【之前】—— test_pipeline_marker_protocol.py
+    # 要求每条 [PIPELINE] marker 的说明注释紧邻其上两行内。
+    _v2_mark(book, chapter_num, "writing", "RUNNING")
     # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
     #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=writing status=start")
@@ -140,6 +153,7 @@ def write_chapter(
     # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
     #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=writing status=done")
+    _v2_mark(book, chapter_num, "writing", "DONE")
 
     # Clean & save
     text = clean_chapter_text(text, ctx["chapter_title"], chapter_num)
@@ -178,10 +192,25 @@ def run_post_write_pipeline(
     #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=start")
     llm.set_stage_context("extract", chapter_num)
+    # 2026-10-01: 快照必须在 merge_extraction 【之前】取(详见下方注释)。
+    # 初始化放在 try 之外 —— extract 阶段自己抛异常时, 下面的 entity_diff
+    # 阶段仍要能安全地看到 before_snap is None, 而不是撞 NameError。
+    before_snap = None
     try:
         from . import extract as extmod
         text = storage.read_chapter(book, chapter_id) or ""
         extraction = extmod.extract_from_chapter(text, llm)
+        # 过去快照在下面的 entity_diff 阶段才取, 那时 extract 早就 merge 完了 ——
+        # 拿到的是变更后的状态, 再与 current 比较, added/updated/resolved 恒为 0。
+        # 于是章节页「本章节实体变化」面板永远是空的, 而 review_actions 依赖它
+        # 驱动重写, 等于没有输入。tests/ 里 run_entity_diff_stage 与 before_snap
+        # 均零命中, 所以一直没暴露。
+        try:
+            from . import entity_diff as _edmod
+            before_snap = _edmod.snapshot_memory(book)
+        except Exception as e:
+            log.warning("实体快照失败, entity_diff 将退化为空 diff (book=%s ch=%s): %s: %s",
+                        book, chapter_id, type(e).__name__, e, exc_info=True)
         memory.merge_extraction(book, extraction)
         print(f"  ✓ 记忆更新: "
               f"{len(extraction.get('new_events',[]))} 事件, "
@@ -208,9 +237,13 @@ def run_post_write_pipeline(
     print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=start")
     try:
         from . import entity_diff as edmod
-        before_snap = edmod.snapshot_memory(book)
-        # Re-read after extract to capture the changes extract made
-        # (we already saved; the diff will compare before_snap → current state)
+        # 复用 extract 阶段【在 merge 之前】取的快照(见上方说明)。
+        # 拿不到时退回「就地取一次」—— 那必然是空 diff, 但至少不崩, 且上面的
+        # warning 已经留痕。
+        if before_snap is None:
+            log.warning("entity_diff 缺少 merge 前快照, 本次 diff 将为空 (book=%s ch=%s)",
+                        book, chapter_id)
+            before_snap = edmod.snapshot_memory(book)
         diff_entry = edmod.run_entity_diff_stage(book, chapter_num, chapter_id, before_snap)
         summary = edmod.summarize_changes(diff_entry)
         print(f"  ✓ 实体变化记录: {summary['total_changes']} 项 "
@@ -351,6 +384,12 @@ def run_post_write_pipeline(
         except Exception as e:
             log.warning("自检失败 (非致命): %s", e)
             _v2_mark(book, chapter_num, "self_check", "FAILED", error=str(e))
+    else:
+        # 2026-10-01: 自检未启用时该阶段原本永远停在 PENDING, 而 STAGES 要求
+        # 全部 DONE/SKIPPED —— 于是 is_complete() 依旧为 False。显式标 SKIPPED。
+        # 「没启用」和「跑了但没结论」在状态机里必须是两回事, 否则恢复逻辑会
+        # 一直以为自检没跑过而反复重试。
+        _v2_mark(book, chapter_num, "self_check", "SKIPPED")
 
     # Update progress (use shared helper so review/human-edit paths also stay in sync)
     storage.mark_chapter_completed(book, chapter_id, chapter_num)

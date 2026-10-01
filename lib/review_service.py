@@ -26,7 +26,7 @@ Status states:
   false_positive    - human disagrees with auto-flag, archived
 """
 from __future__ import annotations
-import json, datetime
+import json, datetime, threading
 from pathlib import Path
 from typing import Optional
 from . import storage, self_check as scmod
@@ -302,7 +302,13 @@ def get_review_queue(book: str) -> list[dict]:
                 if "chapter_id" not in r and "ch_id" in r:
                     r["chapter_id"] = r["ch_id"]
     except Exception:
-        log.warning("SQLite 队列查询失败,回退文件 (book=%s ch=%s)", book, chapter_id, exc_info=True)
+        # 2026-10-01: 这里过去写的是 chapter_id —— 但本函数签名是 (book) only,
+        # 作用域内根本没有这个名字。SQLite 一旦不可用(本该优雅回退到文件),
+        # except 块自己先抛 NameError 冒到 Web 层, 待审队列页 500。
+        # 与作者已在 db.py:361-372 修过的 `d = dict(r)` 同类复制粘贴残留。
+        # 测试盲区: test_review_service.py / test_review_queue_enrich_titles.py
+        # 只在 SQLite 正常时跑, 永远走不到这个 except。
+        log.warning("SQLite 队列查询失败,回退文件 (book=%s)", book, exc_info=True)
         pass
     if not out:
         for p in sorted(review_dir(book).glob("ch_*.review.json")):
@@ -336,7 +342,8 @@ def get_review_stats(book: str) -> dict:
         from . import db as _dbmod
         return _dbmod.review_stats(storage.ROOT, book)
     except Exception:
-        log.warning("SQLite 统计查询失败,回退文件 (book=%s ch=%s)", book, chapter_id, exc_info=True)
+        # 2026-10-01: 同 get_review_queue —— chapter_id 不在本函数作用域内。
+        log.warning("SQLite 统计查询失败,回退文件 (book=%s)", book, exc_info=True)
         pass
     counts = {v: 0 for v in REVIEW_STATUS.values()}
     counts["total"] = 0
@@ -424,8 +431,30 @@ def format_review_record(book: str, record: dict, include_chapter: bool = False,
     return "\n".join(lines)
 
 
-def backfill_missing_reviews(book: str) -> int:
+_backfill_lock = threading.Lock()
+# 记住每本书上次 backfill 时看到的章节指纹。backfill 本身幂等(get_review 命中即
+# 跳过), 但每次都全量遍历 chapters 并对每章查一次评审记录 —— 而调用方是
+# book_page / api_queue / api_queue_filtered 三条【GET】路由, 也就是每一次页面
+# 渲染、每一次浏览器预取、每一个爬虫请求都会跑一遍。
+# 2026-10-01: 加锁 + 指纹短路。指纹 = (章节数, chapters 目录 mtime)。目录 mtime
+# 在新增/删除章节文件时变化, 足够覆盖「有新章节要补」; 正文改动不影响 mtime,
+# 但正文改动不产生新章节, 不需要重跑 backfill。
+_backfill_fingerprint: dict[str, tuple] = {}
+
+
+def _book_chapter_fingerprint(book: str) -> tuple:
+    try:
+        d = storage.chapters_path(book)
+        files = list(d.glob("*.md"))
+        return (len(files), d.stat().st_mtime)
+    except OSError:
+        return (-1, 0.0)
+
+
+def backfill_missing_reviews(book: str, force: bool = False) -> int:
     """为没有评审记录的章节补建记录, 返回补建的条数。
+
+    force=True 时跳过指纹短路(CLI 显式修复数据时用)。
 
     这段逻辑此前有两份拷贝: novel.py 的 _ensure_review_for_existing() 与
     review_ui/bp/review.py 的 _ensure_review_backfill()（后者 docstring 写着
@@ -442,27 +471,37 @@ def backfill_missing_reviews(book: str) -> int:
     两者都读成「没有」正是原 bug: 前者是预期的, 后者会把错误结论写进库里
     并固化 —— 一旦有了 review 记录, 后续流程不会再重新自检。
     """
-    chapters = storage.list_chapters(book)
-    created = 0
-    for ch in chapters:
-        if get_review(book, ch["id"]):
-            continue
-        sc_path = storage.project_root(book) / "self_checks" / f"{ch['id']}.json"
-        sc_result = None
-        if sc_path.exists():
-            try:
-                sc_result = json.loads(sc_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError) as e:
-                log.error("自检记录损坏, 本章不做 backfill (book=%s ch=%s): %s: %s",
-                          book, ch["id"], type(e).__name__, e)
+    fp = _book_chapter_fingerprint(book)
+    if not force and _backfill_fingerprint.get(book) == fp:
+        return 0          # 章节集合没变, 上次已补过
+
+    # 并发 GET 会对同一本书同时进入这段读改写。加锁串行化 —— 没有锁时两个请求
+    # 会同时判定「这一章还没有评审记录」, 然后各写一份, 审计轨迹出现重复条目。
+    with _backfill_lock:
+        if not force and _backfill_fingerprint.get(book) == fp:
+            return 0      # 等锁期间别人已经补完了
+        chapters = storage.list_chapters(book)
+        created = 0
+        for ch in chapters:
+            if get_review(book, ch["id"]):
                 continue
-        if sc_result:
-            auto_flag(book, ch["id"], sc_result, by="AI-backfill")
-        else:
-            empty = _empty_record(ch["id"])
-            empty["status"] = REVIEW_STATUS["AUTO_PASSED"]
-            save_review(book, empty)
-            append_audit(book, ch["id"], "backfilled_no_selfcheck", "system",
-                         notes="章节无自检数据，默认通过")
-        created += 1
+            sc_path = storage.project_root(book) / "self_checks" / f"{ch['id']}.json"
+            sc_result = None
+            if sc_path.exists():
+                try:
+                    sc_result = json.loads(sc_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError) as e:
+                    log.error("自检记录损坏, 本章不做 backfill (book=%s ch=%s): %s: %s",
+                              book, ch["id"], type(e).__name__, e)
+                    continue
+            if sc_result:
+                auto_flag(book, ch["id"], sc_result, by="AI-backfill")
+            else:
+                empty = _empty_record(ch["id"])
+                empty["status"] = REVIEW_STATUS["AUTO_PASSED"]
+                save_review(book, empty)
+                append_audit(book, ch["id"], "backfilled_no_selfcheck", "system",
+                             notes="章节无自检数据，默认通过")
+            created += 1
+    _backfill_fingerprint[book] = _book_chapter_fingerprint(book)
     return created

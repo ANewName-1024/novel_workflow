@@ -502,7 +502,8 @@ def _ensure_review_for_existing(book: str) -> None:
     根本原因, 现在只保留一份。
     """
     from lib import review_service as revserv
-    revserv.backfill_missing_reviews(book)
+    # force=True: CLI 是用户显式触发的修复动作, 不该被 Web 端的指纹短路挡掉。
+    revserv.backfill_missing_reviews(book, force=True)
 
 def cmd_review_queue(args: argparse.Namespace) -> None:
     from lib import review_service as revserv

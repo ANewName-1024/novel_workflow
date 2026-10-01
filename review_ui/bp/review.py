@@ -21,12 +21,17 @@ if str(_UI.parent / "lib") not in sys.path:
 from flask import abort
 import difflib
 import json
+import logging
 from flask import jsonify
 from flask import request
 from lib import review_service as revserv
 from lib import storage
 
 from review_ui.core import _ensure_book
+
+log = logging.getLogger("novel.review_ui.review")
+if not log.handlers:
+    log.addHandler(logging.NullHandler())
 bp = Blueprint("review", __name__,
                template_folder=str(_UI / "templates"))
 
@@ -104,17 +109,29 @@ def api_edit(book, ch):
     if not text:
         abort(400, description="text required")
     reviewer = body.get("reviewer", "wei_chao")
-    try:
-        from lib import session_log as _slog
-        _slog.hook_review_action(book, ch, "edit")
-    except Exception:
-        pass
     notes = body.get("notes", "")
     apply = bool(body.get("apply", False))
+
+    # 2026-10-01: 审计钩子过去在 revserv.edit() 【之前】触发, 且用 except: pass
+    # 吞掉自身失败。三个独立问题:
+    #   1. 顺序反了 —— edit 失败时审计里已经记了一条「已编辑」, 与事实相反
+    #   2. notes 没传给 hook(approve/reject 分支都传了), 编辑理由永久丢失
+    #   3. hook 自身失败静默 —— 正是 M1-M9 修过的那类「审计轨迹丢失」
+    # 测试盲区: grep hook_review_action tests/ 零命中。
     record = revserv.edit(book, ch, reviewer, text, notes)
     applied = False
     if apply:
         applied = revserv.apply_edit_to_chapter(book, ch)
+
+    # 写成功之后再记账, 且失败必须留痕
+    try:
+        from lib import session_log as _slog
+        _slog.hook_review_action(book, ch, "edit")
+    except Exception as e:
+        log.error("编辑审计钩子失败, 该次编辑未进入 session_log "
+                  "(book=%s ch=%s): %s: %s",
+                  book, ch, type(e).__name__, e, exc_info=True)
+
     return jsonify({
         "ok": True,
         "status": record["status"],
@@ -151,14 +168,24 @@ def _run_batch(book, chapter_ids, reviewer, note, action, count_key):
             rec = action(book, cid, reviewer, note)
             results.append({"id": cid, "ok": True, "status": rec["status"]})
         except Exception as e:
-            results.append({"id": cid, "ok": False, "error": str(e)})
+            # 2026-10-01: 过去把 str(e) 直接回给客户端 —— 可能是
+            # FileNotFoundError: [Errno 2] ... 之类, 含服务器路径与内部结构。
+            # 细节进日志, 对外只给错误类别。
+            log.error("批量评审单条失败 (book=%s ch=%s action=%s): %s: %s",
+                      book, cid, getattr(action, "__name__", action),
+                      type(e).__name__, e, exc_info=True)
+            results.append({"id": cid, "ok": False, "error": type(e).__name__})
     n_ok = sum(1 for r in results if r["ok"])
     n_fail = len(results) - n_ok
-    return jsonify({"ok": n_fail == 0,
-                    "total": len(results),
-                    count_key: n_ok,
-                    "failed": n_fail,
-                    "results": results})
+    payload = {"ok": n_fail == 0,
+               "total": len(results),
+               count_key: n_ok,
+               "failed": n_fail,
+               "results": results}
+    # 全批失败时过去仍返 HTTP 200, 只在 body 里 ok=false —— 只看状态码的调用方
+    # 会误判为成功。用 207 Multi-Status 表达「部分成功」。
+    status = 200 if n_fail == 0 else (207 if n_ok else 422)
+    return jsonify(payload), status
 
 
 @bp.route("/api/batch-approve/<book>", methods=["POST"])
