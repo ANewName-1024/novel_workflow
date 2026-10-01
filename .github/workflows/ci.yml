@@ -57,7 +57,35 @@ jobs:
           pip check
 
       - name: Run pytest
-        run: python -m pytest -q --tb=short --junitxml=pytest-junit.xml
+        # 失败摘要额外发成 workflow annotation。
+        #
+        # 为什么要多这一段: Actions 的日志正文只有带 token 才能读, 匿名 API 只能看到
+        # "Process completed with exit code 1" 这一句。于是这个仓库的 CI 一旦变红,
+        # 任何没有 token 的人(或 agent)都只能看到"红了", 看不到"为什么红"——
+        # 2026-10-01 之前连续 5 次全红就是这么被忽略掉的。
+        #
+        # `::error::` 会被 Actions 解析成 annotation, 免密的
+        # /repos/{owner}/{repo}/check-runs/{id}/annotations 就能读到失败用例名。
+        # 这不是为了代替日志, 是为了让"红了"至少能自解释。
+        run: |
+          set +e
+          python -m pytest -q --tb=short -rf --junitxml=pytest-junit.xml > pytest-out.txt 2>&1
+          code=$?
+          set -e
+          cat pytest-out.txt
+          if [ "$code" -ne 0 ]; then
+            echo "::group::失败的用例"
+            grep -E '^(FAILED|ERROR)' pytest-out.txt | head -n 30 | while IFS= read -r line; do
+              # annotation 单行, 只需转义 % (CR/LF 已被 read 剥掉)
+              echo "::error::${line//%/%25}"
+            done
+            echo "::endgroup::"
+            # 收集阶段就崩时, 短摘要行比任何用例名都有用
+            tail -n 25 pytest-out.txt | while IFS= read -r line; do
+              echo "::error::pytest: ${line//%/%25}"
+            done
+          fi
+          exit $code
 
       - name: Upload test results
         if: always()
