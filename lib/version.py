@@ -18,6 +18,34 @@ import hashlib
 import difflib
 from pathlib import Path
 from typing import Any
+import re
+
+
+# ── version_id 校验 ───────────────────────────────────────────────────────
+#
+# 2026-10-01: version_id 直接拼进文件名 f"{version_id}.json"。而 outline 的
+# diff 端点是从【query string】取 v1/v2 的 —— query string 不经 nginx 的路径
+# 规范化, 于是 ?v1=../../../../../etc/foo 可以直接穿越目录。
+# 实际可利用面有限(强制 .json 后缀, 且必须能 json.loads 并取到 ["content"]),
+# 但「任意 json 存在性探测」和「命中非预期 JSON 时 KeyError -> 500」仍然成立。
+# 这里收敛成一处白名单, 供所有拼路径的地方调用。
+
+_VERSION_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
+def validate_version_id(version_id: str) -> str:
+    """校验 version_id, 不合法抛 ValueError。
+
+    合法形态与本模块自己生成的完全一致 (v001 / 20260930-120000-a1b2c3),
+    所以正常路径不会受影响 —— 任何不匹配的输入都来自外部。
+    """
+    if not isinstance(version_id, str) or not _VERSION_ID_RE.match(version_id):
+        raise ValueError(
+            f"非法 version_id: {version_id!r} "
+            f"(只允许 1-64 位的字母/数字/下划线/连字符/点)")
+    if version_id in (".", ".."):
+        raise ValueError(f"非法 version_id: {version_id!r}")
+    return version_id
 
 
 # ── 路径 ────────────────────────────────────────────────────────────────
@@ -36,6 +64,7 @@ def _chapter_versions_dir(book: str, chapter_id: str) -> Path:
 
 
 def _version_path(book: str, chapter_id: str, version_id: str) -> Path:
+    validate_version_id(version_id)
     return _chapter_versions_dir(book, chapter_id) / f"{version_id}.json"
 
 

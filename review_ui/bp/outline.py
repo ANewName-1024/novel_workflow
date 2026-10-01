@@ -199,6 +199,14 @@ def api_outline_diff(book):
     versions_root = book_root / "chapters" / ".versions" / "outline.json"
     if not versions_root.exists():
         abort(404, description="no saved outline versions yet")
+    # v1/v2 来自 query string, 不经 nginx 路径规范化 —— 必须白名单校验后再拼路径。
+    # 2026-10-01 修复: 过去直接 f"{v1_id}.json" 拼进路径, ?v1=../../../../etc/x 可穿越。
+    from lib.version import validate_version_id
+    for label, vid in (("v1", v1_id), ("v2", v2_id)):
+        try:
+            validate_version_id(vid)
+        except ValueError as e:
+            abort(400, description=str(e))
     v1_path = versions_root / f"{v1_id}.json"
     v2_path = versions_root / f"{v2_id}.json"
     if not v1_path.exists():

@@ -249,7 +249,7 @@ def world_rule_consistency(
             "rules_checked": 0,
         }
         if save:
-            storage.selfcheck_path(book, chapter_id).write_text(
+            storage.world_rule_path(book, chapter_id).write_text(
                 json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         return result
@@ -305,7 +305,7 @@ def world_rule_consistency(
         result["rules_checked"] = rules_checked
 
     if save:
-        storage.selfcheck_path(book, chapter_id).write_text(
+        storage.world_rule_path(book, chapter_id).write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 

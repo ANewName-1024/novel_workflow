@@ -89,11 +89,30 @@ def selfcheck_file(book: str, chapter_id: str) -> Path:
     return project_path(book) / "self_checks" / f"{chapter_id}.json"
 
 
+def world_rule_file(book: str, chapter_id: str) -> Path:
+    """世界规则一致性扫描的结果。
+
+    2026-10-01: 这个结果过去和 self_check 共用 <chapter_id>.json, 而两者结构
+    完全不同(前者有 violations/summary, 后者有 character_inconsistency/severity)。
+    Web 端跑一次一致性扫描就覆盖掉自检报告, 随后 backfill 把它当自检结果喂给
+    auto_flag —— severity 取不到, 落到 PENDING_REVIEW。用户在 UI 上点一次
+    「检查一致性」, 该章的自检结论就没了。分开存放。
+    """
+    return project_path(book) / "self_checks" / f"{chapter_id}.world_rules.json"
+
+
 def selfcheck_path(book: str, chapter_id: str) -> Path:
     """写路径: 顺带确保 self_checks/ 存在。"""
     d = project_path(book) / "self_checks"
     d.mkdir(parents=True, exist_ok=True)
     return d / f"{chapter_id}.json"
+
+
+def world_rule_path(book: str, chapter_id: str) -> Path:
+    """写路径: 世界规则扫描结果的落点(与 selfcheck_path 同目录)。"""
+    d = project_path(book) / "self_checks"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{chapter_id}.world_rules.json"
 
 # ── JSON helpers ────────────────────────────────────────────────────────────
 

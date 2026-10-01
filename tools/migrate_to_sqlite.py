@@ -56,9 +56,12 @@ def migrate_project(root: Path, project_id: str, dry_run: bool = False) -> dict:
                 import re
                 m = re.search(r"^#+\s+(.+)$", text, re.MULTILINE)
                 title = m.group(1).strip() if m else p.stem
-                words = len(re.findall(r"[\u4e00-\u9fff]+", text))
-                eng = len(re.findall(r"[a-zA-Z]{3,}", text))
-                wc = words + eng
+                # 2026-10-01: 过去这里自己算了一遍, 而且带着 storage.py 那个
+                # 多一个 + 的正则([\u4e00-\u9fff]+ 数的是连续片段不是字,
+                # 实测偏低 8.3 倍)。迁移工具算出的 word_count 会直接进库,
+                # 于是「重跑一次迁移」就能把已经修正的字数又写回错值。
+                # 字数口径必须只有一处: storage.count_words。
+                wc = storage.count_words(text)
                 body = text[m.end():] if m else text
                 lines = [l.strip() for l in body.splitlines() if l.strip()]
                 preview = (lines[0][:50] + "…") if lines and len(lines[0]) > 50 else (lines[0] if lines else "")

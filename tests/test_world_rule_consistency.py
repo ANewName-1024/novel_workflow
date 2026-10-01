@@ -64,14 +64,49 @@ class TestLLMNoViolations:
         assert "灵根品级先天决定" in llm.calls[0]["prompt"]
 
     def test_saves_to_file(self, setup_book):
+        """2026-10-01: 落点从 selfcheck_path 改为 world_rule_path。
+
+        过去两者写同一个 <ch>.json, 而结构完全不同(本结果有
+        violations/summary, 自检有 character_inconsistency/severity)。于是
+        Web 端跑一次一致性扫描(entities.py:192 用 save=True 调)就覆盖掉
+        自检报告, 随后 backfill_missing_reviews 把它当自检结果喂给 auto_flag,
+        severity 取不到 -> 落到 PENDING_REVIEW。
+
+        **这条测试过去把「覆盖自检文件」锁成了期望值** —— 与
+        TestAuthEnabledButEmptyPassword(把「空密码放行」锁成契约)同类:
+        测试通过不等于行为正确, 取决于契约本身对不对。"""
         store = EntityStore("test_book")
         store.add_world_rule(WorldRule(name="规则X", constraints=["约束"]))
         llm = MockLLM(response='{"violations":[],"overall_ok":true,"summary":"OK"}')
         self_check.world_rule_consistency("test_book", "ch_001", llm=llm)
-        sc_path = storage.selfcheck_path("test_book", "ch_001")
+        sc_path = storage.world_rule_path("test_book", "ch_001")
         assert sc_path.exists()
         saved = json.loads(sc_path.read_text(encoding="utf-8"))
         assert saved["overall_ok"] is True
+
+    def test_does_not_clobber_self_check(self, setup_book):
+        """核心断言: 一致性扫描不得覆盖同章的自检结果。"""
+        from lib import self_check as sc
+        # 先造一份真实自检结果
+        sc_llm = MockLLM(response=json.dumps(
+            {"character_inconsistency": [], "severity": "minor",
+             "overall_ok": True}))
+        sc.self_check_chapter("test_book", "ch_001", sc_llm, save=True)
+        sc_file = storage.selfcheck_path("test_book", "ch_001")
+        assert sc_file.exists()
+        before = json.loads(sc_file.read_text(encoding="utf-8"))
+        assert before.get("severity") == "minor"
+
+        # 再跑一致性扫描
+        store = EntityStore("test_book")
+        store.add_world_rule(WorldRule(name="规则X", constraints=["约束"]))
+        wr_llm = MockLLM(response='{"violations":[],"overall_ok":true,"summary":"OK"}')
+        sc.world_rule_consistency("test_book", "ch_001", llm=wr_llm)
+
+        after = json.loads(sc_file.read_text(encoding="utf-8"))
+        assert after == before, \
+            "跑一次一致性扫描就把该章的自检报告覆盖了 —— 用户在 UI 上点一下, " \
+            "severity 结论就消失"
 
 
 class TestLLMWithViolations:

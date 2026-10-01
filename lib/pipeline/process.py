@@ -40,7 +40,13 @@ LOG_FILE = "pipeline.log"
 METRICS_FILE = "metrics.jsonl"
 
 # 阶段常量
-STAGES = ["context", "writing", "extract", "summary", "state", "self_check", "done"]
+#
+# 2026-10-01: 这份列表过去是 7 个, 缺 entity_diff, 而 state.py 的是 8 个 ——
+# 两份已经分叉。当前这份无任何引用(已全仓搜索确认, 也未从 __init__ 导出),
+# 所以尚未造成故障, 但它正是「修一处漏一处」的隐患: 任何人将来在这里用它
+# 做阶段校验, 就会得到与 checkpoint 不同的阶段集。
+# 不留第二份副本。
+from .state import STAGES  # noqa: F401  (向后兼容引用, 单一真相在 state.py)
 
 # 锁: book -> PID
 _active: dict[str, int] = {}
@@ -297,6 +303,14 @@ class PipelineRunner:
                 f"启动流水线失败: {e}",
                 detail=str(e),
             ) from e
+        finally:
+            # 2026-10-01: 过去只在 except 分支里 close, 成功路径没人关 ——
+            # 每 start() 一次泄漏一个父进程文件句柄, Web 台反复启停会累积到
+            # 触碰句柄上限。Popen 成功后子进程已持有自己的副本, 父进程可以立刻关。
+            try:
+                log_fp.close()
+            except OSError:
+                pass
 
         # 写 state
         state = {
