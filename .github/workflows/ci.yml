@@ -67,6 +67,15 @@ jobs:
         # `::error::` 会被 Actions 解析成 annotation, 免密的
         # /repos/{owner}/{repo}/check-runs/{id}/annotations 就能读到失败用例名。
         # 这不是为了代替日志, 是为了让"红了"至少能自解释。
+        #
+        # shell: bash 是【必须的】, 不是风格问题。
+        # Actions 在 Linux/macOS 上默认 bash, 在 Windows 上默认 **PowerShell**。
+        # 本矩阵的 py3.14 跑在 windows-latest, 于是下面这段 bash 语法
+        # (set +e / $? / | while read / ${var//x/y}) 在那个 job 里会被当成
+        # PowerShell 命令解析, 整个步骤直接崩在语法上 —— 表现为
+        # "Process completed with exit code 1" 且【一条 annotation 都没有】,
+        # 正是本次踩到的坑(2026-10-02)。Git Bash 在 windows-latest 上是现成的。
+        shell: bash
         run: |
           set +e
           python -m pytest -q --tb=short -rf --junitxml=pytest-junit.xml > pytest-out.txt 2>&1
