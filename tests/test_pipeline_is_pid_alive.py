@@ -11,6 +11,13 @@ LLM API 报 'Connection error', 子进程死, 但 state.json 一直显示 'runni
 修复:
 - _is_pid_alive 加 zombie 状态检测 (psutil.STATUS_ZOMBIE 或 /proc/<pid>/status State: Z)
 - 加 _reap_zombie() 在 status() 校准时顺便 reap (POSIX)
+
+2026-10-01 补记: 这两个修复在 psutil >= 7 上曾经是失效的。
+Process.status 从 property 变成了方法, `p.status` 拿到的是 bound method 而不是
+'zombie' 字符串, 拿去和 STATUS_ZOMBIE 比永远 False。已按 callable 分流修好。
+
+本文件只跑 POSIX(win32 下整体 skip), 所以它的问题只有 CI 的 py3.12 job 能发现 ——
+而那个 job 连续红了 5 次没人看, 于是这个 psutil 回归在本地和 Windows 上都隐形。
 """
 import os
 import sys
@@ -89,7 +96,7 @@ def test_reap_zombie_function():
         pytest.skip("zombie was reaped before test started")
 
     # 调 reap
-    reaped = pl._reap_zombie(pid)
+    reaped = pl.process._reap_zombie(pid)
     assert reaped is True
     # 现在 /proc/<pid>/status 消失
     assert not state_file.exists(), "zombie should be reaped after _reap_zombie"
@@ -97,7 +104,7 @@ def test_reap_zombie_function():
 
 def test_reap_nonexistent_pid():
     """对不存在的 PID reap, 应返回 False 不抛异常."""
-    assert pl._reap_zombie(99999999) is False
-    assert pl._reap_zombie(0) is False
-    assert pl._reap_zombie(-1) is False
-    assert pl._reap_zombie(None) is False
+    assert pl.process._reap_zombie(99999999) is False
+    assert pl.process._reap_zombie(0) is False
+    assert pl.process._reap_zombie(-1) is False
+    assert pl.process._reap_zombie(None) is False

@@ -88,6 +88,17 @@ def _is_pid_alive(pid: int) -> bool:
             # psutil status constants: 'running', 'sleeping', 'disk-sleep', 'stopped',
             # 'trace-stop', 'zombie', 'dead', 'wake-kill', 'idle' (Linux only)
             status = p.status
+            # psutil 7.x 把 Process.status 从 property 改成了【方法】。不调用的话,
+            # 这里拿到的是一个 bound method 对象, 拿去和字符串比永远 False ——
+            # 于是 2026-07-09 加的僵尸检测在 psutil >= 7 上被静默废掉:
+            # 子进程被 SIGKILL 后变成僵尸, _is_pid_alive 照样返回 True,
+            # state.json 永远停在 running, 看板上是个杀不掉的绿色。
+            # 实测(psutil 7.2.2, Linux):
+            #   p.status      -> <bound method Process.status of ...>  判为僵尸=False
+            #   p.status()    -> 'zombie'                               判为僵尸=True
+            # 5.x / 6.x 上它是 property, 直接取值就是字符串, 所以按 callable 分流。
+            if callable(status):
+                status = status()
             if status in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 return False
             return True
