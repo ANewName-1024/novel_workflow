@@ -188,7 +188,14 @@ class LLM:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        t0 = time.time()
+        # 测耗时刻意用 perf_counter() 而不是 time.time():
+        #   time.time() 是【挂钟】, 既不单调(系统时间被 NTP/DST 校正时会倒退, 算出
+        #   负延迟), 在 Windows 上分辨率也极粗 —— 实测 CPython 3.12 下相邻两次
+        #   time.time() 100% 返回同一个值(200000/200000), 于是任何快于时钟粒度的
+        #   调用(本地 llama-server 命中缓存、mock 调用)一律上报 latency_ms = 0。
+        #   3.13 起 Windows 的 time.time() 换了更精确的实现, 于是这个 bug 在 3.14
+        #   上看不见, 在 3.12 上必现 —— CI 的 py3.12 门禁红了 5 次就是它。
+        t0 = time.perf_counter()
         for attempt in range(self.max_retries + 1):
             try:
                 if stream:
@@ -203,7 +210,7 @@ class LLM:
                         stop=stop or None,
                     )
                     text = resp.choices[0].message.content or ""
-                latency_ms = (time.time() - t0) * 1000
+                latency_ms = (time.perf_counter() - t0) * 1000
                 usage = getattr(resp, "usage", None) if not stream else None
                 if usage is not None:
                     in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
@@ -255,7 +262,7 @@ class LLM:
         """Low-level messages-based call."""
         eff_stage = stage if stage is not None else self._current_stage
         eff_ch = ch if ch is not None else self._current_ch
-        t0 = time.time()
+        t0 = time.perf_counter()
         for attempt in range(self.max_retries + 1):
             try:
                 resp = self.client.chat.completions.create(
@@ -265,7 +272,7 @@ class LLM:
                     max_tokens=max_tokens,
                 )
                 text = resp.choices[0].message.content or ""
-                latency_ms = (time.time() - t0) * 1000
+                latency_ms = (time.perf_counter() - t0) * 1000
                 usage = getattr(resp, "usage", None)
                 if usage is not None:
                     in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)

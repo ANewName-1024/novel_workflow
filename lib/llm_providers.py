@@ -249,7 +249,10 @@ def health_check(provider: str, model: Optional[str] = None, timeout: float = 10
     Returns: {ok, status, models, latency_ms, error}
     """
     import time
-    t0 = time.time()
+    # 测耗时用 perf_counter() 而非 time.time(): 后者是挂钟, 不单调, 且在 Windows
+    # 上粒度极粗(实测 CPython 3.12 相邻两次 100% 同值), 会把 0ms 的健康检查
+    # 上报成 0 —— 那看起来像"超时"而不是"很快"。见 lib/llm.py 同处注释。
+    t0 = time.perf_counter()
     try:
         cfg = resolve_model(provider, model)
     except KeyError as e:
@@ -266,7 +269,7 @@ def health_check(provider: str, model: Optional[str] = None, timeout: float = 10
         from openai import OpenAI
         client = OpenAI(base_url=cfg["api_base"], api_key=cfg["api_key"], timeout=timeout)
         models = client.models.list()
-        latency_ms = int((time.time() - t0) * 1000)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
         model_list = [m.id for m in models.data] if hasattr(models, "data") else []
         return {
             "ok": True, "status": "ok", 
@@ -275,7 +278,7 @@ def health_check(provider: str, model: Optional[str] = None, timeout: float = 10
             "endpoint": cfg["api_base"],
         }
     except Exception as e:
-        latency_ms = int((time.time() - t0) * 1000)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
         return {
             "ok": False, "status": "request_error",
             "error": f"{type(e).__name__}: {e}",

@@ -24,7 +24,7 @@ Options for init:
   --language TEXT     语言（默认：zh）
 """
 from __future__ import annotations
-import sys, os, json, argparse, datetime, logging
+import sys, os, json, argparse, datetime, logging, re
 from pathlib import Path
 
 # Add lib to path
@@ -615,7 +615,6 @@ def cmd_review_history(args: argparse.Namespace) -> None:
 
 def parse_chapter_range(spec: str) -> list[int]:
     """Parse '1,3,5-10' → [1,3,5,6,7,8,9,10]."""
-    import re
     spec = spec.strip()
     if not spec:
         return []

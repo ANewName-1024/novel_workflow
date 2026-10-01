@@ -179,7 +179,12 @@ class CheckpointDoc:
 # ── 路径 helpers ──────────────────────────────────────────────────────────
 
 def checkpoint_path(book: str) -> Path:
-    return storage.project_root(book) / CHECKPOINT_FILE
+    # 必须走 project_path(纯计算)。之前这里调 project_root(), 而后者会 mkdir ——
+    # 于是 PipelineV2.load() 这个纯读动作, 对一本不存在的书也会把 projects/<book>/
+    # 建出来。命令行 `pipeline resume --chapter ch_5` 走的就是 load() 这条路,
+    # 传错书名就会凭空造一个空项目目录。
+    # 写侧不受影响: save() 落到 _atomic_write_json(), 那里自己会 mkdir parent。
+    return storage.project_path(book) / CHECKPOINT_FILE
 
 
 # ── 内部 helpers ──────────────────────────────────────────────────────────
@@ -522,7 +527,9 @@ def checkpoint_snapshot(book: str, ch: int, stage: str | None = None) -> dict:
 
     # Save to file (per book, for cross-session recovery)
     from .. import storage as _sto
-    snap_path = _sto.project_root(book) / "memory" / "pipeline_snapshot.json"
+    # 写路径, 但 mkdir 下一行已经显式做了 —— 用 project_path() 保持全文件一致,
+    # 免得"这里用 project_root 是因为要建目录"变成一个会误导后来者的先例。
+    snap_path = _sto.project_path(book) / "memory" / "pipeline_snapshot.json"
     snap_path.parent.mkdir(parents=True, exist_ok=True)
     snap_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -532,7 +539,9 @@ def checkpoint_snapshot(book: str, ch: int, stage: str | None = None) -> dict:
 def get_last_snapshot(book: str) -> dict | None:
     """Load the last saved pipeline snapshot (may be from previous session)."""
     from .. import storage as _sto
-    snap_path = _sto.project_root(book) / "memory" / "pipeline_snapshot.json"
+    # 纯读, 走 project_path()。project_root() 会 mkdir, 于是"查一下有没有快照"
+    # 这个查询动作本身就会造出 projects/<book>/memory/ 两级目录。
+    snap_path = _sto.project_path(book) / "memory" / "pipeline_snapshot.json"
     if not snap_path.exists():
         return None
     try:
