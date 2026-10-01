@@ -9,7 +9,7 @@ v1.3 M6: 元数据可走 SQLite (lib.db), 章节内容仍在 .md 文件.
 """
 from __future__ import annotations
 
-import json, logging, re, uuid
+import json, logging, os, re, tempfile, uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -21,59 +21,128 @@ ROOT = PROJECTS_ROOT  # alias; code uses ROOT throughout
 log = logging.getLogger("novel.lib.storage")
 
 # ── path helpers ────────────────────────────────────────────────────────────
+#
+# 这里刻意分成两族:
+#
+#   *_path()  纯计算, 【绝不创建任何目录】。读路径与存在性检查只能用这一族。
+#   *_dir()   顺带 mkdir。只给写路径用。
+#
+# 之前只有一个 project_root(), 无条件 mkdir —— 于是 project_exists()
+# 「检查这本书存不存在」这个动作本身就会把目录建出来。生产上已经能看到后果:
+# projects/ 下躺着一个字面量名为 `${BOOK}` 的空目录(某处环境变量没展开),
+# 而 Web 层任何一条 404 路径(比如 /dashboard/<不存在的书>)都会再盖一个。
+# 配合公网可达且未鉴权, 这等于一个可被外部无限造目录的接口。
+
+def project_path(book: str) -> Path:
+    """纯路径计算 —— 不创建任何东西。读路径一律用这个。"""
+    return ROOT / book
+
 
 def project_root(book: str) -> Path:
-    p = ROOT / book
+    """写路径: 返回项目根并确保存在。新建项目请走 init_project()。"""
+    p = project_path(book)
     p.mkdir(parents=True, exist_ok=True)
     return p
 
+
+def chapters_path(book: str) -> Path:
+    return project_path(book) / "chapters"
+
+
 def chapters_dir(book: str) -> Path:
-    d = project_root(book) / "chapters"
-    d.mkdir(exist_ok=True)
+    d = chapters_path(book)
+    d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def memory_path(book: str) -> Path:
+    return project_path(book) / "memory"
+
 
 def memory_dir(book: str) -> Path:
-    d = project_root(book) / "memory"
-    d.mkdir(exist_ok=True)
+    d = memory_path(book)
+    d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def summaries_path(book: str) -> Path:
+    """Per-chapter rolling narrative summaries (~200 chars each)."""
+    return project_path(book) / "summaries"
+
 
 def summaries_dir(book: str) -> Path:
-    """Per-chapter rolling narrative summaries (~200 chars each)."""
-    d = project_root(book) / "summaries"
-    d.mkdir(exist_ok=True)
+    d = summaries_path(book)
+    d.mkdir(parents=True, exist_ok=True)
     return d
 
+
 def state_path(book: str) -> Path:
-    return project_root(book) / "state.json"
+    return project_path(book) / "state.json"
+
 
 def style_path(book: str) -> Path:
-    return project_root(book) / "style.json"
+    return project_path(book) / "style.json"
+
+
+def selfcheck_file(book: str, chapter_id: str) -> Path:
+    """纯路径 —— 读 self_check 结果用这个。"""
+    return project_path(book) / "self_checks" / f"{chapter_id}.json"
+
 
 def selfcheck_path(book: str, chapter_id: str) -> Path:
-    d = project_root(book) / "self_checks"
-    d.mkdir(exist_ok=True)
+    """写路径: 顺带确保 self_checks/ 存在。"""
+    d = project_path(book) / "self_checks"
+    d.mkdir(parents=True, exist_ok=True)
     return d / f"{chapter_id}.json"
 
 # ── JSON helpers ────────────────────────────────────────────────────────────
 
 def read_json(book: str, filename: str) -> dict[str, Any] | None:
-    path = project_root(book) / filename
+    path = project_path(book) / filename
     if not path.exists():
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
+        # 静默返回 None 是个陷阱: 调用方分不清「文件不存在」和「文件损坏」,
+        # 于是拿 DEFAULT_* 覆盖写回去, 把损坏固化成默认值。
+        # 这里至少留一条痕迹, 让 mark_chapter_completed 之类的读改写能被追到。
+        log.warning("读 JSON 失败, 按『不存在』处理 (book=%s file=%s) —— "
+                    "若该文件本应存在, 写回时会用默认值覆盖", book, filename,
+                    exc_info=True)
         return None
 
+
 def write_json(book: str, filename: str, data: dict[str, Any], indent: int = 2) -> None:
-    path = project_root(book) / filename
+    """原子写。
+
+    之前是裸 path.write_text —— 进程在写一半时被杀, 留下半截 JSON。
+    read_json 对半截 JSON 静默返回 None, mark_chapter_completed 随即用
+    {**DEFAULT_PROGRESS} 覆盖, chapters_completed 整段清空且全程无报错。
+    临时文件 + os.replace 保证读者要么看到旧的完整内容, 要么看到新的完整内容。
+    """
+    path = project_path(book) / filename
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
+    payload = json.dumps(data, ensure_ascii=False, indent=indent)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
 
 # ── chapter I/O ─────────────────────────────────────────────────────────────
 
 def read_chapter(book: str, chapter_id: str) -> Optional[str]:
-    path = chapters_dir(book) / f"{chapter_id}.md"
+    path = chapters_path(book) / f"{chapter_id}.md"
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 def write_chapter(book: str, chapter_id: str, content: str,
@@ -120,19 +189,31 @@ def write_chapter(book: str, chapter_id: str, content: str,
                       book, chapter_id, len(old_content or ""), len(content),
                       type(e).__name__, e, exc_info=True)
 
+def count_words(text: str) -> int:
+    """全仓唯一的字数口径。
+
+    之前这里写的是 len(re.findall(r"[\\u4e00-\\u9fff]+", text)): 那个 `+` 量词
+    数的是【连续片段】而不是【字】。实测 projects/测试书籍/ch_001.md
+    (真实汉字 2603) 旧口径给出 315, 偏低 8.3 倍, 而该值会落库并被
+    novel.py 的全书总字数导出、review 列表、get_review_queue 一起消费。
+
+    英文词另按 3 字母以上计一个。两段合起来是全仓口径, 别再各写一份正则 ——
+    tools/migrate_to_sqlite.py 曾是第二份实现。
+    """
+    return (len(re.findall(r"[\u4e00-\u9fff]", text))
+            + len(re.findall(r"[a-zA-Z]{3,}", text)))
+
+
 def list_chapters(book: str) -> list[dict]:
     """Return sorted list of {id, title, word_count, preview} from chapters dir.
     Also syncs metadata to SQLite (if lib.db available)."""
     chapters = []
-    for p in sorted(chapters_dir(book).glob("*.md")):
+    for p in sorted(chapters_path(book).glob("*.md")):
         text = p.read_text(encoding="utf-8")
         # First H1 or H2 is the title
         m = re.search(r"^#+\s+(.+)$", text, re.MULTILINE)
         title = m.group(1).strip() if m else p.stem
-        # Count Chinese + English words
-        words = len(re.findall(r"[\u4e00-\u9fff]+", text))
-        eng   = len(re.findall(r"[a-zA-Z]{3,}", text))
-        wc    = words + eng
+        wc = count_words(text)
         # Preview: first non-empty paragraph after the title (max 50 chars)
         body = text[m.end():] if m else text
         body_lines = [l.strip() for l in body.splitlines() if l.strip()]
@@ -199,13 +280,15 @@ def init_project(book: str, cfg: dict[str, Any]) -> None:
     write_json(book, "progress.json", {**DEFAULT_PROGRESS, "total_chapters": cfg["target_chapters"]})
     # Memory files
     for fname in ["characters.json", "world.json", "events.json", "foreshadowing.json"]:
-        if not (memory_dir(book) / fname).exists():
+        if not (memory_path(book) / fname).exists():
             write_json(book, f"memory/{fname}", {} if "json" in fname else [], indent=1)
     # Outline placeholders
     write_json(book, "outline.json", {"meta": {}, "volumes": [], "chapters": []})
 
 def project_exists(book: str) -> bool:
-    return (project_root(book) / "config.json").exists()
+    # 必须走 project_path(纯计算)。之前这里调 project_root(), 而后者会 mkdir ——
+    # 于是「书不存在吗」这个问题本身就把书目录建出来了, 404 请求每打一次多一个空目录。
+    return (project_path(book) / "config.json").exists()
 
 def list_projects() -> list[str]:
     """Return all project names that have a config.json (sorted)."""

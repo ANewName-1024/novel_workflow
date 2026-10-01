@@ -161,7 +161,7 @@ def revert_to(
         meta={"reverting_to": version_id, "by": by},
     )
     # 直接写文件, 绕过 write_chapter 的 auto-snapshot
-    chapter_path = storage.chapters_dir(book) / f"{chapter_id}.md"
+    chapter_path = storage.chapters_path(book) / f"{chapter_id}.md"
     chapter_path.parent.mkdir(parents=True, exist_ok=True)
     chapter_path.write_text(target["content"], encoding="utf-8")
     record = create_version(

@@ -20,13 +20,15 @@ def _now() -> str:
 
 
 def comments_path(book: str) -> Path:
+    # project_path 而非 project_root: 这两个 path 同时被 load 与 save 用,
+    # 走 project_root 的话, 单纯「读一下评论」也会先把项目目录建出来。
     from . import storage
-    return storage.project_root(book) / "comments.json"
+    return storage.project_path(book) / "comments.json"
 
 
 def notifications_path(book: str) -> Path:
     from . import storage
-    return storage.project_root(book) / "notifications.json"
+    return storage.project_path(book) / "notifications.json"
 
 
 # ── 加载 / 保存 ───────────────────────────────────────────────────────

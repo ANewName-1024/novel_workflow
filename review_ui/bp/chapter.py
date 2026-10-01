@@ -25,7 +25,7 @@ from flask import request
 from lib import storage
 from lib import version as ver_serv
 
-from review_ui.core import _ensure_book
+from review_ui.core import _ensure_book, _int_arg
 bp = Blueprint("chapter", __name__,
                template_folder=str(_UI / "templates"))
 
@@ -134,11 +134,8 @@ def api_chapter_context(book, ch):
     text = storage.read_chapter(book, ch)
     if text is None:
         abort(404, description=f"chapter {ch} not found")
-    try:
-        line = int(request.args.get("line", 0))
-    except ValueError:
-        abort(400, description="line must be int")
-    window = int(request.args.get("window", 3))
+    line = _int_arg("line", 0, lo=0)
+    window = _int_arg("window", 3, lo=1, hi=500)
     lines = text.splitlines()
     if line < 1 or line > len(lines):
         abort(400, description=f"line {line} out of range [1, {len(lines)}]")

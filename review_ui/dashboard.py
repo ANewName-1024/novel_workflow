@@ -19,6 +19,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
+from review_ui.core import _int_arg
 from lib import pipeline, storage
 from lib.pipeline import state as pv2
 from lib.config_loader import get_config
@@ -140,7 +141,16 @@ def api_overview_stream():
 def dashboard_page(book):
     """娴佹按绾块潰鏉块〉闈?"""
     if not storage.project_exists(book):
-        return f"<h1>椤圭洰 [{book}] 涓嶅瓨鍦?/h1>", 404
+        # 2026-10-01: 过去这里是 f"<h1>项目 [{book}] 不存在</h1>" —— book 直接
+        # 来自 URL 且未经任何转义(不走 render_template 就没有 Jinja autoescape),
+        # 请求 /dashboard/%3Cimg%20src=x%20onerror=alert(1)%3E 即反射执行。
+        # 同一函数的正常分支走 render_template, 说明这是漏改而非有意设计。
+        # nginx 裸路径 /dashboard 直连且当时无鉴权, 这条可达。
+        return render_template("error.html",
+                               code=404,
+                               title="页面不存在",
+                               message=f"项目 [{book}] 不存在",
+                               detail=""), 404
     # 涓嬩竴绔犺妭: progress.current_chapter + 1 (浠?storage 璇?
     prog = storage.read_json(book, "progress.json") or {}
     next_ch = (prog.get("current_chapter") or 0) + 1
@@ -237,7 +247,7 @@ def api_pipeline_logs(book):
     default_n = cfg.get("log_tail_default", 100)
     max_n = cfg.get("log_max_buffer", 500)
     try:
-        n = int(request.args.get("tail", default_n))
+        n = _int_arg("tail", default_n, lo=1, hi=1000)
     except ValueError:
         n = default_n
     n = max(1, min(n, max_n))
@@ -315,7 +325,7 @@ def api_pipeline_logs_stream(book):
 def api_pipeline_checkpoints(book):
     """Return all stage checkpoints for a chapter + summary view."""
     try:
-        ch = int(request.args.get("ch", 0))
+        ch = _int_arg("ch", 0, lo=0)
         if ch < 1:
             raise NovelError(ErrorCode.INVALID_ARGS, f"ch must be >= 1, got: {ch}")
         if not storage.project_exists(book):
@@ -332,7 +342,7 @@ def api_pipeline_skip(book):
     """Skip a stage. body (form or json): {ch, stage, reason?}."""
     try:
         payload = request.get_json(silent=True) or request.form
-        ch = int(payload.get("ch", 0))
+        ch = _int_arg("ch", 0, lo=0, src=payload)
         stage = str(payload.get("stage", "")).strip()
         reason = payload.get("reason")
         if ch < 1:
@@ -359,7 +369,7 @@ def api_pipeline_rerun(book):
     """Rerun chapter from a given stage. body: {ch, from_stage}."""
     try:
         payload = request.get_json(silent=True) or request.form
-        ch = int(payload.get("ch", 0))
+        ch = _int_arg("ch", 0, lo=0, src=payload)
         from_stage = str(payload.get("from_stage", "")).strip()
         if ch < 1:
             raise NovelError(ErrorCode.INVALID_ARGS, f"ch must be >= 1, got: {ch}")
@@ -392,7 +402,7 @@ def api_pipeline_reset(book):
     """Clear all checkpoints for a chapter (back to PENDING). body: {ch}."""
     try:
         payload = request.get_json(silent=True) or request.form
-        ch = int(payload.get("ch", 0))
+        ch = _int_arg("ch", 0, lo=0, src=payload)
         if ch < 1:
             raise NovelError(ErrorCode.INVALID_ARGS, f"ch must be >= 1, got: {ch}")
         if not storage.project_exists(book):

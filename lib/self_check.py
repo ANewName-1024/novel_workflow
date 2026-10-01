@@ -136,7 +136,7 @@ def has_critical_issues(result: dict, strict: bool = False) -> bool:
     return False
 
 def get_self_check(book: str, chapter_id: str) -> dict | None:
-    p = storage.selfcheck_path(book, chapter_id)
+    p = storage.selfcheck_file(book, chapter_id)
     if not p.exists():
         return None
     try:

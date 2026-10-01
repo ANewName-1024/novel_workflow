@@ -72,7 +72,7 @@ def generate_chapter_summary(
     return summary
 
 def get_chapter_summary(book: str, chapter_id: str) -> str | None:
-    p = storage.summaries_dir(book) / f"{chapter_id}.txt"
+    p = storage.summaries_path(book) / f"{chapter_id}.txt"
     if not p.exists():
         return None
     return p.read_text(encoding="utf-8").strip()
@@ -83,7 +83,7 @@ def get_all_chapter_summaries(book: str) -> list[dict]:
     Skips chapters whose summary hasn't been generated.
     """
     out = []
-    for p in sorted(storage.summaries_dir(book).glob("ch_*.txt")):
+    for p in sorted(storage.summaries_path(book).glob("ch_*.txt")):
         ch_id = p.stem
         # Parse ch_num from "ch_001"
         try:

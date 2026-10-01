@@ -51,7 +51,10 @@ class TestCorruptionIsLoud:
         assert "broken.json" in recs[0].getMessage(), "日志须带文件路径"
 
     def test_get_self_check_corrupt_logs(self, monkeypatch, caplog, broken_json):
-        monkeypatch.setattr(self_check.storage, "selfcheck_path",
+        # 2026-10-01: storage 把 project_root 拆成 project_path(纯计算) 与
+        # project_root(建目录) 两族, get_self_check 走读的那一支 selfcheck_file。
+        # patch 目标随之更新 —— 断言本身(损坏必须留痕)一个字没放松。
+        monkeypatch.setattr(self_check.storage, "selfcheck_file",
                             lambda b, c: broken_json)
         with caplog.at_level(logging.WARNING):
             assert self_check.get_self_check("b", "ch_001") is None

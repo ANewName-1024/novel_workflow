@@ -23,7 +23,7 @@ from pathlib import Path
 from flask import jsonify
 from flask import request
 from lib import storage
-from review_ui.core import _ensure_book
+from review_ui.core import _ensure_book, _int_arg
 
 import logging
 
@@ -155,8 +155,8 @@ def _create_project(book: str, payload: dict) -> tuple[dict, int]:
         "antagonist": (payload.get("antagonist") or "").strip(),
         "main_plot": main_plot,
         "style": (payload.get("style") or "简洁流畅").strip(),
-        "target_chapters": int(payload.get("target_chapters") or 20),
-        "words_per_chapter": int(payload.get("words_per_chapter") or 2500),
+        "target_chapters": _int_arg("target_chapters", 20, src=payload),
+        "words_per_chapter": _int_arg("words_per_chapter", 2500, src=payload),
         "language": (payload.get("language") or "zh").strip(),
         "llm_model": (payload.get("llm_model") or "").strip(),
         "api_base": (payload.get("api_base") or "").strip(),

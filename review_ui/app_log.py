@@ -11,6 +11,8 @@ APK 日志接收 + 远程调试端点
 """
 from __future__ import annotations
 import json
+import logging
+import os
 import time
 import uuid
 import threading
@@ -18,9 +20,37 @@ from collections import defaultdict, deque
 from pathlib import Path
 from flask import Blueprint, jsonify, request, abort
 
-LOG_DIR = Path("/root/novel_workflow/logs")
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+from review_ui.core import _int_arg, _float_arg
+
+# 2026-10-01: 过去这里硬编码 Path("/root/novel_workflow/logs") 且在【import 期】mkdir。
+# 后果: 非 root 用户或换路径部署时直接 PermissionError → app.py 的
+# try/except 吞掉 → 5 个 /api/app-log/* 路由全部 404, 而服务照常启动、
+# UI 照常工作, 没有任何用户可见提示。功能是「静默」消失的。
+# 现在: 路径从项目根推导, 且 mkdir 惰性化 —— 失败只影响本蓝图, 不影响启动。
+def _resolve_log_dir() -> Path:
+    env = os.environ.get("NOVEL_APP_LOG_DIR")
+    if env:
+        return Path(env)
+    try:
+        from lib import storage as _st
+        return _st.project_path("__logs__").parent / "logs"
+    except Exception:
+        return Path(__file__).resolve().parent.parent / "logs"
+
+LOG_DIR = _resolve_log_dir()
+
+def _ensure_log_dir() -> Path:
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log.error("app_log 目录不可用 (%s): %s: %s", LOG_DIR, type(e).__name__, e)
+    return LOG_DIR
+
+_ensure_log_dir()
 LOG_FILE = LOG_DIR / "app_log.jsonl"
+log = logging.getLogger("novel.review_ui.app_log")
+if not log.handlers:
+    log.addHandler(logging.NullHandler())
 LOCK = threading.Lock()
 MAX_LINES = 5000  # in-memory ring buffer for fast /list
 
@@ -193,8 +223,8 @@ def list_logs():
     """
     device_id = request.args.get("device_id")
     min_level = request.args.get("level", "debug").lower()
-    limit = min(int(request.args.get("limit", 100)), 1000)
-    since_ts = float(request.args.get("since_ts", 0))
+    limit = _int_arg("limit", 100, lo=1, hi=1000)
+    since_ts = _float_arg("since_ts", 0.0, lo=0.0)
 
     levels = ["debug", "info", "warn", "error", "fatal"]
     if min_level not in levels:

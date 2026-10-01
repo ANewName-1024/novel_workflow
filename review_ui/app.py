@@ -20,10 +20,14 @@ Run:
   python review_ui/app.py [--port 21199] [--host 127.0.0.1]
 """
 from __future__ import annotations
-import sys, os, json, argparse, base64, difflib
+import sys, os, json, argparse, base64, difflib, hmac, logging
 from pathlib import Path
 from flask import (Flask, jsonify, request, render_template, abort, Response,
                    session, redirect, url_for)
+
+log = logging.getLogger("novel.review_ui")
+if not log.handlers:
+    log.addHandler(logging.NullHandler())
 
 # Add project root + lib to path
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,8 +59,13 @@ try:
     from .app_log import app_log_bp  # noqa: E402
     app.register_blueprint(app_log_bp)
 except Exception as _e:
-    import sys
-    print(f"[warn] app_log blueprint not registered: {_e}", file=sys.stderr)
+    # 过去这里只 print 一行到 stderr。后果: 5 个 /api/app-log/* 路由全部消失,
+    # 而服务照常启动、UI 照常工作, 没有任何用户可见提示 —— 功能是「静默」的。
+    # 根因叠加在 app_log.py: import 期就 mkdir 一个硬编码的 /root/... 目录,
+    # 非 root 或换路径部署时直接 PermissionError。
+    log.error("app_log 蓝图注册失败, /api/app-log/* 全部 404 —— "
+              "崩溃日志与远程调试端点不可用: %s: %s",
+              type(_e).__name__, _e, exc_info=True)
 # session secret for login cookies. Use env, fallback to stable dev key.
 # ── Phase 1: 业务域蓝图(自 review_ui/app.py 拆出)────────────────────
 # 用相对导入 (review_ui.bp) —— review_ui/ 与 review_ui/bp/ 都是真 package,
@@ -88,7 +97,39 @@ from .bp.projects import (  # noqa: E402,F401
 )
 from .bp.entities import _parse_entity_type, _entity_to_dict  # noqa: E402,F401
 
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-in-prod")
+# session secret for login cookies.
+#
+# 2026-10-01: 过去是 os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-in-prod"),
+# 生产忘了设环境变量就用一个全网公开的常量 —— 攻击者据此可以自己伪造
+# session cookie 里的 auth_user, 直接绕过整个登录流程。
+# 现在: 生产环境(FLASK_ENV=production 或显式 REVIEW_UI_REQUIRE_SECRET=1)缺 secret
+# 直接拒绝启动; 开发环境才允许回落, 且必须够长够随机。
+_DEV_SECRET = "dev-secret-change-in-prod"
+_secret = os.environ.get("FLASK_SECRET_KEY", "")
+_require_secret = (
+    os.environ.get("REVIEW_UI_REQUIRE_SECRET", "").lower() in ("1", "true", "yes")
+    or os.environ.get("FLASK_ENV", "").lower() == "production"
+)
+if not _secret:
+    if _require_secret:
+        raise RuntimeError(
+            "FLASK_SECRET_KEY 未设置且处于生产模式 —— 拒绝启动。"
+            "用一个足够长且随机的值: python -c \"import secrets;"
+            "print(secrets.token_urlsafe(48))\"")
+    _secret = _DEV_SECRET
+    log.warning("FLASK_SECRET_KEY 未设置, 正在使用【公开的】开发用默认值。"
+                "生产部署必须设置, 否则 session cookie 可被伪造。"
+                "(设置 REVIEW_UI_REQUIRE_SECRET=1 可让此处直接拒绝启动)")
+app.secret_key = _secret
+
+# 显式设置 cookie 安全属性。此前全部走 Flask 默认。
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,     # 防 JS 读走
+    SESSION_COOKIE_SAMESITE="Lax",    # 跨站 POST 不带 cookie
+    SESSION_COOKIE_SECURE=bool(os.environ.get("REVIEW_UI_COOKIE_SECURE", "").lower()
+                               in ("1", "true", "yes")),
+    # 401/503 也带同样的头: 之前 err_500 对 /api/ 返回 HTML, 与 404/400 的 JSON 约定不一致
+)
 
 # ── 统一导航栏 context (v1.3 M3) ─────────────────────────────────────────
 # Inject `nav` into all templates for _navbar.html
@@ -129,13 +170,20 @@ def _nav_context():
 
     # 书籍列表 (下拉)
     books = []
+    books_error = None
     try:
         from lib import storage as _storage
         for b in _storage.list_projects():
             cfg = _storage.read_json(b, "config.json") or {}
             books.append((b, cfg.get('book_name') or b, cfg.get('genre', '')))
-    except Exception:
-        pass
+    except Exception as e:
+        # 过去是 except: pass。后果: projects/ 权限异常或某本书 config.json 损坏时,
+        # 整个下拉框静默变空, 页面照常 200 —— 用户只会以为「书没了」。
+        # 这是 @app.context_processor, 每一页渲染都跑, 影响面是全站。
+        # bp/projects.py:199 的同类镜像写失败已经补了 log.warning, 这里属于同类漏改。
+        books_error = str(e)
+        log.error("导航栏书籍列表加载失败, 下拉框会显示为空: %s: %s",
+                  type(e).__name__, e, exc_info=True)
 
     # 当前书籍的标题 / genre
     cur_title = book
@@ -149,6 +197,7 @@ def _nav_context():
         'global_active': global_active,
         'book_active': book_active,
         'books': books,
+        'books_error': books_error,   # 非 None 时模板应显示「加载失败」而非空列表
         'current_book': book,
         'current_book_title': cur_title,
         'current_book_genre': cur_genre,
@@ -162,6 +211,19 @@ if ProxyFix is not None:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
 
 # ── M5: Auth (config-driven Basic Auth + session) ───────────────────────
+#
+# 失败模式的方向性 (2026-10-01 安全修复)
+# ─────────────────────────────────────
+# 之前的 _auth_gate 有两条放行分支, 其中一条是:
+#     if not auth["password"]: return None      # ← enabled=true 但密码空 → 全放行
+# config.yaml 里密码写的是 ${REVIEW_UI_PASSWORD:-}, 环境变量一没设就成空串。
+# 于是「配错了」= 「静默关掉鉴权」, 且不打任何日志。实测该部署就是这样:
+# 公网可达 + 31 个写端点全部裸奔, 任何人可 DELETE /api/projects/<book>。
+#
+# 现在的规则:
+#   enabled=false        → 显式关闭(本地开发), 放行, 但启动时打醒目 WARNING
+#   enabled=true 且密码空 → 配置错误, 【拒绝一切请求】并 log.error, 不再放行
+# 空密码永远不等于「不设防」。
 
 def _get_auth() -> dict:
     """Read review_ui.auth from config (with env expansion already done)."""
@@ -173,6 +235,11 @@ def _get_auth() -> dict:
     }
 
 
+def _auth_misconfigured(auth: dict) -> bool:
+    """enabled=True 但密码为空 —— 这是配置错误, 不是「不设防」。"""
+    return bool(auth["enabled"]) and not auth["password"]
+
+
 def _is_authed() -> bool:
     return bool(session.get("auth_user"))
 
@@ -180,7 +247,9 @@ def _is_authed() -> bool:
 def _check_basic_auth_header():
     """如果传 Authorization: Basic ... 且对, 写入 session. 返回 True 表示已认证."""
     auth = _get_auth()
-    if not auth["enabled"] or not auth["password"]:
+    if _auth_misconfigured(auth):
+        return False
+    if not auth["enabled"]:
         return False
     hdr = request.headers.get("Authorization", "")
     if not hdr.startswith("Basic "):
@@ -188,23 +257,42 @@ def _check_basic_auth_header():
     try:
         decoded = base64.b64decode(hdr[6:]).decode("utf-8")
         u, _, p = decoded.partition(":")
-        if u == auth["user"] and p == auth["password"]:
+        # 常量时间比较: 逐字符的 == 会在比较失败的前缀长度上泄露时序
+        ok = (hmac.compare_digest(u, auth["user"])
+              and hmac.compare_digest(p, auth["password"]))
+        if ok:
             session["auth_user"] = u
             return True
     except Exception:
-        pass
+        log.warning("Basic Auth 头解析失败", exc_info=True)
     return False
 
 
 @app.before_request
 def _auth_gate():
-    """统一 auth 检查. auth.enabled=False 时放行, 否则护所有非白名单 endpoint."""
+    """统一 auth 检查.
+
+    - auth.enabled=False  → 放行(本地开发免密的显式选择)
+    - auth.enabled=True 但 password 为空 → 配置错误, 拒绝一切请求
+    - 其余 → 护住所有非白名单 endpoint
+    """
     auth = _get_auth()
+
+    if _auth_misconfigured(auth):
+        # 不放行。这里曾经 return None, 等于把配置笔误变成了安全洞。
+        log.error(
+            "鉴权配置错误: review_ui.auth.enabled=true 但 password 为空 —— "
+            "拒绝所有请求。请设置环境变量 REVIEW_UI_PASSWORD。"
+            "如果确实要免密, 请显式设 review_ui.auth.enabled=false。")
+        if request.path.startswith("/api/") or request.path.startswith("/novel-api/"):
+            return jsonify({"error": "auth misconfigured",
+                            "message": "服务端鉴权配置错误(review_ui.auth.password 为空), "
+                                       "已拒绝全部请求。请管理员设置 REVIEW_UI_PASSWORD。"}), 503
+        return "服务端鉴权配置错误(review_ui.auth.password 为空), 已拒绝全部请求。", 503
+
     if not auth["enabled"]:
-        return None  # 配置不上, 全部放行
-    # Safeguard: enabled 但 password 为空 → 视为配置错误, 放行 (跟 _check_basic_auth_header 对称)
-    if not auth["password"]:
-        return None
+        return None  # 显式关闭; 启动时会打 WARNING 提醒这是公网裸奔状态
+
     # 白名单
     if request.path.startswith("/static/"):
         return None
@@ -220,21 +308,42 @@ def _auth_gate():
     if request.path.startswith("/api/") or request.path.startswith("/novel-api/"):
         return jsonify({"error": "unauthorized",
                         "message": "Auth required. POST /login or send Authorization: Basic header."}), 401
-    return redirect(url_for("login", next=request.path))
+    return redirect(url_for("login", next=_safe_next(request.path)))
+
+
+def _safe_next(candidate: str) -> str:
+    """只允许站内相对路径。
+
+    login() 过去直接 redirect(request.args.get("next")), 攻击者可以发
+    /login?next=https://evil.com, 用户登录成功后被弹到站外 —— 开放重定向,
+    配合钓鱼页做 credential phishing 很顺手。
+    规则: 以单个 / 开头(所以 //evil.com 这种协议相对 URL 也不放行),
+    且不含反斜杠与控制字符。
+    """
+    if not candidate or not isinstance(candidate, str):
+        return url_for("index")
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return url_for("index")
+    if "\\" in candidate or any(ord(c) < 32 for c in candidate):
+        return url_for("index")
+    return candidate
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     auth = _get_auth()
-    if not auth["enabled"] or not auth["password"]:
-        return redirect(url_for("index"))  # 配置不上或密码空 → 跳过登录
+    if _auth_misconfigured(auth):
+        log.error("login: 鉴权配置错误(password 为空), 拒绝登录")
+        return "服务端鉴权配置错误: review_ui.auth.password 为空。", 503
+    if not auth["enabled"]:
+        return redirect(url_for("index"))  # 显式免密
     error = None
     if request.method == "POST":
         u = (request.form.get("user") or "").strip()
         p = request.form.get("password") or ""
-        if u == auth["user"] and p == auth["password"] and auth["password"]:
+        if auth["password"] and hmac.compare_digest(u, auth["user"]) and hmac.compare_digest(p, auth["password"]):
             session["auth_user"] = u
-            nxt = request.args.get("next") or url_for("index")
+            nxt = _safe_next(request.args.get("next") or "")
             return redirect(nxt)
         error = "用户名或密码错"
     return render_template("login.html", error=error), (401 if error else 200)
@@ -275,6 +384,14 @@ def err_400(e):
 
 @app.errorhandler(500)
 def err_500(e):
+    # 404 与 400 都为 /api/ 返回 JSON, 只有 500 返回 HTML —— 前端 fetch
+    # 拿到 HTML 却在 res.json() 上炸, 于是真正的异常原因被二次错误盖掉。
+    # 补齐同一套约定。
+    log.error("未处理异常 500: %s: %s", type(e).__name__, e, exc_info=True)
+    path = request.path or ""
+    if path.startswith("/api/") or path.startswith("/novel-api/"):
+        return jsonify({"error": "internal_error",
+                        "message": "服务异常，请稍后重试"}), 500
     return render_template("error.html",
                            code=500,
                            title="服务器错误",

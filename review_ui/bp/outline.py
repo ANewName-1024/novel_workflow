@@ -26,7 +26,7 @@ from flask import request
 from lib import storage
 from lib import version as ver_serv
 
-from review_ui.core import _ensure_book
+from review_ui.core import _ensure_book, _int_arg
 bp = Blueprint("outline", __name__,
                template_folder=str(_UI / "templates"))
 
@@ -69,7 +69,7 @@ def api_outline_node_add(book):
     _ensure_book(book)
     body = request.get_json(silent=True) or {}
     parent_vol = body.get("parent_vol") or body.get("vol")
-    position = int(body.get("position", 0))
+    position = _int_arg("position", 0, src=body)
     o = oe.load_outline_or_empty(book)
     if not parent_vol:
         # Fallback 1: first existing volume
@@ -222,7 +222,7 @@ def api_outline_ai_suggest(book):
     Returns: {chapters: [{title, summary, pov, key_events, foreshadow}], reasoning: str}"""
     _ensure_book(book)
     body = request.get_json(silent=True) or {}
-    count = int(body.get("count", 3))
+    count = _int_arg("count", 3, src=body)   # 只做类型转换, 范围由下面 clamp 决定
     count = max(1, min(count, 5))  # clamp 1-5
 
     cfg = storage.read_json(book, "config.json") or {}
@@ -240,7 +240,7 @@ def api_outline_ai_suggest(book):
 
     o = oe.load_outline_or_empty(book)
     existing_count = len(o.get("chapters", []))
-    next_num = int(body.get("next_num", existing_count + 1))
+    next_num = _int_arg("next_num", existing_count + 1, src=body)
 
     # 构建 outline 文本供 LLM 上下文
     outline_text = _outline_to_text(o)
