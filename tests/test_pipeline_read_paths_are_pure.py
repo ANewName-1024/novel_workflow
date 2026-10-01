@@ -119,6 +119,47 @@ class TestWritePathStillWorks:
         assert (bare_root / "real_book" / "memory" / "pipeline_snapshot.json").exists()
 
 
+class TestRecoverStageRefusesGhostBook:
+    """recover_stage 是【写】的 —— 光把读路径改纯, 挡不住它凭空建目录。
+
+    背景: 读路径修好之后, `novel.py pipeline resume ghost_book --chapter ch_5`
+    仍然会在 projects/ 下建出一个空项目, 因为 recover_stage 走到"自动检测阶段"
+    分支后会落盘。书名打错一个字母就多一个永远没人认领的目录。
+    修法: 书不存在就没什么可恢复的, 直接拒掉(见 state.py 里的注释)。
+    """
+
+    def test_recover_stage_on_missing_book_creates_nothing(self, bare_root):
+        result = pv2.recover_stage("ghost_book", 5)
+        assert result["ok"] is False
+        assert "不存在" in result["message"]
+        assert not (bare_root / "ghost_book").exists(), \
+            "recover_stage 对一本不存在的书建出了项目目录"
+
+    def test_recover_stage_still_works_on_existing_book(self, bare_root):
+        """守卫不能把正常恢复也一起挡掉。
+
+        注意这里要造一个**真正的项目**(有 config.json), 而不是光建个空目录 ——
+        storage.project_exists() 的语义是"config.json 在不在"(即"是不是一本被
+        init_project 初始化过的书"), 光 mkdir 出来的不算一本书。
+        """
+        (bare_root / "real_book").mkdir()
+        (bare_root / "real_book" / "config.json").write_text(
+            '{"book_name": "real_book"}', encoding="utf-8"
+        )
+        result = pv2.recover_stage("real_book", 3)
+        # 对一本存在但没有任何进度的书, 会自动检测到第一个 PENDING 阶段并重置
+        assert result["ok"] is True, result["message"]
+        assert result["recovered_stage"] is not None
+
+    def test_bare_directory_is_not_a_book(self, bare_root):
+        """空目录不算一本书 —— project_exists 的语义, 钉住它免得以后被改坏。"""
+        (bare_root / "just_a_dir").mkdir()
+        assert storage.project_exists("just_a_dir") is False
+        result = pv2.recover_stage("just_a_dir", 1)
+        assert result["ok"] is False
+        assert "不存在" in result["message"]
+
+
 # ── 结构性防线 ─────────────────────────────────────────────────────────────
 
 class TestNoMkdiringHelperLeftInPipelineState:

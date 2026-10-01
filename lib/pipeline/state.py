@@ -598,6 +598,23 @@ def recover_stage(book: str, ch: int, from_stage: str | None = None) -> dict:
       "message": str,
     }
     """
+    # 书不存在就没什么可恢复的, 直接拒掉。
+    #
+    # 这个函数是【写】的: 它会把下游阶段重置回 PENDING 并落盘。所以对一本不存在
+    # 的书跑它, 会在磁盘上凭空建出 projects/<书>/.pipeline_checkpoints.json ——
+    # 书名打错一个字母, 就在 projects/ 下多一个永远没人认领的空项目。
+    #
+    # 只把 checkpoint_path/get_last_snapshot 换成纯计算是挡不住这个的: 那两条是读,
+    # 而这里是写, 落盘本来就会建目录。
+    #
+    # Web 侧(bp/pipeline.py)本来就有 _ensure_book 挡着, 只有 CLI 的
+    # `novel.py pipeline resume --chapter` 这条路是裸的。守卫放在这一层而不是
+    # 调用方, 是因为"对不存在的书做写操作"这件事本身不该由谁来实现。
+    # project_exists() 的语义是"config.json 在不在", 且走纯计算路径, 不会顺手建目录。
+    if not storage.project_exists(book):
+        return {"ok": False, "chapter": ch, "recovered_stage": None,
+                "message": f"项目 [{book}] 不存在, 没什么可恢复的。"}
+
     v2 = get_v2()
     try:
         ch_doc = v2.get_chapter(book, ch)
