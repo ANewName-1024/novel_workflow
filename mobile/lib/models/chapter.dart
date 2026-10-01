@@ -48,7 +48,7 @@ class DiffEntry {
   }
 }
 
-/// Backend returns `{diff:[], has_diff:false, stats:null}` for /api/diff/<book>/<ch>.
+/// Backend returns `{diff:[], has_diff:false, stats:null}` for `/api/diff/<book>/<ch>`.
 class ChapterDiff {
   final List<DiffEntry> entries;
   final bool hasDiff;

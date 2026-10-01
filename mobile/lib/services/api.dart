@@ -229,27 +229,27 @@ class NovelApi {
   }
 
   /// Update an existing chapter node's editable fields.
-  /// Server: PUT /api/outline/<book>/node/<ch_id>
+  /// Server: PUT `/api/outline/<book>/node/<ch_id>`
   Future<OutlineNode> updateOutlineNode(String book, String chId, Map<String, dynamic> patch) async {
     final data = await _put('/api/outline/$book/node/$chId', body: patch);
     return OutlineNode.fromJson((data['node'] as Map).cast<String, dynamic>());
   }
 
   /// Delete a chapter node.
-  /// Server: DELETE /api/outline/<book>/node/<ch_id>
+  /// Server: DELETE `/api/outline/<book>/node/<ch_id>`
   Future<void> deleteOutlineNodeHard(String book, String chId) async {
     await _delete('/api/outline/$book/node/$chId');
   }
 
   /// Reorder nodes by giving a list of moves.
-  /// Server: POST /api/outline/<book>/reorder
+  /// Server: POST `/api/outline/<book>/reorder`
   /// moves: [{ch_id, new_vol, new_position}, ...]
   Future<void> reorderOutlineNodes(String book, List<Map<String, dynamic>> moves) async {
     await _post('/api/outline/$book/reorder', body: {'moves': moves});
   }
 
   /// Add a new volume.
-  /// Server: POST /api/outline/<book>/volumes
+  /// Server: POST `/api/outline/<book>/volumes`
   /// Returns the new volume dict (id, title, summary, chapters).
   Future<Map<String, dynamic>> addOutlineVolume(String book, {required String title, String summary = ''}) async {
     final data = await _post('/api/outline/$book/volumes',
@@ -258,13 +258,13 @@ class NovelApi {
   }
 
   /// Delete a volume; chapters get reassigned to the first remaining volume.
-  /// Server: DELETE /api/outline/<book>/volumes/<vol_id>
+  /// Server: DELETE `/api/outline/<book>/volumes/<vol_id>`
   Future<int> deleteOutlineVolume(String book, String volId) async {
     final data = await _delete('/api/outline/$book/volumes/$volId');
     return (data['reassigned'] as int?) ?? 0;
   }
 
-  /// Update volume title/summary via PUT /api/outline/<book> (full replace).
+  /// Update volume title/summary via PUT `/api/outline/<book>` (full replace).
   /// Caller is responsible for providing a valid full outline.
   /// Convenience: call this after locally editing one volume in the loaded outline.
   Future<void> replaceOutline(String book, Map<String, dynamic> outline) async {
@@ -294,9 +294,9 @@ class NovelApi {
   Future<Map<String, dynamic>> llmHealthCheck({String? provider, String? model, String? book}) async {
     final data = await _post('/api/llm/health',
         body: {
-          if (provider != null) 'provider': provider,
-          if (model != null) 'model': model,
-          if (book != null) 'book': book,
+          'provider': ?provider,
+          'model': ?model,
+          'book': ?book,
         });
     return (data as Map<String, dynamic>);
   }
@@ -313,7 +313,7 @@ class NovelApi {
   // === Chapter edit + diff ===
   Future<Map<String, dynamic>> editChapter(String book, String ch, String content, {String? notes, bool apply = true}) async {
     final data = await _post('/api/edit/$book/$ch',
-        body: {'text': content, if (notes != null) 'notes': notes, 'apply': apply});
+        body: {'text': content, 'notes': ?notes, 'apply': apply});
     return data as Map<String, dynamic>;
   }
 

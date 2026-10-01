@@ -323,7 +323,7 @@ class _OutlineScreenState extends State<OutlineScreen> {
   }
 
   /// Reorder nodes across all volumes.
-  /// Uses a single batch call to /api/outline/<book>/reorder.
+  /// Uses a single batch call to `/api/outline/<book>/reorder`.
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     if (_outline == null) return;
     // Build a flat list of (vol, node) in current display order

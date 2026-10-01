@@ -117,7 +117,7 @@ class _LogViewTabState extends State<_LogViewTab> {
               const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: () => appLogger.flushNow().then((_) {
-                  if (mounted) {
+                  if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('已上传队列日志')),
                     );
@@ -389,7 +389,7 @@ class _RemoteDebugTabState extends State<_RemoteDebugTab> {
                 FilledButton.icon(
                   onPressed: () async {
                     await appLogger.flushNow();
-                    if (mounted) {
+                    if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('日志已上传')),
                       );

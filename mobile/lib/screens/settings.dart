@@ -128,7 +128,7 @@ class SettingsScreen extends StatelessWidget {
           children: [
             const Text('应用信息', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 12),
-            _infoRow(Icons.tag, '版本', '${appLogger.appVersion}',
+            _infoRow(Icons.tag, '版本', appLogger.appVersion,
                 '(${appLogger.packageName})'),
             const SizedBox(height: 8),
             _infoRow(Icons.smartphone, '设备 ID', appLogger.deviceId, null),
