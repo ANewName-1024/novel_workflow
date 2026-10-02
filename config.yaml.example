@@ -2,6 +2,14 @@
 # 复制为 config.yaml, 改成你的实际值
 # 优先从 env ($VAR) 读, 例 ${REVIEW_UI_PASSWORD}
 
+# === 运行时 ===
+runtime:
+  # doctor 的 Python 版本下限。
+  # 这**不是**"代码实际需要的最低版本", 而是"CI 门禁覆盖到的版本"(CI 跑 3.12/3.14)。
+  # 两者可以不同: 生产 systemd 跑 3.11 时把这里设成 3.11, doctor 就不会误报,
+  # 同时低于它仍然只报 warn —— 真正跑不动的是硬地板 3.9。
+  min_python: "3.12"
+
 # === LLM ===
 llm:
   api_base: ${LLM_API_BASE:-http://127.0.0.1:60443/v1}

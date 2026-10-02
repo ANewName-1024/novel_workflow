@@ -2,15 +2,25 @@
 doctor.py — 环境诊断 (novel doctor)
 
 检测:
-- Python 版本 ≥ 3.12
-- llama-server 可达 (默认 :60443/v1/models 返回 200)
+- Python 版本 (下限可配 runtime.min_python; 低于 CI 门禁但能跑 -> warn)
 - 依赖包都装了 (openai / flask / pytest ...)
 - 项目目录可写
 - 磁盘空间 ≥ 1GB
 - 端口 21199 没被占 (review_ui 还没跑)
-- **配置漂移** (见下面「配置漂移检测」一节, 可选, 默认不跑)
+- **默认 provider 端点可达**(走注册表解析 + 带鉴权, 失败只 warn)
+- **配置漂移** (见下面「配置漂移检测」一节, 可选, 默认不跑;
+  `--deep` 才真发请求)
 
-输出: 9 个 ✅/⚠/❌ + 修复建议
+关于「版本」与「端点」两项的分工
+--------------------------------
+这两项在 2026-10-02 之前都是**假警报来源**: Python 下限写死 3.12(而生产
+systemd 跑 3.11), 端点检查读 legacy 全局地址且不带鉴权(任何云端 provider
+都回 401)。它们会让 doctor 永远退出码非零, 反而盖住真问题。
+
+所以现在: 版本低于门禁 -> warn 而不是 fail; 端点不通 -> warn 而不是 fail。
+**判死交给逐本的配置漂移检测** —— 它才知道每本书实际用的是哪个 provider。
+
+输出: 8 个 ✅/⚠/❌ + 修复建议
 """
 from __future__ import annotations
 
@@ -32,6 +42,9 @@ log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
 MIN_PY = (3, 12)
+# 硬地板: 低于这个版本依赖真的装不上(不是"没被 CI 覆盖"的问题)。
+# 见 check_python 的说明 —— MIN_PY 是 CI 门禁下限, 不等于代码的实际下限。
+HARD_MIN_PY = (3, 9)
 MIN_DISK_GB = 1.0
 
 
@@ -39,13 +52,51 @@ class CheckResult(NamedTuple):
     name: str
     status: str  # "ok" | "warn" | "fail"
     detail: str
+    # 2026-10-02: 新增。原先只能塞 3 个字段, 于是「下一步该干什么」被迫和
+    # 「观测到什么」挤在同一句里, 渲染出来读起来像在报第二件事。给默认值,
+    # 既有 3 参数构造点不受影响。
+    advice: str = ""
 
 
-def check_python() -> CheckResult:
+def check_python(cfg: dict | None = None) -> CheckResult:
+    """Python 版本检查。
+
+    2026-10-02: 原来 MIN_PY 写死 (3, 12), 不满足就直接 fail。但生产服务器的
+    systemd 单元明确跑的是 /root/.local/bin/python3.11, 整套流水线在 3.11 上
+    正常工作 —— doctor 却永远报「❌ Python 版本: 3.11.15 < 3.12」并让命令
+    退出码非零。
+
+    问题是「CI 门禁覆盖到的下限」不等于「代码实际需要的下限」。前者是 3.12
+    (CI 矩阵跑 3.12/3.14), 后者低于它。于是每条告警都指向一个根本没坏的东西,
+    真正坏的信号被淹没。
+
+    改法:
+      - 下限可配 (config.yaml 的 runtime.min_python), 默认仍是 3.12
+      - 低于配置下限但**高于硬地板** -> warn 而非 fail, 并说清这不代表跑不了
+      - 低于硬地板 -> fail (openai SDK 等依赖真的装不上)
+    """
+    cfg = cfg or get_config()
+    floor_raw = ((cfg.get("runtime") or {}).get("min_python") or "3.12")
+    try:
+        want = tuple(int(x) for x in str(floor_raw).strip().split("."))
+        min_py = (want[0], want[1]) if len(want) >= 2 else MIN_PY
+    except (ValueError, IndexError):
+        min_py = MIN_PY
+    hard = HARD_MIN_PY
+
     v = sys.version_info
-    if v >= MIN_PY:
-        return CheckResult("Python 版本", "ok", f"{v.major}.{v.minor}.{v.micro} (≥ {MIN_PY[0]}.{MIN_PY[1]})")
-    return CheckResult("Python 版本", "fail", f"{v.major}.{v.minor}.{v.micro} < {MIN_PY[0]}.{MIN_PY[1]}")
+    cur = f"{v.major}.{v.minor}.{v.micro}"
+    if (v.major, v.minor) >= min_py:
+        return CheckResult("Python 版本", "ok", f"{cur} (≥ {min_py[0]}.{min_py[1]})")
+    if (v.major, v.minor) >= hard:
+        return CheckResult(
+            "Python 版本", "warn",
+            f"{cur} 低于 CI 门禁下限 {min_py[0]}.{min_py[1]}, 但高于硬地板 "
+            f"{hard[0]}.{hard[1]} —— 流水线可以正常运行, 只是没被 CI 覆盖过",
+            advice="如需对齐 CI, 在 config.yaml 设 runtime.min_python; "
+                   "确认部署用的就是目标解释器")
+    return CheckResult("Python 版本", "fail",
+                       f"{cur} < 硬地板 {hard[0]}.{hard[1]} —— 依赖装不上, 跑不了")
 
 
 def check_deps() -> CheckResult:
@@ -61,25 +112,65 @@ def check_deps() -> CheckResult:
 
 
 def check_llm(cfg: dict) -> CheckResult:
-    """探测 llama-server /v1/models."""
+    """探测**实际生效**的 LLM 端点(带鉴权)。
+
+    2026-10-02 重写。原来这一项有**两个独立**的毛病, 叠加起来就是长期假警报:
+
+      1) 读 `cfg["llm"]["api_base"]` —— 那是 legacy 的全局地址, 不是项目真正
+         使用的 provider 端点。provider 注册表(llm_providers.py)里的地址、
+         per-book 的覆盖, 它一概看不见。
+      2) 发一个**不带 Authorization 头**的 `GET /v1/models`。任何云端 provider
+         都会因此回 401, 哪怕 key 和模型名都完全正确。
+
+    生产实测: 三本书都配 minimax、端点实测可达、模型名正确, doctor 却报
+        ❌ LLM (llama-server): https://api.deepseek.com/v1 不可达: HTTP 401
+    —— 探的是一个没人用的地址, 而且没带 key。
+
+    现在走 provider 注册表解析出真实端点并带上 key。这仍然只是一项粗粒度的
+    「默认 provider 通不通」; **每本书实际用什么端点**由下面的
+    `check_llm_config_drift` 逐本判定(带 --deep 才真发请求)。
+
+    失败一律 warn 不 fail: 默认 provider 不通不代表这本书写不了 —— 它可能
+    压根没用默认 provider。把这一项升成致命, 就会像之前那样盖住真问题。
+    """
     try:
         import urllib.request
         import urllib.error
-        api_base = cfg.get("llm", {}).get("api_base", "http://127.0.0.1:60443/v1")
-        # api_base 通常 .../v1, 改 .../models
-        url = api_base.rstrip("/")
-        if not url.endswith("/models"):
-            if url.endswith("/v1"):
-                url += "/models"
-            else:
-                url += "/models"
+        from .llm_providers import resolve_model
+
+        provider = (cfg.get("llm", {}) or {}).get("provider") or "local"
+        try:
+            resolved = resolve_model(provider)
+        except KeyError as e:
+            return CheckResult("LLM 端点", "warn",
+                               f"无法解析默认 provider {provider!r}: {e}")
+        api_base = (resolved.get("api_base") or "").rstrip("/")
+        if not api_base:
+            return CheckResult("LLM 端点", "warn",
+                               f"provider [{provider}] 没配 api_base")
+        url = api_base + "/models"
+        key = resolved.get("api_key") or ""
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            body = resp.read().decode("utf-8", errors="ignore")[:200]
-            return CheckResult("LLM (llama-server)", "ok", f"{url} → 200 ({len(body)} bytes)")
+        if key and key != "no-key-needed":
+            req.add_header("Authorization", f"Bearer {key}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+            return CheckResult("LLM 端点", "ok",
+                               f"[{provider}] {api_base} → 200 ({len(body)} bytes)")
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            env_key = f"{provider.upper()}_API_KEY"
+            return CheckResult(
+                "LLM 端点", "warn",
+                f"[{provider}] {api_base} 返回 {e.code} — key 被拒",
+                detail=f"去 .env 配 {env_key}; 若这本书用的是别的 provider, "
+                       f"跑 novel.py doctor --deep 看逐本结果")
+        return CheckResult("LLM 端点", "warn", f"[{provider}] {api_base} → HTTP {e.code}")
     except Exception as e:
-        return CheckResult("LLM (llama-server)", "fail",
-                           f"{cfg.get('llm', {}).get('api_base', 'http://127.0.0.1:60443/v1')} 不可达: {type(e).__name__}: {e}")
+        return CheckResult("LLM 端点", "warn",
+                           f"[{provider}] {api_base} 不可达: {type(e).__name__}: {e}",
+                           advice="本地 provider 要先起 llama-server; 云端确认能出网。"
+                                  "逐本实际情况跑 novel.py doctor --deep")
 
 
 def check_disk() -> CheckResult:
@@ -133,7 +224,7 @@ def check_paths() -> CheckResult:
 def run_all() -> list[CheckResult]:
     cfg = get_config()
     return [
-        check_python(),
+        check_python(cfg),
         check_paths(),
         check_deps(),
         check_git(),
@@ -348,7 +439,7 @@ def _classify_ping_error(exc: BaseException, provider: str) -> DriftFinding:
     if status == 404:
         return DriftFinding(
             book="", kind="endpoint_not_found", severity="warn",
-            detail="HTTP 404 — 端点存在但没有这个 chat/completions 路径",
+            advice="HTTP 404 — 端点存在但没有这个 chat/completions 路径",
             hint="检查 api_base 是否该以 /v1 结尾",
         )
 

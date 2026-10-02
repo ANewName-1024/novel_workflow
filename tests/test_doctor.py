@@ -31,8 +31,15 @@ def test_check_disk():
 
 
 def test_check_llm():
+    # 2026-10-02: 检查名从 "LLM (llama-server)" 改成 "LLM 端点"。
+    #
+    # 旧名字本身就说明了问题: 这一项只探 llama-server, 读的是 config.yaml 的
+    # legacy llm.api_base, 而且**不带鉴权头** —— 任何云端 provider 都会回 401。
+    # 生产实测: 三本书都配 minimax 且端点实测可达, doctor 却报
+    # 「LLM (llama-server): https://api.deepseek.com/v1 不可达: HTTP 401」。
+    # 现在它探的是 provider 注册表里实际生效的端点, 所以名字也要跟着改。
     r = doctor.check_llm({})
-    assert r.name == "LLM (llama-server)"
+    assert r.name == "LLM 端点"
     assert r.status in ("ok", "pass", "warn", "fail")
 
 
