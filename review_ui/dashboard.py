@@ -1,15 +1,15 @@
 """
-review_ui/dashboard.py - v1.1 Web 娴佹按绾跨鐞嗛潰鏉?(API 钃濆浘)
+review_ui/dashboard.py - v1.1 流水线管理面板 (API 视图)
 
 5 routes (M2) + 1 SSE (M3):
-  POST /api/pipeline/start/<book>     瑙﹀彂鍐欑珷鑺?  POST /api/pipeline/cancel/<book>    鍙栨秷
-  GET  /api/pipeline/status/<book>    褰撳墠鐘舵€?(鍚?PID/stage/started_at)
-  GET  /api/pipeline/logs/<book>      鏈€杩?N 琛?(榛樿 100)
-  GET  /api/pipeline/logs/<book>/stream  SSE 娴?(M3)
-  GET  /api/pipeline/metrics/<book>   token 鐢ㄩ噺鑱氬悎
+  POST /api/pipeline/start/<book>     发起写章节  POST /api/pipeline/cancel/<book>    取消
+  GET  /api/pipeline/status/<book>    当前状态(含 PID/stage/started_at)
+  GET  /api/pipeline/logs/<book>      最后 N 行 (默认 100)
+  GET  /api/pipeline/logs/<book>/stream  SSE 流 (M3)
+  GET  /api/pipeline/metrics/<book>   token 用量聚合
 
-閴存潈: 鐢?review_ui/app.py 鐨?before_request 缁熶竴澶勭悊 (Basic Auth + session).
-閿欒鐮? 澶嶇敤 lib.errors.NovelError (NOT_FOUND / GENERIC / INVALID_ARGS).
+鉴权: 由 review_ui/app.py 的 before_request 统一处理 (Basic Auth + session).
+错误码: 复用 lib.errors.NovelError (NOT_FOUND / GENERIC / INVALID_ARGS).
 """
 from __future__ import annotations
 
@@ -84,15 +84,35 @@ def api_overview():
 def api_overview_stream():
     """SSE: push overview state every N seconds.
 
-    每 3s poll 所有项目状态, 仅在有变化时推送.
+    每 3s poll 所有项目状态, 仅在有变化时推送 data。
+
+    2026-10-02: 过去是裸 `while True` —— 没有心跳、没有 retry、没有寿命上限。
+    实测挂 45s 不报错也不出数据(签名没变), 而 nginx 的
+    proxy_read_timeout 是 300s, 于是浏览器每 5 分钟被静默掐断再重连,
+    同一份配置里另一个 location 用的还是 86400s(取决于先撞到哪个)。
+    现在三件事都补齐, 约定与 /api/pipeline/logs/<book>/stream 对齐:
+      - `: keepalive` 注释帧: 状态不变也定期说话, 中间层知道连接还活着
+      - `retry: <ms>`:       重连间隔显式下发, 不靠浏览器默认值
+      - `event: end` + return: 到 max_lifetime 主动收尾, generator 自然退出
     """
-    import threading as _th
     cfg = _dashboard_cfg()
-    poll = float(cfg.get("stream_poll_interval", 1.0)) * 3  # 3s for overview
+    # lo 是"配错了也别让它变成 0/负数"的地板, 不是业务下限:
+    # max_lifetime=0 会让 generator 第一轮就收尾, 页面等于没接上实时。
+    poll = _cfg_float(cfg, "stream_poll_interval", 1.0, 0.01) * 3  # 3s for overview
+    max_life = _cfg_float(cfg, "stream_max_lifetime", 1800.0, 0.1)
+    hb = _cfg_float(cfg, "stream_heartbeat_interval", 15.0, 0.01)
+    retry_ms = int(_cfg_float(cfg, "stream_retry_ms", 5000, 100))
+    # 计时器每轮才醒一次, 所以心跳的真实间隔是 poll 的整数倍;
+    # 再钳一道 max_life, 保证"到点收尾"前至少发过一次心跳。
+    hb = min(hb, max_life)
     # cache 上一帧 hash, 只有变化时才推
     last_sig = {"v": None}
 
     def generate():
+        started = time.monotonic()
+        last_hb = started
+        # 显式下发重连间隔, 而不是让浏览器用自己那个默认值
+        yield f"retry: {retry_ms}\n\n"
         while True:
             try:
                 books = storage.list_projects()
@@ -120,6 +140,15 @@ def api_overview_stream():
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             except Exception as e:
                 yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            now = time.monotonic()
+            # 先判寿命: 到点就收尾, 不再发心跳。
+            # event: end 与 logs/.../stream 同一个约定, 客户端据此重连。
+            if now - started >= max_life:
+                yield "event: end\ndata: {}\n\n"
+                return
+            if now - last_hb >= hb:
+                yield ": keepalive\n\n"
+                last_hb = now
             time.sleep(poll)
 
     return Response(
@@ -135,12 +164,12 @@ def api_overview_stream():
 
 # ── v1.3 M1 结束 ───────────────────────────────────────────────
 
-# url_prefix 鐣欑┖, 璺敱閲屾墜鍐?/api/pipeline/...
+# url_prefix 留空, 路由手写 /api/pipeline/...
 
 
 @dashboard_bp.route("/dashboard/<book>")
 def dashboard_page(book):
-    """娴佹按绾块潰鏉块〉闈?"""
+    """流水线面板页面"""
     if not storage.project_exists(book):
         # 2026-10-01: 过去这里是 f"<h1>项目 [{book}] 不存在</h1>" —— book 直接
         # 来自 URL 且未经任何转义(不走 render_template 就没有 Jinja autoescape),
@@ -152,25 +181,44 @@ def dashboard_page(book):
                                title="页面不存在",
                                message=f"项目 [{book}] 不存在",
                                detail=""), 404
-    # 涓嬩竴绔犺妭: progress.current_chapter + 1 (浠?storage 璇?
+    # 下一章节: progress.current_chapter + 1 (从 storage 读)
     prog = storage.read_json(book, "progress.json") or {}
     next_ch = (prog.get("current_chapter") or 0) + 1
     return render_template("dashboard.html", book=book, next_chapter=next_ch)
 
 
 def _dashboard_cfg() -> dict:
-    """璇?dashboard 閰嶇疆 (浠庡叏灞€ config.yaml), 澶辫触鐢?defaults."""
+    """读 dashboard 配置 (来自全局 config.yaml), 失败回落到 defaults."""
     return get_config().get("dashboard", {
         "log_tail_default": 100,
         "log_max_buffer": 500,
         "metrics_retention_days": 30,
         "cancel_grace_seconds": 5,
         "stream_poll_interval": 1.0,
+        # 2026-10-02: overview SSE 的一次连接最长活多久(秒), 到点发
+        # `event: end` 主动收尾。代理的 proxy_read_timeout 是 300s,
+        # 浏览器自己重连, 但服务端那条 generator 会一直占着 worker 线程。
+        "stream_max_lifetime": 1800.0,
+        "stream_heartbeat_interval": 15.0,
+        "stream_retry_ms": 5000,
     })
 
 
+def _cfg_float(cfg: dict, key: str, default: float, lo: float) -> float:
+    """从 dashboard 配置里取一个正数, 非法/越界一律回落到默认值。
+
+    配置是手写的 yaml —— 写成 "15s" / "" / null 都会让 float() 直接冒泡,
+    而这些读取发生在响应流开始之前, 抛出去就是一个 500。
+    """
+    try:
+        v = float(cfg.get(key, default))
+    except (TypeError, ValueError):
+        return default
+    return v if v >= lo else default
+
+
 def _err_response(e: NovelError) -> tuple[Response, int]:
-    """缁熶竴 NovelError 鈫?JSON 鍝嶅簲."""
+    """统一 NovelError → JSON 响应."""
     return jsonify({
         "error": e.message,
         "code": int(e.code),
@@ -179,26 +227,26 @@ def _err_response(e: NovelError) -> tuple[Response, int]:
     }), int(e.code) if int(e.code) >= 400 else 400
 
 
-# 鈹€鈹€ 1. start 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── 1. start ──────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/pipeline/start/<book>", methods=["POST"])
 def api_pipeline_start(book):
-    """瑙﹀彂鍐?1 涓珷鑺?
+    """发起写 1 个章节
 
     Form params:
-      chapters: int (required) - 瑕佸啓鐨勭珷鑺傚彿
-      auto_rewrite: bool - 鏄惁鑷姩閲嶅啓 (榛樿 true)
+      chapters: int (required) - 要写的章节号
+      auto_rewrite: bool - 是否自动重写 (默认 true)
     """
     try:
         ch_str = request.form.get("chapters") or request.json.get("chapters") if request.is_json else request.form.get("chapters")
         if ch_str is None:
-            raise NovelError(ErrorCode.INVALID_ARGS, "缂哄皯 'chapters' 鍙傛暟 (瑕佸啓鐨勭珷鑺傚彿)")
+            raise NovelError(ErrorCode.INVALID_ARGS, "缺少 'chapters' 参数 (要写的章节号)")
         try:
             chapter_num = int(ch_str)
         except ValueError:
-            raise NovelError(ErrorCode.INVALID_ARGS, f"chapters 蹇呴』鏄暣鏁? 鏀跺埌: {ch_str!r}")
+            raise NovelError(ErrorCode.INVALID_ARGS, f"chapters 必须是整数, 收到: {ch_str!r}")
         if chapter_num < 1:
-            raise NovelError(ErrorCode.INVALID_ARGS, f"chapters 蹇呴』 >= 1, 鏀跺埌: {chapter_num}")
+            raise NovelError(ErrorCode.INVALID_ARGS, f"chapters 必须 >= 1, 收到: {chapter_num}")
 
         auto_rw_raw = request.form.get("auto_rewrite", "true") if not request.is_json else request.json.get("auto_rewrite", True)
         auto_rewrite = str(auto_rw_raw).lower() in ("1", "true", "yes", "on")
@@ -210,11 +258,11 @@ def api_pipeline_start(book):
         return _err_response(e)
 
 
-# 鈹€鈹€ 2. cancel 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── 2. cancel ──────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/pipeline/cancel/<book>", methods=["POST"])
 def api_pipeline_cancel(book):
-    """鍙栨秷杩愯涓殑瀛愯繘绋?"""
+    """取消运行中的子进程"""
     try:
         runner = pipeline.get_runner()
         state = runner.cancel(book)
@@ -223,27 +271,27 @@ def api_pipeline_cancel(book):
         return _err_response(e)
 
 
-# 鈹€鈹€ 3. status 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── 3. status ──────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/pipeline/status/<book>")
 def api_pipeline_status(book):
-    """璇?.pipeline_state.json + 鏍″噯 PID 鐘舵€?"""
+    """读 .pipeline_state.json + 校准 PID 状态"""
     runner = pipeline.get_runner()
     state = runner.status(book)
     if state is None:
         return jsonify({
             "ok": True,
             "state": None,
-            "message": "娌℃湁娴佹按绾胯褰?(浠庢湭鍚姩鎴栧凡娓呯悊)",
+            "message": "没有流水线记录 (从未启动或已清理)",
         }), 200
     return jsonify({"ok": True, "state": state}), 200
 
 
-# 鈹€鈹€ 4. logs (鏈€杩?N 琛? 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── 4. logs ──────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/pipeline/logs/<book>")
 def api_pipeline_logs(book):
-    """杩斿洖 log 鏂囦欢鏈€鍚?N 琛?(榛樿 100, 涓婇檺 500)."""
+    """返回 log 文件最后 N 行 (默认 100, 上限 500)."""
     cfg = _dashboard_cfg()
     default_n = cfg.get("log_tail_default", 100)
     max_n = cfg.get("log_max_buffer", 500)
@@ -262,11 +310,11 @@ def api_pipeline_logs(book):
     }), 200
 
 
-# 鈹€鈹€ 5. metrics 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── 5. metrics ──────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/pipeline/metrics/<book>")
 def api_pipeline_metrics(book):
-    """鑱氬悎 metrics.jsonl.
+    """聚合 metrics.jsonl.
 
     Query: range=all|1d|7d
     """
@@ -278,15 +326,17 @@ def api_pipeline_metrics(book):
     return jsonify({"ok": True, "range": range_str, **data}), 200
 
 
-# 鈹€鈹€ 6. SSE log stream (M3) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ── 6. SSE log stream (M3) ──────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/pipeline/logs/<book>/stream")
 def api_pipeline_logs_stream(book):
-    """SSE 娴? 鎸佺画鎺?log 鏂拌.
+    """SSE 流, 持续推 log 新行。
 
-    琛屼负:
-    - 瀹㈡埛绔繛涓婂悗, 绔嬪嵆浠?log 鏂囦欢鏈熬寮€濮嬫帹 (涓嶉噸澶嶅巻鍙?
-    - 杩涚▼璺戝畬 (status=done/failed/cancelled) 鍚?flush 娈嬬暀 log, 鍏抽棴娴?    - 瀹㈡埛绔柇寮€ 鈫?generator 鑷劧閫€鍑? 涓嶆硠婕?    """
+    行为:
+    - 客户端连上后, 立即从 log 文件尾部开始推 (不重复历史)
+    - 进程跑完 (status=done/failed/cancelled) 后 flush 剩余 log, 关闭流
+    - 客户端断开 -> generator 自然退出, 不泄漏
+    """
     cfg = _dashboard_cfg()
     poll = float(cfg.get("stream_poll_interval", 1.0))
     runner = pipeline.get_runner()
@@ -294,11 +344,11 @@ def api_pipeline_logs_stream(book):
     def generate():
         try:
             for line in runner.stream_log(book, poll_interval=poll):
-                # SSE 鍗忚: data: <line>\n\n
-                # 娉ㄦ剰 line 宸茬粡甯?\n, 鍐嶅姞涓€涓?\n 缁堟 event
+                # SSE 协议: data: <line>\n\n
+                # 注意 line 已经带了\n, 再追加一个\n 终止 event
                 yield f"data: {line.rstrip()}\n\n"
-                # 姣忚 flush 涓€娆?(time.sleep 0, 璁?yield 绔嬪嵆杩斿洖)
-            # 鍏抽棴浜嬩欢
+                # 每行 flush 一次 (time.sleep 0), 让 yield 立即返回
+            # 关闭事件
             yield "event: end\ndata: {}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
@@ -308,7 +358,7 @@ def api_pipeline_logs_stream(book):
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # nginx: 绂佺敤缂撳啿
+            "X-Accel-Buffering": "no",  # nginx: 禁用缓冲
             "Connection": "keep-alive",
         },
     )

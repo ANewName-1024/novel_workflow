@@ -634,29 +634,16 @@ def cmd_config(args: argparse.Namespace) -> None:
         print(json.dumps(cfg, ensure_ascii=False, indent=2))
 
 def cmd_export(args: argparse.Namespace) -> None:
+    # 2026-10-02: 拼 Markdown 的逻辑抽到 lib/exporter.py(纯读), 供 Web UI
+    # 复用; 落盘与两行控制台输出保持原样 —— 有脚本按文件名抓稿子。
+    from lib import exporter
+
     book = args.book
-    chapters = storage.list_chapters(book)
-    if not chapters:
-        raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 没有章节可导出")
-    cfg = storage.read_json(book, "config.json") or {}
-
-    out_path = storage.project_root(book) / f"{book}_全书.md"
-    lines = [f"# {cfg.get('book_name', book)}\n",
-             f"\n## 基本信息\n",
-             f"- 题材：{cfg.get('genre')}\n",
-             f"- 基调：{cfg.get('tone')}\n",
-             f"- 主角：{cfg.get('protagonist')}\n",
-             f"- 字数：{sum(c['word_count'] for c in chapters)} 字\n",
-             f"\n---\n"]
-
-    for ch in chapters:
-        text = storage.read_chapter(book, ch["id"]) or ""
-        lines.append(f"\n{text}\n\n---\n")
-
-    out_path.write_text("".join(lines), encoding="utf-8")
-    total_wc = sum(c["word_count"] for c in chapters)
+    markdown, n_chapters, total_wc = exporter.build_full_book_markdown(book)
+    out_path = storage.project_root(book) / exporter.default_filename(book)
+    out_path.write_text(markdown, encoding="utf-8")
     print(f"✓ 已导出: {out_path}")
-    print(f"  {len(chapters)} 章 | {total_wc} 字")
+    print(f"  {n_chapters} 章 | {total_wc} 字")
 
 # ── review service commands ───────────────────────────────────────────────────
 

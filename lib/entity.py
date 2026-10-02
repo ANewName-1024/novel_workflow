@@ -66,6 +66,16 @@ def gen_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:6]}"
 
 
+def _ensure_id(d: dict, prefix: str) -> None:
+    """给实体 dict 补上稳定 id: 缺失/空串/非字符串才生成, 已有 id 原样保留.
+
+    4 个实体的 from_dict 共用这一处。否则"有的重新生成、有的保留"的行为
+    分裂, 同一个实体的 id 会在两次读之间漂移。
+    """
+    if not isinstance(d.get("id"), str) or not d["id"]:
+        d["id"] = gen_id(prefix)
+
+
 # ── Character ─────────────────────────────────────────────────────────────
 
 @dataclass
@@ -73,6 +83,7 @@ class Character:
     """角色实体."""
 
     name: str
+    id: str = field(default_factory=lambda: gen_id("char"))  # 稳定主键 (改名不改身份)
     role: str = "配角"                            # 主角/配角/反派/路人
     traits: str = ""                              # 性格特征 (短句)
     appearance: str = ""                          # 外貌 (若有)
@@ -98,6 +109,8 @@ class Character:
         filtered = {k: v for k, v in d.items() if k in valid_keys}
         if "name" not in filtered or not filtered["name"]:
             raise ValueError("Character.name 不能为空")
+        # 生成 id (如果没有) —— 旧数据没有 id, 补一个并由 memory 落盘
+        _ensure_id(filtered, "char")
         if "created_at" not in filtered:
             filtered["created_at"] = _now_iso()
         if "updated_at" not in filtered:
@@ -112,6 +125,7 @@ class Event:
     """事件实体."""
 
     event: str                                    # 事件简述 (20字内)
+    id: str = field(default_factory=lambda: gen_id("event"))  # 稳定主键 (改述不改身份)
     significance: str = ""                        # 对主线的影响
     consequences: str = ""                        # 后续可能影响
     chapter: int | None = None                    # 发生章节号
@@ -128,6 +142,8 @@ class Event:
         filtered = {k: v for k, v in d.items() if k in valid_keys}
         if "event" not in filtered or not filtered["event"]:
             raise ValueError("Event.event 不能为空")
+        # 生成 id (如果没有)
+        _ensure_id(filtered, "event")
         if "extracted_at" not in filtered:
             filtered["extracted_at"] = _now_iso()
         return cls(**filtered)
@@ -140,6 +156,7 @@ class Foreshadow:
     """伏笔实体."""
 
     foreshadow: str                               # 伏笔内容 (15字内)
+    id: str = field(default_factory=lambda: gen_id("fs"))     # 稳定主键 (改述不改身份)
     significance: str = ""                        # 重要性
     hints: str = ""                               # 本章中出现的暗示位置/措辞
     status: str = ForeshadowStatus.PLANTED.value
@@ -171,6 +188,8 @@ class Foreshadow:
         filtered = {k: v for k, v in d.items() if k in valid_keys}
         if "foreshadow" not in filtered or not filtered["foreshadow"]:
             raise ValueError("Foreshadow.foreshadow 不能为空")
+        # 生成 id (如果没有)
+        _ensure_id(filtered, "fs")
         # legacy: 旧数据 status 可能是缺失的
         if "status" not in filtered or not filtered["status"]:
             filtered["status"] = ForeshadowStatus.PLANTED.value
@@ -235,8 +254,7 @@ class WorldRule:
             else:
                 raise ValueError("WorldRule.name 不能为空")
         # 生成 id (如果没有)
-        if "id" not in filtered or not filtered["id"]:
-            filtered["id"] = gen_id("rule")
+        _ensure_id(filtered, "rule")
         # 默认值
         if "created_at" not in filtered:
             filtered["created_at"] = _now_iso()
@@ -252,7 +270,7 @@ class Entity:
     """通用实体包装, API 返回统一格式."""
 
     type: str          # EntityType.value
-    id: str            # 主键 (Character 用 name, 其他用自增 id)
+    id: str            # 稳定主键 (4 类实体统一用 dataclass 的 id 字段)
     data: dict         # 上述任一模型的 to_dict()
 
     def to_dict(self) -> dict:
@@ -260,12 +278,17 @@ class Entity:
 
     @classmethod
     def from_dataclass(cls, obj: Any, entity_type: EntityType) -> "Entity":
+        """4 类实体的 id 统一取 dataclass 的 id 字段。
+
+        以前 Character 用 name、Event/Foreshadow 用文本前 30 字当主键, 改名就等于
+        换了一个实体。现在 id 由 default_factory 生成、与显示名解耦。
+        """
         if isinstance(obj, Character):
-            return cls(type=entity_type.value, id=obj.name, data=obj.to_dict())
+            return cls(type=entity_type.value, id=obj.id, data=obj.to_dict())
         elif isinstance(obj, Event):
-            return cls(type=entity_type.value, id=obj.event[:30], data=obj.to_dict())
+            return cls(type=entity_type.value, id=obj.id, data=obj.to_dict())
         elif isinstance(obj, Foreshadow):
-            return cls(type=entity_type.value, id=obj.foreshadow[:30], data=obj.to_dict())
+            return cls(type=entity_type.value, id=obj.id, data=obj.to_dict())
         elif isinstance(obj, WorldRule):
             return cls(type=entity_type.value, id=obj.id, data=obj.to_dict())
         else:

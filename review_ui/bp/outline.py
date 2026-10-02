@@ -62,12 +62,26 @@ def api_outline_node_add(book):
     body: {parent_vol: 'vol_1', position: 0, title: '...', summary: '...',
            pov: '...', key_events: [...], foreshadow: [...]}
 
+    title 必填(去空白后非空); summary 可空 —— 它的合法空值就是 ""。
     parent_vol is optional; if missing, falls back to:
       1. The first existing volume in the outline.
       2. Auto-create a default 'vol_1' if the outline has no volumes.
+
+    2026-10-02 (P4): 过去 POST {} 返回 201, 建出一个标题为「未命名章节」、
+    summary 为空的节点; 大纲还没有卷时, 同一次请求还会顺手建一个「默认卷」
+    —— 一次空请求改两处, 而调用方得到的是「成功」。所以 title 校验放在
+    load_outline_or_empty / add_volume 之前: 400 的请求一个字节都不写,
+    兜底卷那条支路在拒绝路径上根本走不到。
     """
     _ensure_book(book)
     body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        abort(400, description="body must be JSON object")
+    raw_title = body.get("title")
+    title = raw_title.strip() if isinstance(raw_title, str) else ""
+    if not title:
+        abort(400, description="title (章节标题) 是必填项, 不能为空")
+
     parent_vol = body.get("parent_vol") or body.get("vol")
     position = _int_arg("position", 0, src=body)
     o = oe.load_outline_or_empty(book)
@@ -80,6 +94,7 @@ def api_outline_node_add(book):
             default_vol = oe.add_volume(o, title="默认卷", summary="自动创建")
             parent_vol = default_vol["id"]
     fields = {k: v for k, v in body.items() if k in oe.NODE_FIELDS and k != "id"}
+    fields["title"] = title  # 写落盘的是去过空白的 title, 不是原始 body 值
     node = oe.add_node(o, parent_vol, position, **fields)
     oe.save_outline(book, o)
     return jsonify({"ok": True, "node": node, "parent_vol": parent_vol}), 201

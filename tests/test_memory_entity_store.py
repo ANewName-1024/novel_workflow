@@ -198,7 +198,10 @@ class TestEntityStoreGeneric:
 
         chars = store.list_by_type(EntityType.CHARACTER)
         assert len(chars) == 1
-        assert chars[0].id == "主角"
+        # 稳定 id (2026-10-02): 不再等于显示名。list_by_type 返回 Entity 包装,
+        # 显示名在 .data 里, 身份在 .id 上。
+        assert chars[0].id.startswith("char_")
+        assert chars[0].data["name"] == "主角"
 
         wrs = store.list_by_type(EntityType.WORLD_RULE)
         assert len(wrs) == 1

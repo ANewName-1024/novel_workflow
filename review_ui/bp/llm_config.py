@@ -24,7 +24,7 @@ import os
 from flask import request
 from lib import storage
 
-from review_ui.core import _ensure_book
+from review_ui.core import _ensure_book, pick_config_updates
 from .projects import _validate_book_slug
 
 log = logging.getLogger("novel.review_ui.llm_config")
@@ -37,7 +37,19 @@ bp = Blueprint("llm_config", __name__,
 
 @bp.route("/api/llm/providers")
 def api_llm_providers():
-    """GET /api/llm/providers — 列所有 provider 配置 (不暴露完整 key)."""
+    """GET /api/llm/providers — 列所有 provider 配置 (不暴露完整 key).
+
+    可选 query: ?book=<slug> —— 让 current_model 报那本书真实会用到的模型
+    (不传 = 全局解析, 即「没有书籍级覆盖时会用什么」)。
+    (book 从 request.args 读, 不用视图参数: 这条路由的 rule 里没有 <book>
+     占位符, 本机 Flask 版本不会把 query string 填进视图参数。)
+
+    2026-10-02 (P7): current_model 过去是 os.environ.get("MODEL", ""), 而
+    生产环境根本没设这个变量 —— 这个字段恒为空, 页面上「当前模型」那一行
+    永远显示成没有。真正生效的模型是 lib/llm_providers.py:resolve_for_book
+    按「书籍 config.json 覆盖 > 全局 config.yaml > provider 默认」解析出来的,
+    这里直接走同一条路径, 不另造一套解析。
+    """
     from lib import llm_providers as lp
     providers = {}
     # Use merged config (BUILTIN + user-defined from config.yaml)
@@ -49,12 +61,29 @@ def api_llm_providers():
             "api_key_configured": bool(cfg.get("api_key")),
             "models": cfg.get("models", []),
         }
+    default_provider = os.environ.get("DEFAULT_PROVIDER", "local")
     return jsonify({
         "ok": True,
         "providers": providers,
-        "default_provider": os.environ.get("DEFAULT_PROVIDER", "local"),
-        "current_model": os.environ.get("MODEL", ""),
+        "default_provider": default_provider,
+        "current_model": _effective_model(lp, request.args.get("book", ""),
+                                          default_provider, providers),
     })
+
+
+def _effective_model(lp, book, default_provider: str, providers: dict) -> str:
+    """这本书(或全局)真实会用到的模型名 —— 走 llm_providers.resolve_for_book。
+
+    解析失败(书籍 cfg 里写了个没注册的 provider、config.yaml 坏了等)不让
+    整条接口 500: 退回 default_provider 的默认模型, 页面至少有值可显示,
+    真实报错由 log 带出去。
+    """
+    try:
+        return lp.resolve_for_book(book or "", fallback_provider=default_provider)["model"] or ""
+    except Exception as e:
+        log.warning("解析生效模型失败, 回退到 default_provider 默认值 (book=%r): %s: %s",
+                    book, type(e).__name__, e, exc_info=True)
+        return providers.get(default_provider, {}).get("model", "")
 
 
 @bp.route("/api/llm/health", methods=["POST"])
@@ -158,8 +187,30 @@ def api_book_config_write(book):
     if not isinstance(body, dict):
         return jsonify({"ok": False, "error": "body 必须是 JSON 对象"}), 400
 
+    # 2026-10-02 (P1): 过去是 cfg.update(body) —— 调用方发的任何 key 都直接
+    # 写进 config.json, 然后回一句「已保存」。实测 POST {"bogus_field": 1}
+    # 得到 200 已保存, 之后 GET 把这个 key 原样读回来; 而 llm_model /
+    # api_base / llm_provider 是生成流水线要读的字段, 界面上一处拼写错误
+    # 就静默落盘, 静默改变后面章节的生成方式。
+    # 现在按 review_ui/core.py:EDITABLE_CONFIG_FIELDS 过滤(与 PUT
+    # /api/projects/<book> 同一份名单), 并把被丢掉的 key 回报给调用方 ——
+    # 拼错了要看得见, 不能只是「不写」。
+    try:
+        updates = pick_config_updates(body)
+    except (TypeError, ValueError) as e:
+        return jsonify({"ok": False, "error": f"字段类型非法: {e}"}), 400
+    if not updates:
+        # 一个可写字段都没有 —— 这是调用方的错(键名拼错/写错了地方),
+        # 不是一次成功的保存。一个字节都不写, 连 updated_at 都不盖。
+        return jsonify({
+            "ok": False,
+            "error": "没有可写的字段: 请求里的 key 全都不在可写白名单内",
+            "ignored": sorted(body.keys()),
+        }), 400
+
+    ignored = sorted(k for k in body if k not in updates)
     cfg = storage.read_json(book, "config.json") or {}
-    cfg.update(body)
+    cfg.update(updates)
     storage.write_json(book, "config.json", cfg)
 
     # 同步 SQLite 镜像。GET /api/projects 是 SQLite 优先 + 文件兜底,
@@ -171,4 +222,5 @@ def api_book_config_write(book):
         log.warning("书籍配置镜像写入 SQLite 失败, 读回将走文件兜底 (book=%s): %s: %s",
                     book, type(e).__name__, e, exc_info=True)
 
-    return jsonify({"ok": True, "message": "已保存"})
+    return jsonify({"ok": True, "message": "已保存",
+                    "changed": sorted(updates), "ignored": ignored})

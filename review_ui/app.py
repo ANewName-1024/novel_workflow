@@ -15,6 +15,8 @@ Endpoints:
   POST /api/false-positive/<book>/<ch>  mark false positive (body: {"notes": "..."})
   GET  /api/history/<book>      full history + audit log
   GET  /api/stats/<book>        counters
+  GET  /api/export/<book>       full book as markdown (JSON)
+  GET  /api/export/<book>/download  full book as a .md file download
 
 Run:
   python review_ui/app.py [--port 21199] [--host 127.0.0.1]
@@ -77,8 +79,12 @@ from .bp import (  # noqa: E402
     chapter_bp, comments_bp, entities_bp, llm_config_bp,
     notifications_bp, outline_bp, pipeline_bp, projects_bp, review_bp,
 )
+# 导出蓝图不经过 bp/__init__.py 的再导出: 那个文件是所有域共用的清单,
+# 改它等于和别的域抢同一个文件。这里直接从自己的模块取, 注册位置仍在下面。
+from .bp.export import bp as export_bp  # noqa: E402
 for _bp in (outline_bp, chapter_bp, entities_bp, projects_bp, review_bp,
-            comments_bp, notifications_bp, llm_config_bp, pipeline_bp):
+            comments_bp, notifications_bp, llm_config_bp, pipeline_bp,
+            export_bp):
     app.register_blueprint(_bp)
 
 # ── 向后兼容再导出(Phase 1)────────────────────────────────────────────
@@ -193,6 +199,24 @@ def _nav_context():
         cur_title = cfg_b.get('book_name') or book
         cur_genre = cfg_b.get('genre', '')
 
+    # 通知未读数 (过去硬编码 0, _navbar.html 的铃铛因此永远不亮)。
+    # 身份与 book.html 的 `cfg.reviewer|default('wei_chao')` 取同一个来源。
+    unread_count = 0
+    unread_error = None
+    if book:
+        try:
+            from lib import comments as _comm
+            _user = (cfg_b.get('reviewer') or 'wei_chao')
+            unread_count = int(_comm.unread_count(book, _user) or 0)
+        except Exception as e:
+            # 这是 @app.context_processor —— 每一页渲染都跑。这里抛出去
+            # 就是整站白屏, 所以与上面的 books_error 同一套防御: 记日志,
+            # 退化成 0(铃铛不亮, 但页面照常渲染)。
+            unread_error = str(e)
+            unread_count = 0
+            log.error("导航栏未读通知数加载失败, 铃铛不亮: %s: %s",
+                      type(e).__name__, e, exc_info=True)
+
     return dict(nav={
         'global_active': global_active,
         'book_active': book_active,
@@ -201,7 +225,8 @@ def _nav_context():
         'current_book': book,
         'current_book_title': cur_title,
         'current_book_genre': cur_genre,
-        'unread_count': 0,  # TODO: 接通知 API
+        'unread_count': unread_count,
+        'unread_error': unread_error,  # 同 books_error: 只作诊断, 不影响渲染
     })
 
 

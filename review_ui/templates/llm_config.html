@@ -53,6 +53,9 @@
 </p>
 
 <h2 style="margin-top:24px;">注册的 Provider</h2>
+<p class="subtitle" style="margin:0 0 10px;">
+  当前实际生效的模型: <span id="effective-model" class="model-name">加载中…</span>
+</p>
 <div id="providers-list">
   <p style="color:var(--muted);">加载中…</p>
 </div>
@@ -68,6 +71,7 @@
   <input type="text" id="book-model-input" placeholder="留空自动" style="width:240px;">
   <button class="btn-test" onclick="saveBookConfig()">💾 保存</button>
   <span id="book-save-msg" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
+  <span id="book-effective-model" style="font-size:12px;color:var(--muted);"></span>
 </div>
 {% endif %}
 {% endblock %}
@@ -76,10 +80,14 @@
 <script>
 async function loadProviders() {
   const el = document.getElementById('providers-list');
+  const effEl = document.getElementById('effective-model');
   try {
     const r = await fetch('/api/llm/providers');
     const data = await r.json();
     if (!data.ok) { el.innerHTML = `<p style="color:var(--crit);">${data.error}</p>`; return; }
+    // current_model 是后端按 lib/llm_providers.resolve_for_book 真解析出来的
+    // 生效模型(过去这里是 os.environ["MODEL"], 生产上没设 → 恒为空)。
+    if (effEl) effEl.textContent = data.current_model || '(未解析到)';
     el.innerHTML = '';
     for (const [name, cfg] of Object.entries(data.providers)) {
       const card = document.createElement('div');
@@ -143,9 +151,14 @@ async function loadBookConfig() {
   const input = document.getElementById('book-model-input');
   if (!select) return;
   try {
-    const r = await fetch('/api/llm/providers');
+    // 带 book 参数: current_model 报的是「这本书」实际会用到的模型,
+    // 而不是全局兜底那个。
+    const book = {{ (nav.current_book or '') | tojson }};
+    const r = await fetch('/api/llm/providers' + (book ? '?book=' + encodeURIComponent(book) : ''));
     const data = await r.json();
     if (!data.ok) return;
+    const eff = document.getElementById('book-effective-model');
+    if (eff) eff.textContent = data.current_model ? `实际生效: ${data.current_model}` : '';
     _bookProviders = Object.keys(data.providers);
     select.innerHTML = _bookProviders.map(p =>
       `<option value="${p}">${p}</option>`

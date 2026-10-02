@@ -80,7 +80,9 @@ def _diff_dict(before: dict | None, after: dict | None) -> dict:
     fields_changed = []
     all_keys = set(before.keys()) | set(after.keys())
     # Skip noisy fields
-    skip = {"updated_at", "extracted_at"}
+    # "id" (2026-10-02): 稳定主键是身份而非内容。实体 id 迁移会给每个旧实体补一个 id,
+    # 那是补数据不是改内容, 不该让每章的实体变更日志都列出一遍 id。
+    skip = {"updated_at", "extracted_at", "id"}
     for k in all_keys:
         if k in skip:
             continue

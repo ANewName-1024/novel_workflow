@@ -180,6 +180,14 @@
   <span>📄 {{ chapters|length }} 章</span>
 </div>
 
+{# 导出全书 (2026-10-02) —— 此前 Web UI 零导出入口, 成稿只能 SSH 跑 CLI #}
+<div style="margin-bottom:14px;">
+  <button type="button" class="btn secondary" id="export-book-btn"
+          {% if not chapters %}disabled title="本书还没有章节可导出"{% endif %}>
+    ⬇ 导出全书 Markdown
+  </button>
+</div>
+
 <script>
 (async function() {
   const BOOK = "{{ book }}";
@@ -476,6 +484,45 @@ document.addEventListener("DOMContentLoaded", loadLLMProviders);
       btn.textContent = '✗ 失败';
       btn.title = String(e);
       setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
+    }
+  });
+})();
+</script>
+<script>
+// === 导出全书 (2026-10-02) ===
+// 走 GET /api/export/<book> 拿 markdown + 统计, 再用 Blob 触发浏览器下载。
+// 走 JSON 而不是直接 <a href> 到 /download, 是为了把章节数/字数显示出来,
+// 并且让失败有提示 (NW.api 抛错 -> NW.toast) —— 直接开新窗口只能看到空白。
+(function() {
+  const btn = document.getElementById('export-book-btn');
+  if (!btn) return;
+  const HAS_CHAPTERS = {{ 'true' if chapters else 'false' }};
+
+  btn.addEventListener('click', async () => {
+    if (!HAS_CHAPTERS) { NW.toast('本书还没有章节可导出', 'warn'); return; }
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ 生成中...';
+    NW.spinner(true);
+    try {
+      const d = await NW.api('GET', '/api/export/' + encodeURIComponent('{{ book }}'));
+      // 用服务端给的文件名(带中文)下载 —— 浏览器能正确处理 a.download 里的非 ASCII
+      const blob = new Blob([d.markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = d.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      NW.toast(`已生成 ${d.chapters} 章 / ${d.words} 字`, 'ok');
+    } catch (e) {
+      NW.toast('导出失败: ' + e.message, 'err', 5000);
+    } finally {
+      NW.spinner(false);
+      btn.textContent = orig;
+      btn.disabled = !HAS_CHAPTERS;
     }
   });
 })();

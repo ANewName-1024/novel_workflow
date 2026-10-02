@@ -266,6 +266,16 @@ function connectSSE() {
     liveDot.classList.add("disconnected");
     liveLabel.textContent = "连接断开";
   };
+  // 服务端到 stream_max_lifetime 会主动发 `event: end` 收尾(2026-10-02)。
+  // EventSource 遇到流结束也会自己重连, 但那要等浏览器默认间隔; 这里显式
+  // close + 定时重连, 让重连立刻发生。约定与 logs/.../stream 的 end 一致。
+  es.addEventListener("end", () => {
+    es.close();
+    es = null;
+    liveDot.classList.add("disconnected");
+    liveLabel.textContent = "重连中…";
+    setTimeout(connectSSE, 1000);
+  });
 }
 
 function updateStatusOnly(projects) {

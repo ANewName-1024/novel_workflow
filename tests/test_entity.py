@@ -224,7 +224,10 @@ class TestEntity:
         c = Character(name="主角")
         e = Entity.from_dataclass(c, EntityType.CHARACTER)
         assert e.type == "character"
-        assert e.id == "主角"
+        # 稳定 id 与显示名解耦 (2026-10-02): 以前 id 就是 name, 改名等于换实体
+        assert e.id == c.id
+        assert e.id.startswith("char_")
+        assert e.id != c.name
         assert e.data["name"] == "主角"
 
     def test_from_world_rule(self):
@@ -242,7 +245,7 @@ class TestEntity:
         c = Character(name="X")
         e = Entity.from_dataclass(c, EntityType.CHARACTER)
         d = e.to_dict()
-        assert d == {"type": "character", "id": "X", "data": c.to_dict()}
+        assert d == {"type": "character", "id": c.id, "data": c.to_dict()}
 
 
 # ── 枚举 ─────────────────────────────────────────────────────────────────

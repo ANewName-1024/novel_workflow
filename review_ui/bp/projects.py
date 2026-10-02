@@ -23,7 +23,7 @@ from pathlib import Path
 from flask import jsonify
 from flask import request
 from lib import storage
-from review_ui.core import _ensure_book, _int_arg
+from review_ui.core import _ensure_book, _int_arg, pick_config_updates
 
 import logging
 
@@ -177,19 +177,29 @@ def _update_project(book: str, payload: dict) -> tuple[dict, int]:
     """Update an existing project's config (no name change)."""
     if not storage.project_exists(book):
         return {"ok": False, "error": f"项目 [{book}] 不存在"}, 404
-    cfg = storage.read_json(book, "config.json") or {}
 
-    # Updatable fields (whitelist)
-    editable = ("book_name", "genre", "tone", "protagonist", "antagonist",
-                "main_plot", "style", "target_chapters", "words_per_chapter",
-                "language", "llm_model", "api_base", "llm_provider",
-                "self_check", "auto_rewrite_on_critical", "self_check_strict")
-    for key in editable:
-        if key in payload and payload[key] is not None:
-            if key in ("target_chapters", "words_per_chapter"):
-                cfg[key] = int(payload[key])
-            else:
-                cfg[key] = payload[key]
+    # 2026-10-02 (P6): 白名单搬去 review_ui/core.py, 与 POST /api/config
+    # 共用同一份 —— 两条路由写的是同一个 config.json, 各留一份就等于没有。
+    #
+    # 同时不再「什么都没改也报已更新」: 过去 `{}` 和全白名单外的 body
+    # (比如 {created_at, evil_field}) 都返回 200「已更新」, 实际只盖了一个
+    # updated_at —— 界面上看不出这次编辑没生效, 而用户以为改好了。
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "body 必须是 JSON 对象"}, 400
+    if not payload:
+        return {"ok": False, "error": "空 body: 没有要更新的字段"}, 400
+    try:
+        updates = pick_config_updates(payload)
+    except (TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"字段类型非法: {exc}"}, 400
+    if not updates:
+        # 字段全在白名单外: 接受请求但不谎报「已更新」, 并且一个字节都不写
+        # (连 updated_at 都不盖, 让「无改动」在磁盘上也可核对)。
+        return {"ok": True, "book": book, "changed": [],
+                "message": "未识别任何可编辑字段, 未做任何修改"}, 200
+
+    cfg = storage.read_json(book, "config.json") or {}
+    cfg.update(updates)
 
     cfg["updated_at"] = __import__("datetime").datetime.now().isoformat()
     storage.write_json(book, "config.json", cfg)
@@ -203,17 +213,35 @@ def _update_project(book: str, payload: dict) -> tuple[dict, int]:
     except Exception as e:
         log.warning("项目镜像写入 SQLite 失败, 读回将走文件兜底 (book=%s): %s: %s",
                     book, type(e).__name__, e, exc_info=True)
-    return {"ok": True, "book": book, "message": f"项目 [{book}] 已更新"}, 200
+    return {"ok": True, "book": book, "changed": sorted(updates),
+            "message": f"项目 [{book}] 已更新"}, 200
 
 
 def _delete_project(book: str) -> tuple[dict, int]:
-    """Delete a project (removes directory)."""
+    """删除项目 —— 移入可恢复的回收站, 不做不可逆的 rmtree。
+
+    过去这里是 shutil.rmtree(root): 一条请求永久抹掉整本书, 没有备份、没有回收站、
+    没有二次确认, 手滑或脚本跑错就找不回来了。项目里本来就有 backups/ 约定
+    (测试书籍/backups 就在), 删除路径却没沿用。
+
+    现在改成 move 到 projects/.trash/<book>-<时间戳>/, 需要时手工 mv 回去即可。
+    .trash 里没有 config.json, 所以不会被 list_projects() 当成一本书列出来。
+    """
     if not storage.project_exists(book):
         return {"ok": False, "error": f"项目 [{book}] 不存在"}, 404
     import shutil
-    root = storage.project_root(book)
+    import datetime as _dt
+    root = storage.project_path(book)  # 纯计算, 不 mkdir
+    trash = Path(storage.PROJECTS_ROOT) / ".trash"
     try:
-        shutil.rmtree(root)
+        trash.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        dest = trash / f"{book}-{stamp}"
+        n = 1
+        while dest.exists():          # 同一秒内删两次同名书
+            dest = trash / f"{book}-{stamp}-{n}"
+            n += 1
+        shutil.move(str(root), str(dest))
     except Exception as exc:
         return {"ok": False, "error": f"删除失败: {exc}"}, 500
     # 同步从 SQLite 删除
@@ -223,4 +251,6 @@ def _delete_project(book: str) -> tuple[dict, int]:
         _dbmod.delete_project(storage.ROOT, book)
     except Exception:
         pass
-    return {"ok": True, "book": book, "message": f"项目 [{book}] 已删除"}, 200
+    return {"ok": True, "book": book,
+            "trash": str(dest.relative_to(storage.PROJECTS_ROOT)),
+            "message": f"项目 [{book}] 已移入回收站 ({dest.name}), 需要恢复可把它移回 projects/"}, 200

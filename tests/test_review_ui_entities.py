@@ -137,7 +137,8 @@ class TestEntitiesCreate:
         assert r.status_code == 201
         data = r.get_json()
         assert data["ok"] is True
-        assert data["entity"]["id"] == "萧炎"
+        assert data["entity"]["id"].startswith("char_")
+        assert data["entity"]["data"]["name"] == "萧炎"
         assert data["entity"]["data"]["role"] == "主角"
 
     def test_create_world_rule_with_constraints(self, client, auth_disabled):
