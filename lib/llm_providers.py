@@ -78,7 +78,15 @@ BUILTIN_PROVIDERS = {
         # 推理模型: 先写思维链, 再写正文。实测 max_tokens=4096 时
         # reasoning_tokens=4096 / content_len=0, 正文预算为 0。
         # 见 lib/llm.py DEFAULT_MIN_MAX_TOKENS 的说明。
-        "min_max_tokens": 16384,
+        #
+        # 16384 是「能返回正文」的下限, 不是「够用」的下限 (2026-10-02 生产修正):
+        # 单次小样实测 16384 能拿到 3236 字符正文, 但真实工作负载下思维链普遍
+        # 超过 16384 —— 生产跑一本 20 章小说, A 段骨架/B 段细纲/C 段角色世界观/
+        # D 段事件伏笔/第 1 章 extract 五次调用【无一例外】全部 finish_reason=length
+        # 且 content_len=0, 每次都触发 65536 重试。
+        # 也就是说 16384 让每一次调用都白花一次。max_tokens 只是上限不是预留,
+        # 按实际生成计费, 调到 65536 不会多花钱, 只是不再重试。
+        "min_max_tokens": 65536,
     },
     "openai": {
         "type": "openai-compat",

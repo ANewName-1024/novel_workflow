@@ -154,3 +154,53 @@ def test_dashboard_still_parses_and_keeps_its_routes():
     assert dashboard.api_pipeline_start is not None
     assert dashboard.api_pipeline_status is not None
     assert isinstance(rules, set)
+
+
+# ── 4. minimax 的 token 下限: 16384 在真实负载下 100% 撞空 ──────────────
+
+def test_minimax_token_floor_is_raised_after_production_evidence():
+    """生产实跑推翻了「16384 够用」的结论。
+
+    2026-10-02 在服务器上跑一本 20 章长篇, 全部 5 次 LLM 调用
+    (A 段分卷骨架 / B 段前十章细纲 / C 段角色世界观 / D 段事件伏笔 /
+     第 1 章 extract) **无一例外** finish_reason=length 且 content_len=0,
+    每次都触发 65536 重试 —— 也就是 16384 让每一次调用都白花一次。
+
+    早先的值来自单次小样(16384 能拿到 3236 字符正文), 样本量不足。
+
+    max_tokens 是上限不是预留, 按实际生成计费, 调高不会多花钱。
+    """
+    from lib.llm_providers import resolve_model
+    assert resolve_model("minimax")["min_max_tokens"] >= 65536, (
+        "minimax 的 min_max_tokens 被调回 16384 了 —— 那是生产上 100% 触发"
+        "空正文重试的值, 每调用白花一次"
+    )
+
+
+def test_token_floor_only_affects_declared_reasoning_providers():
+    """下限只对显式声明的推理 provider 生效, 不能波及小上下文本地模型。"""
+    from lib.llm_providers import resolve_model
+    for name in ("local", "openai", "deepseek"):
+        assert resolve_model(name)["min_max_tokens"] == 0, (
+            "%s 不该被推理模型的下限干预, 否则小上下文模型会 context too long" % name
+        )
+
+
+def test_a_call_below_the_floor_is_lifted_to_the_configured_value():
+    """调用点写 8192(现在的 max_tokens) 时, 实际发出的必须是 65536。"""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from lib.llm import LLM
+
+    llm = LLM(model="m", api_base="http://localhost:9999/v1", api_key="k",
+              max_retries=0, retry_delay=0.0, min_max_tokens=65536)
+    llm.client = MagicMock()
+    llm.client.chat.completions.create.return_value = SimpleNamespace(
+        model="m",
+        choices=[SimpleNamespace(finish_reason="stop",
+                                 message=SimpleNamespace(content="ok"))],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=2,
+                              completion_tokens_details=None),
+    )
+    llm.complete("x", max_tokens=8192)
+    assert llm.client.chat.completions.create.call_args.kwargs["max_tokens"] == 65536
