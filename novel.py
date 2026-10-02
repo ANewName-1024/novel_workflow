@@ -22,6 +22,9 @@ Options for init:
   --chapters N        目标章节数（默认：20）
   --words-per-chapter N  每章字数（默认：2500）
   --language TEXT     语言（默认：zh）
+  --provider NAME     LLM provider（默认：读 config.yaml 的 llm.provider）
+  --api-base URL      覆盖 provider 的端点
+  --llm-model NAME    覆盖 provider 的默认模型
 """
 from __future__ import annotations
 import sys, os, json, argparse, datetime, logging, re
@@ -68,6 +71,8 @@ def parse_args() -> argparse.Namespace:
     init.add_argument("--language", default="zh")
     init.add_argument("--llm-model", default="")
     init.add_argument("--api-base", default="")
+    init.add_argument("--provider", default=None,
+                      help="LLM provider (留空=读 config.yaml 的 llm.provider)")
 
     # outline
     ol = sub.add_parser("outline", help="生成三阶大纲")
@@ -201,6 +206,72 @@ def parse_args() -> argparse.Namespace:
 
 # ── commands ────────────────────────────────────────────────────────────────
 
+# init 预检的请求预算: 提示词只有一个词, 要问的是「通不通」不是「写得好」。
+# max_tokens 给小值, 但不能是 0 —— 0 在 OpenAI 兼容端点上是硬错, 会把"预检失败"
+# 误报成"端点坏了"。
+_PREFLIGHT_PROMPT = "ping"
+_PREFLIGHT_MAX_TOKENS = 8
+# 正式写作的预算是 3 次重试 + 10s 退避 + 600s 客户端超时, 整套套在 init 上最坏
+# 30 分钟起步, init 就成了个假死命令。预检只要一个「是/否」, 预算砍到一次。
+_PREFLIGHT_TIMEOUT_SEC = 15
+
+
+def _preflight_llm(book: str, provider: str) -> str | None:
+    """连通性预检。通返回 None, 不通返回一行给用户看的错误描述。
+
+    走 get_llm(book=book) 而不是就地拼一个 LLM(...): 后面 outline/write 用的
+    就是这条解析路径(resolve_for_book → provider registry), 预检通过 ≈ 后面
+    真能调通, 而不是「另配的一套参数碰巧通了」。
+    """
+    from lib import llm_providers as lp
+    try:
+        llm = get_llm(book=book)
+    except Exception as e:
+        # 最常见的一种: provider 配了但 key 没配, OpenAI 客户端在构造时就抛。
+        # 这种情况补一句「去哪儿配 key」, 比只丢异常类型有用。
+        hint = ""
+        try:
+            pcfg = lp.get_provider_config(provider)
+            if pcfg.get("needs_key") and not pcfg.get("api_key"):
+                env_key = pcfg.get("env_key") or f"{provider.upper()}_API_KEY"
+                hint = f" — provider {provider} 需要 key, 请在 .env 里设 {env_key}"
+        except Exception:
+            pass
+        return f"构造 LLM 客户端失败: {e}{hint}"
+
+    # 只动这个刚构造出来的实例(下一条命令会重新构造), 不碰全局 singleton。
+    # 三个属性都包起来: 测试替身可能没有 client, 预检调不通不该变成 init 崩栈。
+    try:
+        llm.max_retries = 0
+        llm.retry_delay = 0
+        llm.client.timeout = _PREFLIGHT_TIMEOUT_SEC   # openai 客户端每次请求现读它
+    except Exception:
+        log.debug("预检: 无法收紧 LLM 预算, 按默认值发请求", exc_info=True)
+
+    # 预检走 LLM.ping() 而不是 complete(): complete() 会施加 provider 的
+    # min_max_tokens 下限(minimax=16384), 并在空响应时 4 倍升级到 65536 ——
+    # 一次只想确认"通不通"的探测会变成又慢又贵的重请求, init 直接假死。
+    # ping() 直接打底层客户端, 且刻意不检查正文(推理模型在 max_tokens=1
+    # 下正文必然为空, 那是正常的)。
+    if not hasattr(llm, "ping"):
+        # 测试替身可能没实现 ping(), 退回 complete 但把下限关掉。
+        try:
+            llm.min_max_tokens = 0
+        except Exception:
+            pass
+    try:
+        if hasattr(llm, "ping"):
+            llm.ping(_PREFLIGHT_PROMPT, timeout_sec=_PREFLIGHT_TIMEOUT_SEC)
+        else:
+            reply = llm.complete(_PREFLIGHT_PROMPT, max_tokens=_PREFLIGHT_MAX_TOKENS,
+                                 temperature=0)
+            if not (reply or "").strip():
+                return "LLM 返回空响应"
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+    return None
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     book = args.book
     if not args.main_plot:
@@ -210,8 +281,30 @@ def cmd_init(args: argparse.Namespace) -> None:
     if not args.main_plot.strip():
         raise NovelError(ErrorCode.INVALID_ARGS, "--main-plot 不能为空")
 
-    api_base = args.api_base or "http://127.0.0.1:60443/v1"
-    llm_model = args.llm_model or "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
+    # ── 端点/模型走 provider 注册表, 不再写死 local ──────────────────
+    # 之前这里是 args.api_base or "http://127.0.0.1:60443/v1" 外加一个写死的
+    # Qwen3.6 模型名。生产服务器实跑: 60443 没有任何进程在监听, init 照样 0.8 秒
+    # 返回「✓ 项目已初始化」, 炸点被推迟到第一次 outline/write 的 LLM 调用, 那时
+    # 用户已经以为书建好了; 日志里只留一行 "has llm_model but no llm_provider;
+    # assuming 'local'"。config.yaml 的 llm.provider 才是这台机器真该用的 provider,
+    # ${DEFAULT_PROVIDER:-deepseek} 这类占位符 config_loader 已展开过。
+    from lib import config_loader
+    from lib import llm_providers as lp
+    provider = args.provider or (config_loader.get_config().get("llm", {}).get("provider") or "local")
+    try:
+        resolved = lp.resolve_model(provider)
+    except KeyError as e:
+        raise NovelError(ErrorCode.CONFIG_ERROR, f"未知 provider: {provider}", detail=str(e))
+    # 显式参数优先(向后兼容), 缺的从 provider 补齐
+    api_base = args.api_base or resolved["api_base"]
+    llm_model = args.llm_model or resolved["model"]
+    # 显式 --api-base 会照落盘, 但运行期 resolve_for_book() 只认 provider 配置里的
+    # 地址(book cfg 的 api_base 字段不参与解析)。两者不一致时必须说一声, 否则
+    # 用户会以为自己的自定义端点生效了。
+    if args.api_base and args.api_base != resolved["api_base"]:
+        print(f"⚠  --api-base ({args.api_base}) 与 provider [{provider}] 的默认地址 "
+              f"({resolved['api_base']}) 不一致: 已按你给的值落盘, 但 outline/write "
+              f"运行时仍以 provider 配置的地址为准")
 
     cfg = {
         "book_name": book,
@@ -224,14 +317,32 @@ def cmd_init(args: argparse.Namespace) -> None:
         "target_chapters": args.chapters,
         "words_per_chapter": args.words_per_chapter,
         "language": args.language,
+        # provider 一起落盘: 只有 llm_model 的话 resolve_for_book 会退回
+        # "assuming 'local'", 于是模型名配的是云端的、地址却指向本机 llama-server。
+        "llm_provider": provider,
         "llm_model": llm_model,
         "api_base": api_base,
     }
     storage.init_project(book, cfg)
+
+    # init 写完 config.json 不等于 LLM 真的通。预检放在 init_project 之后,
+    # 读的就是刚落盘的那份配置 —— 测的是真实运行路径。
+    preflight_err = _preflight_llm(book, provider)
+    if preflight_err:
+        # 不删也不回滚项目: 用户很可能就是想先把骨架建好, 回头配好 key 再 outline。
+        # 但退出码必须非 0 —— 脚本/CI 把 exit 0 当成「可以往下走了」, 正是这个洞
+        # 让整条流水线在前两步全绿、第三步才炸。
+        print(f"\n✗ 项目 [{book}] 的配置已写入, 但 LLM 预检失败 (项目保留, 未回滚)")
+        print(f"  provider: [{provider}] {llm_model} @ {api_base}")
+        print(f"  原因: {preflight_err}")
+        print(f"  处理: 配好 key/端点后重跑 outline, 或换 provider: "
+              f"python novel.py llm switch {book} <provider>")
+        raise NovelError(ErrorCode.LLM_FAILURE, f"LLM 预检失败: {preflight_err}")
+
     print(f"✓ 项目 [{book}] 已初始化")
     print(f"  题材: {args.genre}  |  基调: {args.tone}")
     print(f"  章节数: {args.chapters} × {args.words_per_chapter} 字")
-    print(f"  LLM: {llm_model} @ {api_base}")
+    print(f"  LLM: [{provider}] {llm_model} @ {api_base}")
     print(f"\n下一步: python novel.py outline {book}")
 
 def cmd_outline(args: argparse.Namespace) -> None:
@@ -240,7 +351,14 @@ def cmd_outline(args: argparse.Namespace) -> None:
     if not cfg:
         raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在", detail="请先运行 init")
     ol = storage.read_json(book, "outline.json")
-    if ol and not args.regenerate:
+    # init_project 会先落一个 {"meta":{},"volumes":[],"chapters":[]} 的空壳。
+    # 之前这里只判「文件存在」, 于是新书的标准流程 init → outline 直接跳过并
+    # exit 0: 两步都报成功, 但 chapters/ 一个文件都不会有, 坑在第三步 write 才炸。
+    # 空壳 = 没生成过, 继续生成; 只有真的有章节才提示「已存在」。
+    has_chapters = bool(ol and ol.get("chapters"))
+    if ol and not has_chapters and not args.regenerate:
+        print("检测到 0 章的空大纲 (init 留下的占位文件), 继续生成…")
+    elif has_chapters and not args.regenerate:
         print(f"大纲已存在（{len(ol.get('chapters',[]))} 章），跳过。\n"
               f"如需重新生成加 --regenerate")
         return  # 正常跳过, 不算错误
@@ -367,11 +485,23 @@ def cmd_review(args: argparse.Namespace) -> None:
     cfg  = storage.read_json(book, "config.json")
     if not cfg:
         raise NovelError(ErrorCode.NOT_FOUND, f"项目 [{book}] 不存在")
+    chapter_id = ""
+    if args.chapter:
+        # 章节号是手输的, 拼错是常态: "1" 直通到 review_chapter 会变成
+        # FileNotFoundError: Chapter 1 not found + 一整段 novel.cli 未处理异常
+        # traceback。先规整成 ch_XXX, 再自己查一次文件。
+        chapter_id = normalize_chapter_id(args.chapter)
+        if not storage.read_chapter(book, chapter_id):
+            raise NovelError(
+                ErrorCode.NOT_FOUND, f"章节 {chapter_id} 不存在",
+                detail=f"用 python novel.py status {book} 看已写出的章节")
+    # 章节查得到再构造 LLM: 反过来的话, 拼错章节号会先撞上 LLM 构造失败
+    # (比如 key 没配时 OpenAI 客户端直接抛), 用户看到的报错会指向错误的方向。
     llm = get_llm(book=book)
 
-    if args.chapter:
-        rev = revmod.review_chapter(book, args.chapter, llm)
-        print(f"\n=== [{args.chapter}] 审查结果 ===\n{rev}")
+    if chapter_id:
+        rev = revmod.review_chapter(book, chapter_id, llm)
+        print(f"\n=== [{chapter_id}] 审查结果 ===\n{rev}")
     else:
         print("正在进行全书审查…\n")
         rev = revmod.full_book_review(book, llm)
@@ -628,6 +758,31 @@ def parse_chapter_range(spec: str) -> list[int]:
             nums.add(int(part))
     return sorted(nums)
 
+
+def normalize_chapter_id(spec: str) -> str:
+    """把单章参数规整成 'ch_XXX': '1' → 'ch_001', 'ch_001' → 'ch_001'。
+
+    review 这类「一次只处理一章」的命令, 历史上只能收 ch_001 这种从别处
+    复制来的 id, 而用户更习惯敲 1。范围参数(1-3 / 1,3)在这里明确不支持,
+    给 INVALID_ARGS 而不是让下游拿 'ch_1-3' 去拼路径 —— 那个错会一路走到
+    FileNotFoundError 才暴露。
+    """
+    s = str(spec or "").strip()
+    if not s:
+        raise NovelError(ErrorCode.INVALID_ARGS, "章节参数为空 (如 1 或 ch_001)")
+    if "-" in s or "," in s:
+        raise NovelError(
+            ErrorCode.INVALID_ARGS, f"章节参数只接受单章, 收到 {s!r}",
+            detail="范围请用: python novel.py write <书名> --chapters 1-3")
+    m = re.fullmatch(r"(?i)ch[_-]?(\d+)", s)
+    if not m:
+        m = re.fullmatch(r"(\d+)", s)
+    if not m:
+        raise NovelError(
+            ErrorCode.INVALID_ARGS, f"无法识别的章节参数: {s!r}",
+            detail="只接受 1 或 ch_001 这样的单章")
+    return f"ch_{int(m.group(1)):03d}"
+
 # ── main ────────────────────────────────────────────────────────────────────
 
 
@@ -786,15 +941,25 @@ def cmd_llm_list(args: argparse.Namespace) -> None:
 def cmd_llm_switch(args: argparse.Namespace) -> None:
     """Switch LLM provider for a book."""
     from lib import storage as _st
+    from lib import llm_providers as lp
     cfg = _st.read_json(args.book, "config.json") or {}
     old_provider = cfg.get("llm_provider", "(未设置)")
     old_model = cfg.get("llm_model", cfg.get("model", "(未设置)"))
     cfg["llm_provider"] = args.provider
     if args.model:
         cfg["llm_model"] = args.model
+    else:
+        # provider 换的是端点+模型名这一整套, 只改 provider 的话 llm_model 还留着
+        # 上一个 provider 的名字。实跑: 切到 deepseek 后 config.json 里还是
+        # Qwen3.6-35B-A3B-UD-Q4_K_M.gguf, 发给 DeepSeek 直接 400。
+        try:
+            cfg["llm_model"] = lp.resolve_model(args.provider)["model"]
+        except KeyError as e:
+            raise NovelError(ErrorCode.CONFIG_ERROR, f"未知 provider: {args.provider}",
+                             detail=str(e))
     _st.write_json(args.book, "config.json", cfg)
     print(f"✅ [{args.book}] 切换成功:")
-    print(f"   {old_provider}:{old_model} → {args.provider}" + (f":{args.model}" if args.model else ""))
+    print(f"   {old_provider}:{old_model} → {args.provider}:{cfg['llm_model']}")
     print(f"  可用: python novel.py llm test {args.provider}  --book {args.book}")
 
 

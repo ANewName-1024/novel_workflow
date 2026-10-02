@@ -133,10 +133,31 @@ class TestSemanticSurvivedTheMove:
         assert "continue" in src, "损坏章节应跳过, 不落任何评审结论"
         assert "log.error" in src, "损坏必须记 ERROR"
 
-    def test_missing_file_still_auto_passes(self):
-        """文件不存在仍默认通过 —— 那是既定语义, 不是 bug."""
+    def test_missing_file_goes_to_human_queue_not_auto_pass(self):
+        """自检文件不存在 -> 进人工待审, **不再**默认通过。
+
+        这条断言 2026-10-02 被推翻了。原文写的是「文件不存在仍默认通过 ——
+        那是既定语义, 不是 bug」, 但实跑证明它就是 bug:
+
+            extract 抽不出东西(推理模型把 max_tokens 花在思维链上)
+              -> characters/events/foreshadowing 三张表全空
+            summary 落盘 0 字节
+            自检数据不存在
+              -> 旧逻辑写 AUTO_PASSED, 备注"章节无自检数据，默认通过"
+              -> 队列里显示「已自动通过」
+
+        「因为没检查过所以判定合格」是所有降级里最坏的一种:
+        缺失被当成了通过, 而且**没有任何一处会提醒你缺了**。
+        现在改为 PENDING_REVIEW, 让人来决定。
+        """
         src = inspect.getsource(revserv.backfill_missing_reviews)
-        assert 'REVIEW_STATUS["AUTO_PASSED"]' in src
+        assert 'REVIEW_STATUS["PENDING_REVIEW"]' in src
+        assert 'REVIEW_STATUS["AUTO_PASSED"]' not in src, (
+            "自检数据缺失时不得再自动通过 —— 缺失不等于合格")
+        # 钉**代码里那条审计备注**, 而不是全文搜 "默认通过" —— 后者会命中
+        # docstring 里解释历史的那段散文, 属于自制弱检查的典型误报。
+        assert 'notes="章节无自检数据，默认通过"' not in src, \
+            "审计备注不应再声称默认通过"
 
     def test_audit_script_reports_zero(self):
         """审计保持 0 处 —— 合并后不应再有「污染值流入写入」的路径."""

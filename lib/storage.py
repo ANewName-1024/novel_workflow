@@ -258,8 +258,12 @@ DEFAULT_CONFIG = {
     "target_chapters": 20,
     "words_per_chapter": 2500,
     "language": "zh",
-    "llm_model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
-    "api_base": "http://127.0.0.1:60443/v1",
+    # 2026-10-02: 这里原本写死 llm_model=Qwen3.6-… 与 api_base=127.0.0.1:60443。
+    # 后果: 任何**绕过 CLI** 建书的路子(review_ui、脚本、直接调 init_project)
+    # 都会落回 local provider, 而生产服务器上 60443 根本没有进程在监听 ——
+    # 书建得出来, 直到第一次 LLM 调用才炸。
+    # 现在故意不预设: 留空即表示「跟随本机 config.yaml 的 llm.provider」,
+    # 由 resolve_for_book() 兜住。CLI 建书时会显式写 llm_provider/llm_model。
     "created_at": "",
 }
 

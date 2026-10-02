@@ -133,7 +133,6 @@ logging:
 
 projects:
   root: projects
-  normalize_ascii_book_name: true
 ```
 
 `config.yaml` 走 3 层合并 (defaults < example < file), env 占位符 `${VAR:-default}` 在 file 层替换。

@@ -50,6 +50,12 @@ BUILTIN_PROVIDERS = {
             "deepseek-chat",
             "deepseek-coder",
             "deepseek-reasoner",
+            # 2026-10-02: 实测本机这把 key 的账号只接受这两个名字, 传别的
+            # 直接 400 "The supported API model names are deepseek-flash,
+            # deepseek-v4-pro"。加进来是为了 resolve_model 不再对它们
+            # 误报 WARNING(真正拦住坏配置的是请求本身的 400)。
+            "deepseek-flash",
+            "deepseek-v4-pro",
         ],
         "description": "DeepSeek 云端 (deepseek-chat = V3, coder = V2.5 Coder)",
         "needs_key": True,
@@ -69,6 +75,10 @@ BUILTIN_PROVIDERS = {
         "description": "MiniMax (M3.1-Flash-Preview / M3 / M2.7 / M2.5 系列)",
         "needs_key": True,
         "env_key": "MINIMAX_API_KEY",
+        # 推理模型: 先写思维链, 再写正文。实测 max_tokens=4096 时
+        # reasoning_tokens=4096 / content_len=0, 正文预算为 0。
+        # 见 lib/llm.py DEFAULT_MIN_MAX_TOKENS 的说明。
+        "min_max_tokens": 16384,
     },
     "openai": {
         "type": "openai-compat",
@@ -172,15 +182,17 @@ def resolve_model(provider: str, model: Optional[str] = None) -> dict[str, Any]:
         "api_base": p["api_base"],
         "api_key": p["api_key"],
         "type": p.get("type", "openai-compat"),
+        # 推理模型的 token 预算下限; 缺省 0 = 不干预
+        "min_max_tokens": int(p.get("min_max_tokens") or 0),
     }
 
 
 def resolve_for_book(book: str, fallback_provider: str = "local") -> dict[str, Any]:
     """
     Resolve LLM config for a specific book.
-    
+
     Order:
-    1. Book's config.json llm_provider + llm_model (per-book override)
+    1. Book's config.json llm_provider + llm_model (+ llm_api_base override)
     2. Global config.yaml llm.default_model + llm.api_base (legacy: maps to "local" provider)
     3. fallback_provider argument
     """
@@ -193,14 +205,25 @@ def resolve_for_book(book: str, fallback_provider: str = "local") -> dict[str, A
     # Per-book override
     book_provider = book_cfg.get("llm_provider")
     book_model = book_cfg.get("llm_model")
-    
+    # 2026-10-02: 以前 book cfg 里的 api_base **完全不参与解析** —— 只要有
+    # llm_provider, 就一律用注册表里那个地址。结果是 `init --api-base X` 明明
+    # 落盘了, 运行期却被静默忽略, 配置与实际用的端点对不上。
+    # 现在 per-book api_base 是真正的覆盖项(显式指定的优先于注册表默认值)。
+    book_api_base = book_cfg.get("api_base")
+
+    def _with_book_endpoint(resolved: dict[str, Any]) -> dict[str, Any]:
+        if book_api_base and book_api_base != resolved["api_base"]:
+            resolved = {**resolved, "api_base": book_api_base,
+                        "api_base_overridden": True}
+        return resolved
+
     if book_provider:
-        return resolve_model(book_provider, book_model)
-    
+        return _with_book_endpoint(resolve_model(book_provider, book_model))
+
     if book_model:
         # Book has model but no provider — assume local for back-compat
         log.info("Book %r has llm_model but no llm_provider; assuming 'local'", book)
-        return resolve_model("local", book_model)
+        return _with_book_endpoint(resolve_model("local", book_model))
     
     # Global config fallback
     cfg = get_config()

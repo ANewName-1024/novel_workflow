@@ -366,12 +366,19 @@ def summarize_changes(diff_entry: dict) -> dict:
         "foreshadows": {"added": len(fs.get("added", [])),   "updated": len(fs.get("updated", [])),   "resolved": len(fs.get("resolved", [])), "removed": len(fs.get("removed", []))},
         "world_rules": {"added": len(wr.get("added", [])),   "updated": len(wr.get("updated", [])),   "removed": len(wr.get("removed", []))},
     }
-    s["total_changes"] = sum(
-        s["characters"]["added"] + s["characters"]["updated"] + s["characters"]["removed"] +
-        s["events"]["added"]     + s["events"]["updated"]     + s["events"]["removed"] +
-        s["foreshadows"]["added"] + s["foreshadows"]["updated"] + s["foreshadows"]["resolved"] + s["foreshadows"]["removed"] +
-        s["world_rules"]["added"] + s["world_rules"]["updated"] + s["world_rules"]["removed"]
-    )
+    # 2026-10-02 修正: 原来是 `sum(a + b + c + ...)` —— sum 的多参数形式是
+    # 「sum(start, *iterables)」, 第一个参数被当作累加初值, 于是 Python 会去
+    # **迭代那个 int**, 抛 `TypeError: 'int' object is not iterable`。
+    # 也就是说 summarize_changes 每一次调用都炸, entity_diff 阶段自打桩起
+    # 就从未成功过 —— 实跑时它一路 FAILED 到 `done: DONE`。
+    # 正确写法是给 sum 传一个可迭代对象。
+    s["total_changes"] = sum([
+        s["characters"]["added"], s["characters"]["updated"], s["characters"]["removed"],
+        s["events"]["added"],     s["events"]["updated"],     s["events"]["removed"],
+        s["foreshadows"]["added"], s["foreshadows"]["updated"], s["foreshadows"]["resolved"],
+        s["foreshadows"]["removed"],
+        s["world_rules"]["added"], s["world_rules"]["updated"], s["world_rules"]["removed"],
+    ])
     return s
 
 

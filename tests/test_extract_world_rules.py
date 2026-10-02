@@ -50,10 +50,25 @@ class TestParseExtractionWorldRules:
         assert len(data["new_world_rules"]) == 1
         assert data["new_world_rules"][0]["name"] == "魔法体系"
 
-    def test_malformed_json_returns_empty_world_rules(self):
-        data = parse_extraction("not json at all")
-        assert data["new_world_rules"] == []
-        assert data["new_characters"] == []  # 其他字段也空
+    def test_malformed_json_raises_instead_of_returning_empty(self):
+        """2026-10-02 修正: 以前这里返回全空 dict。
+
+        实跑踩到的链路是: 推理模型把 max_tokens 全花在思维链上 -> API 正常
+        返回 200 但正文为空 -> 这里拿到 "" -> 旧实现返回全空 dict ->
+        调用方照常 merge、阶段照样记 DONE -> 整章报"完成" 而记忆库永久
+        缺这一章。"解析失败" 必须和 "抽出来是空的" 区分开。
+        """
+        import pytest
+        from lib.extract import ExtractionParseError
+        with pytest.raises(ExtractionParseError):
+            parse_extraction("not json at all")
+
+    def test_empty_string_raises(self):
+        """空响应同样必须炸 —— 这是实跑里真实发生过的那一次。"""
+        import pytest
+        from lib.extract import ExtractionParseError
+        with pytest.raises(ExtractionParseError):
+            parse_extraction("")
 
 
 # ── merge_extraction 处理 new_world_rules ─────────────────────────────

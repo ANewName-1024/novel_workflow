@@ -62,6 +62,17 @@ def generate_chapter_summary(
         lines = summary.splitlines()
         summary = "\n".join(l for l in lines if not l.strip().startswith("```")).strip()
 
+    # 产物闸门: 空摘要绝不能落盘。
+    # 2026-10-02 实跑时 summaries/ch_001.txt 是 0 字节, 而 summary 阶段
+    # 在 checkpoint 里是 DONE、status 命令里是"滚动摘要: 1 章"。一个空的
+    # 摘要文件比没有更坏 —— get_recent_summaries 会照样把它塞进下一章的
+    # 上下文, 变成一段没有任何信息量的噪声。
+    if not summary.strip():
+        raise RuntimeError(
+            f"章节 {chapter_id} 的摘要为空, 拒绝落盘。滚动摘要是跨章连贯性"
+            f"的唯一锚点, 空文件会让后续章节的上下文凭空少一块。"
+        )
+
     # Hard cap at max_chars (Chinese = 1 char, English ~4 chars/word)
     if len(summary) > max_chars * 1.5:
         summary = summary[:max_chars * 2]

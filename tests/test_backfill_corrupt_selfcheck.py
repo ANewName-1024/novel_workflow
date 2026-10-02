@@ -78,18 +78,44 @@ class TestCorruptSelfCheck:
         assert BOOK in joined, "日志须带 book 上下文"
 
 
-class TestGenuineMissingStillAutoPasses:
-    """文件不存在 -> 默认通过是既定语义, 修复不能把它一起改掉。"""
+class TestGenuineMissingGoesToHumanQueue:
+    """文件不存在 -> 进人工待审。
 
-    def test_missing_file_still_auto_passes(self, tmp_projects_root):
+    2026-10-02 修正。原文写的是「文件不存在 -> 默认通过是既定语义,
+    修复不能把它一起改掉」—— 那条既定语义本身就是 bug。
+
+    「缺失」与「损坏」的区分(这个区分本身依然重要, 且被本文件其他用例保护)
+    不变; 变的只是缺失时的**结论**: 从「自动通过」改成「转人工」。
+    理由: 缺失被当成通过, 等于「因为没检查过所以判定合格」, 而且队列里
+    显示为「已自动通过」, 没有任何一处会提醒你这一章其实没被检查过。
+    """
+
+    def test_missing_file_goes_to_pending_review(self, tmp_projects_root):
         _add_chapter()
         assert not _self_check_path().exists()
 
         _backfill()
 
         rec = revserv.get_review(BOOK, CH)
-        assert rec is not None, "无自检数据时应照常 backfill"
-        assert rec["status"] == revserv.REVIEW_STATUS["AUTO_PASSED"]
+        assert rec is not None, "无自检数据时仍应 backfill 出记录"
+        assert rec["status"] == revserv.REVIEW_STATUS["PENDING_REVIEW"], \
+            "缺自检数据不等于合格, 必须转人工待审"
+        # 不得伪造自检结论。键可能压根不存在(更干净), 也可能存在但为 None,
+        # 所以用 get() 断言「没有内容」, 而不是硬取键。
+        assert not rec.get("auto_result"), \
+            "没有自检数据时不得伪造自检结论"
+
+    def test_corrupt_and_missing_stay_different(self, tmp_projects_root):
+        """缺失 -> 待审; 损坏 -> 什么都不写。两者不能收敛成同一个结果。"""
+        _add_chapter()
+        p = _self_check_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("{ 这不是合法 JSON", encoding="utf-8")
+
+        _backfill()
+
+        assert revserv.get_review(BOOK, CH) is None, \
+            "损坏是错误, 应记 ERROR 并跳过, 不得落任何评审结论"
 
     def test_valid_self_check_still_flags(self, tmp_projects_root):
         _add_chapter()

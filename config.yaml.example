@@ -11,6 +11,10 @@ llm:
     - Qwythos-9B-Claude-Mythos-5-1M-MTP-Q8_0.gguf
   timeout_sec: ${LLM_TIMEOUT_SEC:-600}
   max_retries: ${LLM_MAX_RETRIES:-3}
+  # 推理模型(reasoning model)的 token 预算下限。推理模型先写思维链再写正文,
+  # 4096 会被思维链吃光 -> finish_reason=length + 正文为空(2026-10-02 实测)。
+  # 非推理模型 / 本地小上下文模型保持 0(不干预)。
+  min_max_tokens: ${LLM_MIN_MAX_TOKENS:-0}
 
 # === review_ui ===
 review_ui:
@@ -45,8 +49,8 @@ logging:
 projects:
   # 项目目录根 (per-book 子目录)
   root: projects
-  # 强制 ASCII book name (中文会导致 PS 5.1 GBK 坑, 提醒而非拒绝)
-  normalize_ascii_book_name: true
+  # 注: 旧版这里有个 normalize_ascii_book_name, 全仓零消费, 已于 2026-10-02 移除。
+  # 中文书名目录实测正常(PS 5.1 GBK 的坑在命令行传参, 不在文件路径)。
 
 # === v1.1 Web 流水线面板 ===
 dashboard:

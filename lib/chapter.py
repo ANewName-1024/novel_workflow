@@ -171,6 +171,24 @@ def write_chapter(
     return text
 
 
+class CoherenceStageFailed(RuntimeError):
+    """连贯性关键阶段失败, 本章不得计入完成。
+
+    背景 (2026-10-02 实跑): extract 静默返回空结果时, 整章照样
+    `mark_chapter_completed` + 报 "✓ 完成 (1327 字)", 而
+    characters/events/foreshadowing 三个库是空的, 摘要文件 0 字节。
+    也就是说**这一章对后面所有章节是不可见的**, 却没有任何一处提示。
+
+    被归为"关键"的阶段 (失败即中止本章记账):
+      extract  —— 角色/事件/伏笔三张表全靠它, 下一章的 context 直接读它
+      summary  —— 滚动摘要是跨章连贯性唯一的长期锚点, 缺了会一路缺下去
+
+    明确**不**归为关键的:
+      entity_diff / style_anchor / self_check —— 只服务于 UI 展示或
+      可选质量闸门, 失败不影响后续章节拿到正确上下文。
+    """
+
+
 def run_post_write_pipeline(
     book: str,
     chapter_num: int,
@@ -186,6 +204,10 @@ def run_post_write_pipeline(
       4. If ch_001 and no style anchor yet → extract style anchor
       5. If self_check enabled in config → run anti-drift check
     """
+    # 关键阶段失败收集。extract / summary 失败时不再"非致命"地放过,
+    # 而是在函数末尾统一拦下, 阻止 mark_chapter_completed。
+    critical_failures: list[tuple[str, str]] = []
+
     # 1) Extract & merge
     _v2_mark(book, chapter_num, "extract", "RUNNING")
     # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
@@ -224,11 +246,13 @@ def run_post_write_pipeline(
                             "foreshadowing": len(extraction.get("new_foreshadowing", [])),
                             "characters": len(extraction.get("new_characters", []))})
     except Exception as e:
-        log.warning("extract 失败 (非致命): %s", e)
+        # 2026-10-02: 不再是"非致命"。见 CoherenceStageFailed 的说明。
+        log.error("extract 失败 (连贯性关键阶段): %s", e, exc_info=True)
         # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
         #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=failed")
         _v2_mark(book, chapter_num, "extract", "FAILED", error=str(e))
+        critical_failures.append(("extract", str(e)))
 
     # 1b) Entity diff (v1.3 M4): compute & record per-chapter entity changes
     _v2_mark(book, chapter_num, "entity_diff", "RUNNING")
@@ -281,11 +305,14 @@ def run_post_write_pipeline(
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=done")
         _v2_mark(book, chapter_num, "summary", "DONE")
     except Exception as e:
-        log.warning("摘要生成失败 (非致命): %s", e)
+        # 2026-10-02: 同上, 摘要失败不再放过。实跑时 summaries/ch_001.txt
+        # 是 0 字节而状态是 DONE, 下一章照样把这份空摘要塞进上下文。
+        log.error("摘要生成失败 (连贯性关键阶段): %s", e, exc_info=True)
         # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
         #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
         print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=failed")
         _v2_mark(book, chapter_num, "summary", "FAILED", error=str(e))
+        critical_failures.append(("summary", str(e)))
 
     # 3) Update state snapshot
     _v2_mark(book, chapter_num, "state", "RUNNING")
@@ -390,6 +417,25 @@ def run_post_write_pipeline(
         # 「没启用」和「跑了但没结论」在状态机里必须是两回事, 否则恢复逻辑会
         # 一直以为自检没跑过而反复重试。
         _v2_mark(book, chapter_num, "self_check", "SKIPPED")
+
+    # ── 关键阶段闸门 ────────────────────────────────────────────────────
+    # 2026-10-02: 原来这一行是无条件的。于是 extract 静默返回空 dict 时,
+    # 整章依然被记账 + 报 "✓ 完成", 而角色/事件/伏笔三张表是空的 ——
+    # 状态说成功, 产物说没有, 而且**没有任何一处会提醒你**。
+    # 现在: 关键阶段失败就不记账, 让 progress.json 如实显示未完成,
+    # 重跑时这一章会再次进入处理流程。
+    if critical_failures:
+        print(f"  ✗ 连贯性关键阶段失败 ({len(critical_failures)} 项) —— 本章不计入完成:")
+        for _stage, _msg in critical_failures:
+            print(f"    - {_stage}: {_msg}")
+        detail = "; ".join(f"{s}={m}" for s, m in critical_failures)
+        raise CoherenceStageFailed(
+            f"第 {chapter_num} 章的连贯性关键阶段失败, 正文已保留但**未**标记完成。"
+            f"记忆库/摘要缺这一章, 继续写后续章节会让连贯性从这一处开始失真。"
+            f"请先修好上面的报错再重写本章(重写前需先移走已有的 "
+            f"chapters/{chapter_id}.md, 否则 storage.write_chapter 会拒绝覆盖)。"
+            f"明细: {detail}"
+        )
 
     # Update progress (use shared helper so review/human-edit paths also stay in sync)
     storage.mark_chapter_completed(book, chapter_id, chapter_num)

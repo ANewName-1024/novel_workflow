@@ -130,7 +130,12 @@ def _defaults() -> dict[str, Any]:
         },
         "projects": {
             "root": "projects",
-            "normalize_ascii_book_name": True,
+            # 2026-10-02 移除 normalize_ascii_book_name。
+            # 它在这里躺了很久, 但**全仓零消费** —— 没有任何代码读它,
+            # 而磁盘上 projects/测试书籍 这个 CJK 目录名一直好好的,
+            # 说明它从来没起过作用。一个"配了等于没配"的开关比没有更糟:
+            # 让人以为有这层保护。中文目录名实测没问题(PS 5.1 GBK 的坑
+            # 出在**命令行传参**, 不是文件路径), 所以直接删掉而不是实现它。
         },
         "dashboard": {
             "enabled": True,

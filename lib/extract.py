@@ -7,11 +7,29 @@ import json, re
 from .llm import LLM
 from .prompts import EXTRACT_SYSTEM, EXTRACT_USER
 
+
+class ExtractionParseError(RuntimeError):
+    """LLM 的抽取结果不是合法 JSON。
+
+    以前这里是 `print(...) ; return 全空 dict` —— 2026-10-02 实测踩到的
+    正是这条路径: 推理模型把 max_tokens 全花在思维链上、API 正常返回 200
+    但正文为空 -> 这里拿到空串 -> 解析失败 -> 返回全空 dict -> 调用方
+    照常 merge、阶段照样记 DONE -> 整章报"完成", 而 characters/events/
+    foreshadowing 三个库永久缺这一章, 且没有任何一处报错。
+
+    "解析不出来" 和 "抽出来是空的" 是两件完全不同的事, 只有前者该炸。
+    缺失被当成功是所有降级里最坏的一种。
+    """
+
+
 def extract_from_chapter(chapter_text: str, llm: LLM = None, book: str = None) -> dict:
     """
     Run extraction LLM call on chapter text.
     Returns dict with new_characters, updated_characters, new_events,
     new_foreshadowing, resolved_foreshadowing, world_updates.
+
+    Raises ExtractionParseError if the model returns something that isn't
+    valid JSON. It does NOT degrade to an empty result.
     """
     # Truncate if too long (chunk last ~3000 chars = ~2K tokens)
     if len(chapter_text) > 3000:
@@ -36,7 +54,11 @@ def extract_from_chapter(chapter_text: str, llm: LLM = None, book: str = None) -
     return parse_extraction(raw)
 
 def parse_extraction(raw: str) -> dict:
-    """Parse LLM JSON output, be robust to markdown fences."""
+    """Parse LLM JSON output, be robust to markdown fences.
+
+    Raises ExtractionParseError on unparseable input — see that class's
+    docstring for why the old "return everything empty" path was dangerous.
+    """
     raw = raw.strip()
     if raw.startswith("```"):
         lines = raw.splitlines()
@@ -53,16 +75,12 @@ def parse_extraction(raw: str) -> dict:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        print(f"    [extract] JSON parse error: {e}; returning empty")
-        return {
-            "new_characters": [],
-            "updated_characters": [],
-            "new_events": [],
-            "new_foreshadowing": [],
-            "resolved_foreshadowing": [],
-            "world_updates": [],
-            "new_world_rules": [],
-        }
+        # 以前是 print + 返回全空 dict, 于是这一章的抽取信息静默蒸发。
+        # 现在炸出来: 调用方 (chapter.py) 会把 extract 阶段记 FAILED,
+        # 章节不会带着空的记忆库继续往下走。
+        raise ExtractionParseError(
+            f"抽取结果不是合法 JSON ({e})。返回内容前 200 字符: {raw[:200]!r}"
+        ) from e
 
     # Validate keys
     expected_keys = [

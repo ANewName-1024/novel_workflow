@@ -464,12 +464,28 @@ def backfill_missing_reviews(book: str, force: bool = False) -> int:
 
     逻辑重复会让「修一半」成为默认结果, 所以合并到这一处, 两个调用方都委派。
 
-    关键语义（6dd453b）:
-      自检文件不存在 → 章节写于自检功能之前, 默认通过是既定行为
+    关键语义（6dd453b 建立, 2026-10-02 修正）:
+      自检文件不存在 → 转【人工待审】。2026-10-02 之前这里是"默认通过",
+                       现在改了 —— 理由见下面「降级方向」一节。
       自检文件损坏   → 记 ERROR 并跳过这一章, 【不落任何评审结论】
 
-    两者都读成「没有」正是原 bug: 前者是预期的, 后者会把错误结论写进库里
-    并固化 —— 一旦有了 review 记录, 后续流程不会再重新自检。
+    「缺失」与「损坏」必须区分: 损坏是错误, 应当留痕并跳过; 缺失只是没数据,
+    同样不该被当成结论。
+
+    降级方向（2026-10-02）
+    ----------------------
+    原来的语义是「自检文件不存在 → AUTO_PASSED」, 理由是"章节写于自检功能
+    之前, 默认通过是既定行为"。实跑证明这个既定行为本身是错的:
+
+        extract 抽不出东西(推理模型把 max_tokens 花在思维链上, 正文为空)
+          -> characters/events/foreshadowing 三张表全空
+        summary 落盘 0 字节
+        自检数据不存在
+          -> 写 AUTO_PASSED, 审计备注"章节无自检数据，默认通过"
+          -> 队列里显示「已自动通过」, 而实际上没有任何东西检查过这一章
+
+    「因为没检查过所以判定合格」是所有降级里最坏的一种: 缺失被当成了通过,
+    且没有任何一处会提醒你缺了。所以改成 PENDING_REVIEW, 让人来决定。
     """
     fp = _book_chapter_fingerprint(book)
     if not force and _backfill_fingerprint.get(book) == fp:
@@ -497,11 +513,24 @@ def backfill_missing_reviews(book: str, force: bool = False) -> int:
             if sc_result:
                 auto_flag(book, ch["id"], sc_result, by="AI-backfill")
             else:
+                # 2026-10-02: 降级方向反转。
+                #
+                # 原来是 `AUTO_PASSED` + 备注"章节无自检数据，默认通过" ——
+                # 也就是**因为没检查过所以判定合格**。2026-10-02 实跑撞上的
+                # 完整后果: 自检数据缺失 → 自动通过 → 审校记录全 null →
+                # 队列里显示"已自动通过" → 而实际上这一章的抽取和摘要都是
+                # 空的, 没有任何东西检查过它。
+                #
+                # 缺失不等于合格。这里改成进人工队列, 让人来决定。
                 empty = _empty_record(ch["id"])
-                empty["status"] = REVIEW_STATUS["AUTO_PASSED"]
+                empty["status"] = REVIEW_STATUS["PENDING_REVIEW"]
+                empty["auto_result"] = None
                 save_review(book, empty)
                 append_audit(book, ch["id"], "backfilled_no_selfcheck", "system",
-                             notes="章节无自检数据，默认通过")
+                             notes="章节无自检数据，已转人工待审（不再默认通过）")
+                log.info(
+                    "章节无自检数据, 转人工待审 (book=%s ch=%s)。"
+                    "如需自动通过请先跑 self_check, 或人工 approve。", book, ch["id"])
             created += 1
     _backfill_fingerprint[book] = _book_chapter_fingerprint(book)
     return created
