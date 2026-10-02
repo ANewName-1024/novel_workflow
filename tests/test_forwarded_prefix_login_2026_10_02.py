@@ -49,7 +49,15 @@ def _password() -> str:
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_projects_root):
+    # tmp_projects_root 不可省(2026-10-02 CI run #11 踩过):
+    # test_logout_link_is_prefixed 要 GET /book/test_book 并断言 200, 而
+    # book_page 只认**有 config.json 的**项目目录。开发机上 projects/test_book/
+    # 恰好有 config.json(改名「断魂岭」时建的), 于是本地一直绿; 但 config.json
+    # 不在 git 里, 全新检出的 CI 上该目录只有 .pipeline_state.json -> 404。
+    # 也就是说这份 fixture 一旦漏掉 tmp_projects_root, 整份文件就是**假绿**,
+    # 测的东西根本没跑。依赖环境态的绿比红更危险。
+    #
     # 必须直接打桩 _get_auth: 它读的是 config 里的 review_ui.auth,
     # 而 enabled 默认 False —— 只设环境变量的话 login() 会在鉴权分支之前
     # 就短路 redirect(url_for("index")), next 参数根本没被读到, 用例会假绿。
