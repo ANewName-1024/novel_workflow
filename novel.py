@@ -466,11 +466,23 @@ def cmd_write(args: argparse.Namespace) -> None:
                 print("中断。修复后可运行 continue 从断点继续。")
                 raise NovelError(ErrorCode.LLM_FAILURE, f"第 {i} 章撰写失败", detail=str(e))
 
-    # Final progress
-    prog["phase"] = "done" if len(prog.get("chapters_completed",[])) >= prog.get("total_chapters",0) else "writing"
-    storage.write_json(book, "progress.json", prog)
+    # ── 收尾: 必须**重读** progress.json, 不能写回循环开始前那份 ──
+    # 2026-10-02 实跑抓到: 这里的 prog 是函数开头读的旧对象, 整个循环期间
+    # write_chapter → run_post_write_pipeline → mark_chapter_completed 一直
+    # 在往 progress.json 里追加 chapters_completed / current_chapter, 而循环
+    # 结束后这一行把**旧对象**整个盖了回去。
+    # 结果: 章节全部写完、所有产物齐全, progress.json 却是
+    #   {"phase": "writing", "current_chapter": 0, "chapters_completed": []}
+    # status 命令里章节列表打勾、进度却显示 0/N, 自相矛盾。
+    # 实测数据: ch_001 写完 1544 字、extract 抽到 5 事件/5 伏笔/3 角色,
+    # progress.json 的 chapters_completed 仍然是空数组。
+    fresh = storage.read_json(book, "progress.json") or {}
+    done_n = len(fresh.get("chapters_completed") or [])
+    total_n = fresh.get("total_chapters") or prog.get("total_chapters", 0) or 0
+    fresh["phase"] = "done" if (total_n and done_n >= total_n) else "writing"
+    storage.write_json(book, "progress.json", fresh)
     print(f"\n{'='*50}")
-    print(f"✓ 章节撰写完成！")
+    print(f"✓ 章节撰写完成！已完成 {done_n}/{total_n} 章")
     print(f"  下一步: python novel.py review {book}")
     print(f"  或直接: python novel.py export {book}")
 

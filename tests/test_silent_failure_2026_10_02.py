@@ -353,3 +353,96 @@ class TestMissingDataIsNotAPass:
         assert rec["status"] == revserv.REVIEW_STATUS["PENDING_REVIEW"], \
             "缺自检数据不等于合格 —— 「因为没检查过所以通过」是最坏的降级"
         assert not rec.get("auto_result"), "不得伪造自检结论"
+
+
+# ── 第 6 层: 进度记账不能被陈旧对象覆盖 ─────────────────────────────────
+
+class TestWriteDoesNotClobberProgress:
+    """cmd_write 收尾曾把循环开始前的旧 prog 对象整个写回 progress.json。
+
+    2026-10-02 部署后实跑抓到: 章节写完 1544 字、extract 抽到 5 事件/5 伏笔/
+    3 角色、所有产物齐全, progress.json 却是
+        {"phase": "writing", "current_chapter": 0, "chapters_completed": []}
+    —— mark_chapter_completed 记的账被循环结束时的旧对象整个盖掉了。
+    状态说没写, 产物说写好了, 而且进度条会一直显示 0/N。
+    """
+
+    def _args(self, book, chapters="1"):
+        import argparse
+        return argparse.Namespace(
+            book=book, chapters=chapters, auto_continue=False,
+            auto_rewrite_on_critical=False, self_check_strict=False,
+        )
+
+    def test_completed_chapter_survives_the_final_write(self, tmp_projects_root,
+                                                        monkeypatch, capsys):
+        from lib import storage, chapter as chapmod
+        import novel
+
+        storage.write_json("test_book", "outline.json", {
+            "meta": {"target_chapters": 1},
+            "volumes": [], "chapters": [{"id": "ch_001", "title": "一", "summary": "s"}],
+        })
+        storage.write_json("test_book", "progress.json", {
+            "phase": "init", "current_chapter": 0, "total_chapters": 1,
+            "chapters_completed": [],
+        })
+
+        # 替身要**真的记账**, 否则测的不是那个覆盖 bug
+        def _fake_write(book, num, llm, ol, cfg_override=None):
+            storage.mark_chapter_completed(book, f"ch_{num:03d}", num)
+            return "## 第一章\n\n正文"
+
+        monkeypatch.setattr(chapmod, "write_chapter", _fake_write)
+        monkeypatch.setattr(novel, "get_llm", lambda **kw: _StubLLM())
+
+        novel.cmd_write(self._args("test_book"))
+
+        prog = storage.read_json("test_book", "progress.json") or {}
+        assert "ch_001" in (prog.get("chapters_completed") or []), \
+            "cmd_write 收尾把 mark_chapter_completed 记的账覆盖掉了"
+        assert prog.get("current_chapter") == 1
+        assert prog.get("phase") == "done", "全部写完时 phase 应为 done"
+
+    def test_partial_run_keeps_phase_writing(self, tmp_projects_root, monkeypatch):
+        """没写完就不能标 done —— 同样不能覆盖已记账的章节。"""
+        from lib import storage, chapter as chapmod
+        import novel
+
+        storage.write_json("test_book", "outline.json", {
+            "meta": {"target_chapters": 5},
+            "volumes": [], "chapters": [{"id": "ch_001", "title": "一", "summary": "s"}],
+        })
+        storage.write_json("test_book", "progress.json", {
+            "phase": "init", "current_chapter": 0, "total_chapters": 5,
+            "chapters_completed": [],
+        })
+
+        def _fake_write(book, num, llm, ol, cfg_override=None):
+            storage.mark_chapter_completed(book, f"ch_{num:03d}", num)
+            return "## 第一章\n\n正文"
+
+        monkeypatch.setattr(chapmod, "write_chapter", _fake_write)
+        monkeypatch.setattr(novel, "get_llm", lambda **kw: _StubLLM())
+
+        novel.cmd_write(self._args("test_book"))
+
+        prog = storage.read_json("test_book", "progress.json") or {}
+        assert "ch_001" in (prog.get("chapters_completed") or [])
+        assert prog.get("phase") == "writing", "5 章只写 1 章, phase 不该是 done"
+
+
+class _StubLLM:
+    """cmd_write 只需要 describe / 上下文估算, 不发真实请求。"""
+    model = "stub"
+    api_base = "http://stub/v1"
+
+    def describe(self):
+        return {"provider": "stub", "model": self.model, "api_base": self.api_base}
+
+    def estimate_input_tokens(self, text):
+        return len(text) // 2
+
+    def set_stage_context(self, *a, **k):
+        pass
+
