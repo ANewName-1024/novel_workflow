@@ -319,6 +319,15 @@ def _safe_next(candidate: str) -> str:
     配合钓鱼页做 credential phishing 很顺手。
     规则: 以单个 / 开头(所以 //evil.com 这种协议相对 URL 也不放行),
     且不含反斜杠与控制字符。
+
+    带前缀部署 (nginx `location /novel/` + `X-Forwarded-Prefix`, 由
+    ProxyFix(x_prefix=1) 写进 SCRIPT_NAME) 时, candidate 是不含前缀的
+    PATH_INFO。直接 redirect(candidate) 会跳到源站根目录 —— 那是 nginx 上
+    另一个应用, 实测登录成功后落到 404 Error 页。url_for() 会自己补前缀,
+    这里返回裸字符串所以必须手工补。
+
+    只在已通过站内校验的相对路径前拼接**服务端自己的** script_root, 不放宽
+    任何原有拒绝条件。nginx 用 proxy_set_header 覆盖该头, 客户端无法注入。
     """
     if not candidate or not isinstance(candidate, str):
         return url_for("index")
@@ -326,6 +335,9 @@ def _safe_next(candidate: str) -> str:
         return url_for("index")
     if "\\" in candidate or any(ord(c) < 32 for c in candidate):
         return url_for("index")
+    root = (request.script_root or "").rstrip("/")
+    if root and candidate != root and not candidate.startswith(root + "/"):
+        return root + candidate
     return candidate
 
 

@@ -57,7 +57,7 @@ body.login-page {
 </style>
 </head>
 <body class="login-page">
-<form class="login-box" method="POST" action="/login">
+<form class="login-box" method="POST" action="{{ url_for('login') }}{% if request.args.get('next') %}?next={{ request.args.get('next') | urlencode }}{% endif %}">
   <h1>📚 小说评审台</h1>
   <div class="sub">请登录以继续</div>
 

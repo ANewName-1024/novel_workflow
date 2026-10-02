@@ -15,20 +15,20 @@
   <div class="topnav-row topnav-global-row">
     <a href="/" class="topnav-brand" title="novel 首页">🐾 novel_workflow</a>
     <nav class="topnav-global">
-      <a href="/" class="topnav-link {% if nav.global_active == 'home' %}active{% endif %}">
+      <a href="{{ url_for('index') }}" class="topnav-link {% if nav.global_active == 'home' %}active{% endif %}">
         📚 所有书籍
       </a>
-      <a href="/overview" class="topnav-link {% if nav.global_active == 'overview' %}active{% endif %}">
+      <a href="{{ url_for('dashboard.overview_page') }}" class="topnav-link {% if nav.global_active == 'overview' %}active{% endif %}">
         📊 全项目总览
       </a>
-      <a href="/llm" class="topnav-link {% if nav.global_active == 'llm' %}active{% endif %}">
+      <a href="{{ url_for('llm_config_page') }}" class="topnav-link {% if nav.global_active == 'llm' %}active{% endif %}">
         🤖 LLM
       </a>
     </nav>
     {% if nav.books and nav.books|length > 1 %}
     <select class="topnav-book-switcher" onchange="if(this.value) location.href=this.value;" title="快速切换书籍">
       {% for b_item in nav.books %}
-        <option value="/book/{{ b_item[0] }}" {% if b_item[0] == nav.current_book %}selected{% endif %}>
+        <option value="{{ url_for('book_page', book=b_item[0]) }}" {% if b_item[0] == nav.current_book %}selected{% endif %}>
           {{ b_item[1] }}
         </option>
       {% endfor %}
@@ -40,19 +40,19 @@
   {% if nav.current_book %}
   <div class="topnav-row topnav-book-row">
     <div class="topnav-book-title">
-      <a href="/book/{{ nav.current_book }}" title="返回本书主页">📖 {{ nav.current_book_title }}</a>
+      <a href="{{ url_for('book_page', book=nav.current_book) }}" title="返回本书主页">📖 {{ nav.current_book_title }}</a>
       {% if nav.current_book_genre %}<span class="topnav-book-genre">{{ nav.current_book_genre }}</span>{% endif %}
     </div>
     <nav class="topnav-book-nav">
-      <a href="/book/{{ nav.current_book }}"
+      <a href="{{ url_for('book_page', book=nav.current_book) }}"
          class="topnav-link {% if nav.book_active == 'book' %}active{% endif %}">📚 章节</a>
-      <a href="/outline/{{ nav.current_book }}"
+      <a href="{{ url_for('outline_page', book=nav.current_book) }}"
          class="topnav-link {% if nav.book_active == 'outline' %}active{% endif %}">🌳 大纲</a>
-      <a href="/entities/{{ nav.current_book }}?type=character"
+      <a href="{{ url_for('entities_page', book=nav.current_book) }}?type=character"
          class="topnav-link {% if nav.book_active == 'entities' %}active{% endif %}">🧩 实体</a>
-      <a href="/dashboard/{{ nav.current_book }}"
+      <a href="{{ url_for('dashboard.dashboard_page', book=nav.current_book) }}"
          class="topnav-link {% if nav.book_active == 'dashboard' %}active{% endif %}">⚙️ 流水线</a>
-      <a href="/notifications/{{ nav.current_book }}"
+      <a href="{{ url_for('notifications_page', book=nav.current_book) }}"
          class="topnav-link {% if nav.book_active == 'notifications' %}active{% endif %}">
         🔔 通知{% if nav.unread_count %}<span class="topnav-badge">{{ nav.unread_count }}</span>{% endif %}
       </a>

@@ -143,7 +143,7 @@
   {% if books %}
     {% for b in books %}
     <div class="book-card-wrap">
-      <a class="book-card" href="/book/{{ b.name }}">
+      <a class="book-card" href="{{ url_for('book_page', book=b.name) }}">
         <div class="book-title">{{ b.title }}</div>
         <div class="book-meta">
           <span>📂 {{ b.name }}</span>
@@ -182,7 +182,7 @@
 </div>
 
 <div class="page-footer" style="padding:24px;text-align:center;color:var(--muted);font-size:12px;">
-  Novel Review UI · 端口 21199 · 数据: <code>novel_workflow/projects/</code>
+  Novel Review UI{% if request.script_root %} · 路径 <code>{{ request.script_root }}</code>{% endif %} · 数据: <code>novel_workflow/projects/</code>
 </div>
 
 <!-- 新建/编辑模态框 -->

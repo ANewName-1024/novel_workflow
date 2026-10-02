@@ -158,7 +158,7 @@
   ] %}
   {% for type_id, label, count in types %}
     <a class="tab {% if active_type == type_id %}active{% endif %}"
-       href="/entities/{{ book }}?type={{ type_id }}">
+       href="{{ url_for('entities_page', book=book) }}?type={{ type_id }}">
       {{ label }}<span class="count">{{ count }}</span>
     </a>
   {% endfor %}

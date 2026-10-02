@@ -75,7 +75,7 @@
       <div class="meta">
         <span class="notif-badge {{ n.type }}">{{ n.type }}</span>
         {% if n.ref_chapter %}
-        <a href="/book/{{ book }}/{{ n.ref_chapter }}" class="notif-chapter-link">{{ n.ref_chapter }}</a>
+        <a href="{{ url_for('chapter_page', book=book, ch=n.ref_chapter) }}" class="notif-chapter-link">{{ n.ref_chapter }}</a>
         {% endif %}
         <span>{{ n.created_at }}</span>
       </div>

@@ -182,7 +182,7 @@ function renderCard(p) {
   }
 
   return `
-    <a class="project-card ${statusClass}" href="/dashboard/${encodeURIComponent(p.name)}">
+    <a class="project-card ${statusClass}" href="{{ request.script_root }}/dashboard/${encodeURIComponent(p.name)}">
       <div class="card-head">
         <div class="card-title">${NW.escapeHtml(p.title)}</div>
         ${p.genre ? `<span class="card-genre">${NW.escapeHtml(p.genre)}</span>` : ""}

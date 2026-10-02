@@ -196,10 +196,10 @@
 {% if prev_id or next_id %}
 <nav class="chapter-nav">
   {% if prev_id %}
-    <a href="/book/{{ book }}/{{ prev_id }}" class="nav-btn">← {{ prev_id }}</a>
+    <a href="{{ url_for('chapter_page', book=book, ch=prev_id) }}" class="nav-btn">← {{ prev_id }}</a>
   {% else %}<span class="nav-btn disabled">← 上一章</span>{% endif %}
   {% if next_id %}
-    <a href="/book/{{ book }}/{{ next_id }}" class="nav-btn">{{ next_id }} →</a>
+    <a href="{{ url_for('chapter_page', book=book, ch=next_id) }}" class="nav-btn">{{ next_id }} →</a>
   {% else %}<span class="nav-btn disabled">下一章 →</span>{% endif %}
   <button class="nav-btn" onclick="openChapterDiffModal()" title="v1.4: 跨章节 diff">🔀 对比其他章</button>
 </nav>

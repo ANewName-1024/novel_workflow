@@ -27,7 +27,7 @@
   <meta name="theme-color" content="#0e1217">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>{% block title %}novel_workflow{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -38,6 +38,30 @@
   {% if book is defined and book %}<script>window.BOOK = {{ book|tojson }};</script>{% endif %}
   {% if chapter is defined and chapter %}<script>window.CHAPTER = {{ chapter|tojson }};</script>{% endif %}
   {% block scripts %}{% endblock %}
-  <script src="/static/js/common.js"></script>
+  <script>
+  // ── fetch 前缀兼容层 ──────────────────────────────────────────────
+  // 模板里 30+ 处 fetch('/api/...') 写的是**根相对**路径。当 app 独占
+  // 一个端口的根目录(现在的 9081)时这完全正确, ROOT 为空, 本段是空操作。
+  // 但如果再被挂到带前缀的子路径下(如 nginx 的 /novel/), 根相对路径会
+  // 打到源站根目录 —— 那里可能是完全无关的应用, 表现为接口 404。
+  //
+  // 这里统一补一次前缀, 而不是去改 30+ 个调用点: 以后新加的 fetch 也会
+  // 自动被覆盖, 不会重新引入同一类 bug。
+  (function () {
+    var ROOT = {{ request.script_root | tojson }};
+    if (!ROOT) return;                       // 根部署: 不包装, 零开销
+    var nativeFetch = window.fetch;
+    window.fetch = function (input, init) {
+      if (typeof input === "string" &&
+          input.charAt(0) === "/" &&          // 根相对才需要补
+          input.charAt(1) !== "/" &&          // //example.com 是协议相对, 不碰
+          input.indexOf(ROOT) !== 0) {        // 已经带前缀的不重复补
+        input = ROOT + input;
+      }
+      return nativeFetch.call(this, input, init);
+    };
+  })();
+  </script>
+  <script src="{{ url_for('static', filename='js/common.js') }}"></script>
 </body>
 </html>
