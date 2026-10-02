@@ -76,6 +76,12 @@ _VALID_TRANSITIONS: set[tuple[str, str]] = {
     (StageState.PENDING.value,  StageState.SKIPPED.value),
     (StageState.FAILED.value,   StageState.SKIPPED.value),
     (StageState.DONE.value,     StageState.SKIPPED.value),  # skip 一个已完成 stage (例如重写 chapter)
+    # 2026-10-02: 重复 skip 一个已跳过的 stage 是完全正常的 —— self_check 未启用时
+    # 每次运行都会再标一次 SKIPPED。此前这一对不在矩阵里, 于是每次重跑章节都会刷
+    # 「非法 FSM 转换: self_check SKIPPED → SKIPPED」(生产实跑观测到), 写入被吞,
+    # 状态却恰好还是对的。属于无害但吵的缺陷: 它在正常路径上制造假警报, 真出事时
+    # 反而没人看那一行了。幂等转换应当合法。
+    (StageState.SKIPPED.value,  StageState.SKIPPED.value),
 }
 
 
