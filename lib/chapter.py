@@ -50,6 +50,49 @@ def _v2_mark(book: str, ch: int, stage: str, status: str, **kwargs) -> None:
         pass  # session_log is non-critical
 
 
+# resume-skip 总开关。默认开, 关掉走 `python novel.py config <book> resume_skip_done_stages=false`
+# (novel.py 的 config 子命令对任意 key 都做类型推断, true/false → bool, 无需改白名单)。
+_RESUME_SKIP_CFG_KEY = "resume_skip_done_stages"
+
+
+def _resume_skip_stage(book: str, chapter_num: int, chapter_id: str,
+                       cfg: dict, stage: str) -> bool:
+    """读 checkpoint 判定该阶段能否跳过 (不重烧 LLM)。True = 本次跳过。
+
+    判定在 lib/pipeline/state.py: stage_resume_decision() —— 条件是
+    checkpoint=DONE 【且】产物在磁盘上真实存在且非空, 少一条都重跑。
+
+    2026-10-02: 这个判断本身出错的处理方式很关键。判定失败(读不到 checkpoint /
+    产物校验抛错)时返回 False —— 照常重跑。安全的一侧永远是「多烧一次 LLM」,
+    不是「静默跳过一个没产出的阶段」; 但也不能闷头重跑, 必须留 ERROR。
+
+    日志走 log.info 而不是 print: 本文件里那 19 行 PIPELINE marker 是跨进程
+    协议 (process._PIPELINE_RE 逐行正则解析来恢复阶段状态), 措辞不能复用。这里用
+    [RESUME-SKIP] 前缀, 永远匹配不上那个正则 —— 新增一行符合 marker 形态的输出
+    就等于往崩溃恢复的信号流里掺一条假状态。
+    """
+    if not cfg.get(_RESUME_SKIP_CFG_KEY, True):
+        return False
+    from .pipeline import state as _pv2
+    try:
+        d = _pv2.stage_resume_decision(book, chapter_num, chapter_id, stage)
+    except Exception as e:
+        log.error("resume-skip 判定失败, 本阶段照常重跑 (book=%s ch=%s stage=%s): %s: %s",
+                  book, chapter_id, stage, type(e).__name__, e, exc_info=True)
+        return False
+
+    if d["skip"]:
+        # checkpoint 保持 DONE —— 跳过不是「被跳过」(SKIPPED), 产物是好的。
+        log.info("[RESUME-SKIP] book=%s ch=%s stage=%s 不重跑 "
+                 "(checkpoint=%s, artifact=%s)",
+                 book, chapter_num, stage, d["status"], d["artifact"])
+        return True
+    if d["skippable"]:
+        log.info("[RESUME-SKIP] book=%s ch=%s stage=%s 照常重跑 (%s)",
+                 book, chapter_num, stage, d["reason"])
+    return False
+
+
 def write_chapter(
     book: str,
     chapter_num: int,
@@ -208,131 +251,141 @@ def run_post_write_pipeline(
     # 而是在函数末尾统一拦下, 阻止 mark_chapter_completed。
     critical_failures: list[tuple[str, str]] = []
 
-    # 1) Extract & merge
-    _v2_mark(book, chapter_num, "extract", "RUNNING")
-    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-    print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=start")
-    llm.set_stage_context("extract", chapter_num)
-    # 2026-10-01: 快照必须在 merge_extraction 【之前】取(详见下方注释)。
-    # 初始化放在 try 之外 —— extract 阶段自己抛异常时, 下面的 entity_diff
-    # 阶段仍要能安全地看到 before_snap is None, 而不是撞 NameError。
+    # 2026-10-01: 快照必须在 merge_extraction 【之前】取(详见 extract 块内注释)。
+    # 2026-10-02: 初始化必须放在【两个 if 之外】—— extract 被 resume-skip 跳过时
+    # 它那一整块都不执行, 放块内的话下面的 entity_diff 会撞 UnboundLocalError,
+    # 于是「重跑 entity_diff」这条路在 extract 已完成时是断的(它会退化成
+    # entity_diff 失败, 而非致命警告之外什么都不说)。
     before_snap = None
-    try:
-        from . import extract as extmod
-        text = storage.read_chapter(book, chapter_id) or ""
-        extraction = extmod.extract_from_chapter(text, llm)
-        # 过去快照在下面的 entity_diff 阶段才取, 那时 extract 早就 merge 完了 ——
-        # 拿到的是变更后的状态, 再与 current 比较, added/updated/resolved 恒为 0。
-        # 于是章节页「本章节实体变化」面板永远是空的, 而 review_actions 依赖它
-        # 驱动重写, 等于没有输入。tests/ 里 run_entity_diff_stage 与 before_snap
-        # 均零命中, 所以一直没暴露。
+
+    # 1) Extract & merge
+    # 2026-10-02 resume-skip: checkpoint=DONE 且记忆表在磁盘上非空时, 整个阶段
+    # 连同它那 1 次 LLM 调用一起跳过。before_snap 保持 None, 由下面的 entity_diff
+    # 走它自己的「就地取一次」兜底 (会退化成空 diff 并留 warning, 不静默)。
+    if not _resume_skip_stage(book, chapter_num, chapter_id, cfg, "extract"):
+        _v2_mark(book, chapter_num, "extract", "RUNNING")
+        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=start")
+        llm.set_stage_context("extract", chapter_num)
         try:
-            from . import entity_diff as _edmod
-            before_snap = _edmod.snapshot_memory(book)
+            from . import extract as extmod
+            text = storage.read_chapter(book, chapter_id) or ""
+            extraction = extmod.extract_from_chapter(text, llm)
+            # 过去快照在下面的 entity_diff 阶段才取, 那时 extract 早就 merge 完了 ——
+            # 拿到的是变更后的状态, 再与 current 比较, added/updated/resolved 恒为 0。
+            # 于是章节页「本章节实体变化」面板永远是空的, 而 review_actions 依赖它
+            # 驱动重写, 等于没有输入。tests/ 里 run_entity_diff_stage 与 before_snap
+            # 均零命中, 所以一直没暴露。
+            try:
+                from . import entity_diff as _edmod
+                before_snap = _edmod.snapshot_memory(book)
+            except Exception as e:
+                log.warning("实体快照失败, entity_diff 将退化为空 diff (book=%s ch=%s): %s: %s",
+                            book, chapter_id, type(e).__name__, e, exc_info=True)
+            memory.merge_extraction(book, extraction)
+            print(f"  ✓ 记忆更新: "
+                  f"{len(extraction.get('new_events',[]))} 事件, "
+                  f"{len(extraction.get('new_foreshadowing',[]))} 伏笔, "
+                  f"{len(extraction.get('new_characters',[]))} 角色")
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=done")
+            _v2_mark(book, chapter_num, "extract", "DONE",
+                     artifacts={"events": len(extraction.get("new_events", [])),
+                                "foreshadowing": len(extraction.get("new_foreshadowing", [])),
+                                "characters": len(extraction.get("new_characters", []))})
         except Exception as e:
-            log.warning("实体快照失败, entity_diff 将退化为空 diff (book=%s ch=%s): %s: %s",
-                        book, chapter_id, type(e).__name__, e, exc_info=True)
-        memory.merge_extraction(book, extraction)
-        print(f"  ✓ 记忆更新: "
-              f"{len(extraction.get('new_events',[]))} 事件, "
-              f"{len(extraction.get('new_foreshadowing',[]))} 伏笔, "
-              f"{len(extraction.get('new_characters',[]))} 角色")
-        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=done")
-        _v2_mark(book, chapter_num, "extract", "DONE",
-                 artifacts={"events": len(extraction.get("new_events", [])),
-                            "foreshadowing": len(extraction.get("new_foreshadowing", [])),
-                            "characters": len(extraction.get("new_characters", []))})
-    except Exception as e:
-        # 2026-10-02: 不再是"非致命"。见 CoherenceStageFailed 的说明。
-        log.error("extract 失败 (连贯性关键阶段): %s", e, exc_info=True)
-        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=failed")
-        _v2_mark(book, chapter_num, "extract", "FAILED", error=str(e))
-        critical_failures.append(("extract", str(e)))
+            # 2026-10-02: 不再是"非致命"。见 CoherenceStageFailed 的说明。
+            log.error("extract 失败 (连贯性关键阶段): %s", e, exc_info=True)
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=extract status=failed")
+            _v2_mark(book, chapter_num, "extract", "FAILED", error=str(e))
+            critical_failures.append(("extract", str(e)))
 
     # 1b) Entity diff (v1.3 M4): compute & record per-chapter entity changes
-    _v2_mark(book, chapter_num, "entity_diff", "RUNNING")
-    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-    print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=start")
-    try:
-        from . import entity_diff as edmod
-        # 复用 extract 阶段【在 merge 之前】取的快照(见上方说明)。
-        # 拿不到时退回「就地取一次」—— 那必然是空 diff, 但至少不崩, 且上面的
-        # warning 已经留痕。
-        if before_snap is None:
-            log.warning("entity_diff 缺少 merge 前快照, 本次 diff 将为空 (book=%s ch=%s)",
-                        book, chapter_id)
-            before_snap = edmod.snapshot_memory(book)
-        diff_entry = edmod.run_entity_diff_stage(book, chapter_num, chapter_id, before_snap)
-        summary = edmod.summarize_changes(diff_entry)
-        print(f"  ✓ 实体变化记录: {summary['total_changes']} 项 "
-              f"(角色+{summary['characters']['added']}/~{summary['characters']['updated']}, "
-              f"事件+{summary['events']['added']}, "
-              f"伏笔+{summary['foreshadows']['added']}/收{summary['foreshadows']['resolved']}, "
-              f"规则~{summary['world_rules']['updated']})")
+    if not _resume_skip_stage(book, chapter_num, chapter_id, cfg, "entity_diff"):
+        _v2_mark(book, chapter_num, "entity_diff", "RUNNING")
         # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
         #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=done")
-        _v2_mark(book, chapter_num, "entity_diff", "DONE",
-                 artifacts={"total_changes": summary["total_changes"],
-                            "characters_added": summary["characters"]["added"],
-                            "events_added": summary["events"]["added"],
-                            "foreshadows_added": summary["foreshadows"]["added"],
-                            "foreshadows_resolved": summary["foreshadows"]["resolved"]})
-    except Exception as e:
-        log.warning("entity_diff 失败 (非致命): %s", e)
-        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=failed")
-        _v2_mark(book, chapter_num, "entity_diff", "FAILED", error=str(e))
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=start")
+        try:
+            from . import entity_diff as edmod
+            # 复用 extract 阶段【在 merge 之前】取的快照(见上方说明)。
+            # 拿不到时退回「就地取一次」—— 那必然是空 diff, 但至少不崩, 且上面的
+            # warning 已经留痕。(extract 被 resume-skip 跳过时也走这条路。)
+            if before_snap is None:
+                log.warning("entity_diff 缺少 merge 前快照, 本次 diff 将为空 (book=%s ch=%s)",
+                            book, chapter_id)
+                before_snap = edmod.snapshot_memory(book)
+            diff_entry = edmod.run_entity_diff_stage(book, chapter_num, chapter_id, before_snap)
+            summary = edmod.summarize_changes(diff_entry)
+            print(f"  ✓ 实体变化记录: {summary['total_changes']} 项 "
+                  f"(角色+{summary['characters']['added']}/~{summary['characters']['updated']}, "
+                  f"事件+{summary['events']['added']}, "
+                  f"伏笔+{summary['foreshadows']['added']}/收{summary['foreshadows']['resolved']}, "
+                  f"规则~{summary['world_rules']['updated']})")
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=done")
+            _v2_mark(book, chapter_num, "entity_diff", "DONE",
+                     artifacts={"total_changes": summary["total_changes"],
+                                "characters_added": summary["characters"]["added"],
+                                "events_added": summary["events"]["added"],
+                                "foreshadows_added": summary["foreshadows"]["added"],
+                                "foreshadows_resolved": summary["foreshadows"]["resolved"]})
+        except Exception as e:
+            log.warning("entity_diff 失败 (非致命): %s", e)
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=entity_diff status=failed")
+            _v2_mark(book, chapter_num, "entity_diff", "FAILED", error=str(e))
 
     # 2) Generate rolling summary
-    _v2_mark(book, chapter_num, "summary", "RUNNING")
-    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-    print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=start")
-    llm.set_stage_context("summary", chapter_num)
-    try:
-        summod.generate_chapter_summary(book, chapter_id, llm)
-        print(f"  ✓ 章节摘要生成")
+    if not _resume_skip_stage(book, chapter_num, chapter_id, cfg, "summary"):
+        _v2_mark(book, chapter_num, "summary", "RUNNING")
         # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
         #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=done")
-        _v2_mark(book, chapter_num, "summary", "DONE")
-    except Exception as e:
-        # 2026-10-02: 同上, 摘要失败不再放过。实跑时 summaries/ch_001.txt
-        # 是 0 字节而状态是 DONE, 下一章照样把这份空摘要塞进上下文。
-        log.error("摘要生成失败 (连贯性关键阶段): %s", e, exc_info=True)
-        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=failed")
-        _v2_mark(book, chapter_num, "summary", "FAILED", error=str(e))
-        critical_failures.append(("summary", str(e)))
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=start")
+        llm.set_stage_context("summary", chapter_num)
+        try:
+            summod.generate_chapter_summary(book, chapter_id, llm)
+            print(f"  ✓ 章节摘要生成")
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=done")
+            _v2_mark(book, chapter_num, "summary", "DONE")
+        except Exception as e:
+            # 2026-10-02: 同上, 摘要失败不再放过。实跑时 summaries/ch_001.txt
+            # 是 0 字节而状态是 DONE, 下一章照样把这份空摘要塞进上下文。
+            log.error("摘要生成失败 (连贯性关键阶段): %s", e, exc_info=True)
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=summary status=failed")
+            _v2_mark(book, chapter_num, "summary", "FAILED", error=str(e))
+            critical_failures.append(("summary", str(e)))
 
     # 3) Update state snapshot
-    _v2_mark(book, chapter_num, "state", "RUNNING")
-    # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-    #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-    print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=start")
-    llm.set_stage_context("state", chapter_num)
-    try:
-        statemod.update_state_after_chapter(book, chapter_num, llm)
-        print(f"  ✓ 状态快照更新")
+    if not _resume_skip_stage(book, chapter_num, chapter_id, cfg, "state"):
+        _v2_mark(book, chapter_num, "state", "RUNNING")
         # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
         #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=done")
-        _v2_mark(book, chapter_num, "state", "DONE")
-    except Exception as e:
-        log.warning("状态更新失败 (非致命): %s", e)
-        # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
-        #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
-        print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=failed")
-        _v2_mark(book, chapter_num, "state", "FAILED", error=str(e))
+        print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=start")
+        llm.set_stage_context("state", chapter_num)
+        try:
+            statemod.update_state_after_chapter(book, chapter_num, llm)
+            print(f"  ✓ 状态快照更新")
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=done")
+            _v2_mark(book, chapter_num, "state", "DONE")
+        except Exception as e:
+            log.warning("状态更新失败 (非致命): %s", e)
+            # ⚠ 协议行: process._PIPELINE_RE 从日志里正则解析它来恢复阶段状态。
+            #   改格式 = 崩溃恢复静默失效, 且 test_chapter_markers.py 测不出来。勿改成 log.*。
+            print(f"[PIPELINE] book={book} ch={chapter_num} stage=state status=failed")
+            _v2_mark(book, chapter_num, "state", "FAILED", error=str(e))
 
     # 4) Style anchor (only after ch_001 first write)
     if chapter_num == 1 and not stylemod.get_style_anchor(book):

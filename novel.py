@@ -179,6 +179,11 @@ def parse_args() -> argparse.Namespace:
     # doctor 子命令: 环境诊断
     doc = sub.add_parser("doctor", help="环境诊断 (Python/依赖/LLM/端口/磁盘/Git)")
     doc.add_argument("--json", action="store_true", help="输出 JSON 给脚本调用")
+    # 2026-10-02: 配置漂移检测默认只做本地静态检查(零网络零费用)。
+    # --deep 才会对每本书的端点真发一次 ping —— 这是唯一能测出
+    # 「配的模型名那个 API 根本不接受」的办法(实测踩过: 400 而 doctor 全绿)。
+    doc.add_argument("--deep", action="store_true",
+                     help="额外对每本书的 LLM 端点发真实探测请求(会联网)")
 
     # serve 子命令: 启动 review_ui Flask
     srv = sub.add_parser("serve", help="启动 review_ui Web 界面")
@@ -514,10 +519,31 @@ def cmd_review(args: argparse.Namespace) -> None:
     if chapter_id:
         rev = revmod.review_chapter(book, chapter_id, llm)
         print(f"\n=== [{chapter_id}] 审查结果 ===\n{rev}")
+        # 2026-10-02: 把结果接进评审队列。
+        # 之前 CLI 的 review 走 lib/review.py(自由文本), 而 review-queue 与
+        # Web UI 走 review_service —— 两套互不相通, 于是审校跑完, 队列里
+        # 依然显示「✓ 评审队列为空」, 人工看不到任何待处理的东西。
+        _record_cli_review(book, chapter_id, rev)
     else:
         print("正在进行全书审查…\n")
         rev = revmod.full_book_review(book, llm)
         print(f"\n=== 全书审查结果 ===\n{rev}")
+        for cid in [c["id"] for c in storage.list_chapters(book)]:
+            _record_cli_review(book, cid, f"(来自全书审查)\n\n{rev}")
+
+
+def _record_cli_review(book: str, chapter_id: str, review_text: str) -> None:
+    """把自由文本审校落到 review_service 记录里; 失败只警告, 不打断审校输出。"""
+    try:
+        from lib import review_service as revserv
+        rec = revserv.record_cli_review(book, chapter_id, review_text, by="CLI")
+        print(f"  → 已进评审队列 (status={rec.get('status')}): "
+              f"python novel.py review-queue {book}")
+    except Exception as e:
+        # 记录失败不该让整次审校白跑 —— 正文已经拿到并打印了。
+        log.warning("审校结果入库失败 (book=%s ch=%s): %s: %s",
+                    book, chapter_id, type(e).__name__, e, exc_info=True)
+        print(f"  ⚠ 审校结果未能入队: {e}")
 
 def cmd_status(args: argparse.Namespace) -> None:
     book = args.book
@@ -809,7 +835,33 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         print(_json.dumps([r._asdict() for r in results], ensure_ascii=False, indent=2))
     else:
         print(format_report(results))
-    if any(r.status == "fail" for r in results):
+
+    failed = any(r.status == "fail" for r in results)
+
+    # ── 配置漂移检测 (2026-10-02 新增) ─────────────────────────────────
+    # 为什么需要: 原来的 doctor 全绿, 但线上有一本书配的模型名那个 API
+    # 根本不接受 —— 传过去直接 400, 而书看起来配得好好的。这类问题只有
+    # 「实际问一次端点」才测得出来, 纯本地检查只能比对静态的已知模型表。
+    #
+    # --deep 才会真的发请求。默认只做本地静态检查(模型名/ token 预算/ 端点覆盖),
+    # 零网络零费用 —— doctor 是最常被随手敲的命令, 不该每次都去打 API。
+    try:
+        from lib.doctor import check_llm_config_drift, format_drift_report
+        drift = check_llm_config_drift(probe=bool(getattr(args, "deep", False)))
+        if args.json:
+            print(_json.dumps(drift.as_dict(), ensure_ascii=False, indent=2))
+        else:
+            print()
+            print(format_drift_report(drift))
+        if not drift.ok:
+            failed = True
+    except Exception as e:
+        # doctor 自身的检查项出问题不该让整条命令崩掉; 但必须让人看见。
+        log.warning("配置漂移检测失败 (非致命): %s: %s", type(e).__name__, e,
+                    exc_info=True)
+        print(f"⚠ 配置漂移检测未能运行: {e}")
+
+    if failed:
         sys.exit(1)
 
 

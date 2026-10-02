@@ -147,6 +147,76 @@ def append_audit(book: str, chapter_id: str, action: str, by: str, notes: str = 
     with audit_log_path(book).open("a", encoding="utf-8") as f:
         f.write(line + "\n")
 
+def record_cli_review(book: str, chapter_id: str, review_text: str,
+                      by: str = "CLI") -> dict:
+    """把 lib/review.py 产出的自由文本审校结果落到评审记录里。
+
+    为什么需要这个
+    --------------
+    仓库里有两套审校, 至今互不相通:
+      lib/review.py    自由文本 Markdown -> reviews/<ch>.md  (CLI `review` 走这条)
+      review_service   结构化 + 状态机 + 待审队列 + audit.log  (Web UI 队列走这条)
+
+    后果是实跑验证过的: `novel.py review probe_run ch_001` 跑完, reviews/ch_001.md
+    有 4502 字节正经内容, 但 `novel.py review-queue probe_run` 仍打印
+    「✓ 评审队列为空」—— 人工在队列里根本看不到任何待处理的东西。
+    审校做过了, 但结论没有进入任何决策流程。
+
+    状态一律落 PENDING_REVIEW, **不落 AUTO_PASSED**
+    --------------------------------------------
+    自由文本审校没有 severity 字段, 无从判断"通过"与否。而
+    「因为没检查过所以判定合格」正是 2026-10-02 被推翻的那种降级
+    (见 backfill_missing_reviews 的说明)。既然查了, 就该让人看一眼。
+
+    不覆盖人工结论
+    --------------
+    若该章已有人工决策(approved / human_edited / needs_rewrite / false_positive),
+    只补审计与文本, **不动 status**。CLI 重复跑一次 review 不该把人工改过的
+    章打回待审。
+    """
+    if not (review_text or "").strip():
+        # 空审校文本不能记成"审过了"。今天实测踩过: 空串落盘成 0 字节的
+        # reviews/<ch>.md, 而队列/状态毫无异常。
+        raise ValueError(
+            f"章节 {chapter_id} 的审校结果为空, 拒绝记录。"
+            f"空审校记录会让队列里出现一个'已审过但没有内容'的条目。"
+        )
+
+    existing = get_review(book, chapter_id)
+    rec = dict(existing) if existing else _empty_record(chapter_id)
+    rec["chapter_id"] = chapter_id
+
+    human_decided = rec.get("status") in {
+        REVIEW_STATUS["APPROVED"], REVIEW_STATUS["HUMAN_EDITED"],
+        REVIEW_STATUS["NEEDS_REWRITE"], REVIEW_STATUS["FALSE_POSITIVE"],
+    }
+    if not human_decided:
+        rec["status"] = REVIEW_STATUS["PENDING_REVIEW"]
+    # 结果正文挂在 auto_result 下, 与 self_check 的结果同字段但带 source 标记,
+    # 这样 UI 读到的"AI 结论"不会把自由文本误当成结构化 severity。
+    #
+    # 合并规则: 同源(cli_review)才覆盖成最新正文; 异源(self_check 的结构化结果)
+    # 另起一个键, 不能把自检结论冲掉。
+    prev = rec.get("auto_result")
+    if isinstance(prev, dict) and prev.get("source") == "cli_review":
+        prev["text"] = review_text
+    elif isinstance(prev, dict):
+        prev["cli_review"] = review_text
+    else:
+        rec["auto_result"] = {"source": "cli_review", "text": review_text}
+    if rec.get("created_at") is None:
+        rec["created_at"] = datetime.datetime.now().isoformat()
+    save_review(book, rec)
+    append_audit(
+        book, chapter_id,
+        "cli_review_recorded" if not human_decided else "cli_review_attached",
+        by,
+        notes=("自由文本审校已进待审队列" if not human_decided
+               else "已有人工结论, 仅补充审校正文, 未改状态"),
+    )
+    return rec
+
+
 # ── transitions ────────────────────────────────────────────────────────────
 
 def auto_flag(book: str, chapter_id: str, self_check_result: dict, by: str = "AI") -> dict:

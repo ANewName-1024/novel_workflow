@@ -38,6 +38,7 @@ __all__ = [
     "checkpoint_path", "checkpoint_snapshot",
     "get_interrupted_chapters", "get_last_snapshot", "get_v2",
     "recover_stage",
+    "RESUMABLE_STAGE_ARTIFACTS", "stage_artifacts_status", "stage_resume_decision",
 ]
 
 
@@ -636,21 +637,38 @@ def recover_stage(book: str, ch: int, from_stage: str | None = None) -> dict:
                 "message": f"从 [{from_stage}] 恢复并重置下游"}
 
     # Auto-detect: find first non-DONE, non-SKIPPED stage
+    #
+    # 2026-10-02: context / writing 必须跳过不看。
+    #
+    # write_chapter 每次运行开头都会把 context 标 RUNNING, 所以自动探测几乎
+    # 总是命中 context。而 rerun_from("context") 会把**全部 8 个阶段**重置成
+    # PENDING —— 但 context 和 writing 本来就无条件重跑, 重置它们毫无收益,
+    # 唯一效果是把下游那些「DONE 且产物完好」的阶段一起清掉。
+    # 结果: 刚加的 resume-skip(产物完好就跳过整个阶段)在 resume 之后一个都
+    # 触发不了, 功能等于白做。
+    #
+    # 所以: 探测时跳过这两个「反正会重跑」的头部阶段, 直接找真正值得重置的那一个。
+    # 若只剩它们非 DONE, 说明上游本来就是坏的 —— 什么都不用重置, 直接重跑即可。
+    _ALWAYS_RERUN_HEAD = ("context", "writing")
     target = None
+    head_only = []
     for s in STAGES:
         sc = ch_doc.stages[s]
-        if sc.status == StageState.RUNNING.value:
-            target = s  # was running, now definitely dead → resume
-            break
-        if sc.status == StageState.FAILED.value:
-            target = s
-            break
-        if sc.status == StageState.PENDING.value:
-            # First pending after some DONE → the next one that should have been run
+        if sc.status in (StageState.DONE.value, StageState.SKIPPED.value):
+            continue
+        if s in _ALWAYS_RERUN_HEAD:
+            head_only.append(s)
+            continue
+        if sc.status in (StageState.RUNNING.value, StageState.FAILED.value,
+                         StageState.PENDING.value):
             target = s
             break
 
     if target is None:
+        if head_only:
+            return {"ok": True, "chapter": ch, "recovered_stage": head_only[0],
+                    "message": (f"未完成阶段只有 {', '.join(head_only)} —— 它们每次"
+                                f"运行都会无条件重跑, 无需重置任何状态。直接重跑该章即可。")}
         return {"ok": False, "chapter": ch, "recovered_stage": None,
                 "message": "未检测到可恢复的 stage"}
 
@@ -662,3 +680,110 @@ def recover_stage(book: str, ch: int, from_stage: str | None = None) -> dict:
 
     return {"ok": True, "chapter": ch, "recovered_stage": target,
             "message": f"自动检测中断于 [{target}], 已重置为可恢复"}
+
+
+# ── resume-skip: 跳过判定 + 产物校验 (2026-10-02) ────────────────────────
+#
+# 背景: get_stage_state() 此前全仓只有 tests 在调用 —— 写章节的流水线从不读
+# checkpoint, 于是中断后重跑会把已经成功、产物完好的 extract / summary 全部
+# 重烧一遍 (每章 4~5 次 LLM 调用)。
+#
+# 为什么不能只看 status: extract 曾经「记录为 DONE 但产物是 0 字节」——
+# 状态字段说成功、磁盘上什么都没有, 下一章照样把空记忆库塞进上下文。
+# 只信 status 会把这个什么都没产出的阶段当成"已完成"跳过去, 静默丢数据。
+# 所以判定必须同时满足两条: status == DONE **且** 产物在磁盘上真实存在且非空。
+
+# 可跳过的阶段 → 产物清单 (相对 storage.project_path(book), {ch} 替换为 chapter_id)。
+# 清单是「析取」: 任一非空即认为该阶段真的落了东西。extract 的三张记忆表是跨章
+# 累积的共享文件, 语义上就必须是 OR (抽不出新角色但抽出了事件, 也算成功);
+# 其余阶段各自只有一个产物, OR 与 AND 等价。
+# 不在本表里的阶段 (context / writing / self_check / style_anchor) 永远重跑。
+RESUMABLE_STAGE_ARTIFACTS: dict[str, tuple[str, ...]] = {
+    "extract":     ("memory/characters.json", "memory/events.json", "memory/foreshadowing.json"),
+    "entity_diff": ("memory/_changelog/{ch}.json",),
+    "summary":     ("summaries/{ch}.txt",),
+    "state":       ("state.json",),
+}
+
+
+def _artifact_nonempty(path: Path) -> tuple[bool, str]:
+    """单个产物文件是否「真实有内容」。
+
+    规则: 必须存在 → .json 要能解析且容器非空 (2 字节的 {} / [] 视同没有产出,
+    那正是 2026-10-02 生产实跑踩到的形态) → 文本文件 strip() 后非空。
+    读不到 / 解析不了一律算「无产物」, 宁可重跑也不静默跳过。
+    """
+    try:
+        if not path.is_file():
+            return False, "missing"
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        log.warning("产物校验读取失败,按「无产物」处理: %s | %s: %s",
+                    path, type(e).__name__, e)
+        return False, f"unreadable({type(e).__name__})"
+
+    size = len(raw.encode("utf-8"))
+    if not raw.strip():
+        return False, f"empty({size}B)"
+    if path.suffix.lower() == ".json":
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            log.warning("产物 JSON 损坏,按「无产物」处理: %s | %s", path, e)
+            return False, "corrupt-json"
+        if not isinstance(data, (dict, list)) or len(data) == 0:
+            return False, f"empty-json({size}B)"
+    return True, f"{path.name}={size}B"
+
+
+def stage_artifacts_status(book: str, chapter_id: str, stage: str) -> dict[str, Any]:
+    """某阶段在磁盘上的产物是否真实存在且非空 (不看 checkpoint)。
+
+    Returns:
+        {"ok": bool, "detail": str, "checked": [{"path", "ok", "detail"}, ...]}
+        不在 RESUMABLE_STAGE_ARTIFACTS 里的阶段 → ok=False (永不可跳过)。
+    """
+    templates = RESUMABLE_STAGE_ARTIFACTS.get(stage)
+    if not templates:
+        return {"ok": False, "detail": f"stage={stage} 不在可跳过清单",
+                "checked": []}
+
+    base = storage.project_path(book)   # 纯计算, 不会凭空建目录
+    checked: list[dict[str, Any]] = []
+    hit = ""
+    for tpl in templates:
+        rel = tpl.format(ch=chapter_id)
+        ok, detail = _artifact_nonempty(base / rel)
+        checked.append({"path": rel, "ok": ok, "detail": detail})
+        if ok and not hit:
+            hit = f"{rel}({detail})"
+    return {"ok": bool(hit), "detail": hit or "no-artifact", "checked": checked}
+
+
+def stage_resume_decision(book: str, ch: int, chapter_id: str, stage: str) -> dict[str, Any]:
+    """resume 场景下该阶段能否跳过 —— checkpoint 与磁盘产物【双条件】。
+
+    Returns:
+        {"skippable": bool,  # 该阶段是否在可跳过清单里
+         "skip": bool,       # 这一次是否真的跳过
+         "status": str|None, # checkpoint 里的状态
+         "artifact": str,    # 产物校验结论 (给日志看的短描述)
+         "reason": str}      # 不跳过的原因 (skippable 且不 skip 时非空)
+
+    判定不出来时抛异常, 由调用方决定 —— 这里不吞: 判不出「能不能跳」时,
+    安全的一侧是照常重跑, 但那必须留下 ERROR, 不能静默。
+    """
+    if stage not in RESUMABLE_STAGE_ARTIFACTS:
+        return {"skippable": False, "skip": False, "status": None,
+                "artifact": None, "reason": f"[{stage}] 每次都重跑"}
+
+    status = get_v2().get_stage_state(book, ch, stage)
+    art = stage_artifacts_status(book, chapter_id, stage)
+    if status == StageState.DONE.value and art["ok"]:
+        return {"skippable": True, "skip": True, "status": status,
+                "artifact": art["detail"], "reason": ""}
+
+    reason = (f"checkpoint={status}" if status != StageState.DONE.value
+              else f"checkpoint=DONE 但产物无效({art['detail']})")
+    return {"skippable": True, "skip": False, "status": status,
+            "artifact": art["detail"], "reason": reason}
